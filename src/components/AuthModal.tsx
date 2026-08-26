@@ -94,11 +94,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setErrorMsg('Por favor completa tu correo y contraseña.');
+      return;
+    }
+
     setLoading(true);
     setErrorMsg('');
 
     try {
-      const res = await api.login(email, password);
+      const res = await api.login(cleanEmail, password);
       onSuccess(res.user, res.isAdmin);
       onClose();
     } catch (err: any) {

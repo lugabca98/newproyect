@@ -1410,6 +1410,25 @@ app.get('/api/admin/audit-logs', requireAdmin, (req, res) => {
   res.json({ logs: auditLogs });
 });
 
+// Fallback for any unknown /api/* route to ensure clean JSON responses
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `Ruta de API no encontrada: ${req.method} ${req.path}` });
+});
+
+// Global Express error handler for API requests
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Server error intercepted:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  if (req.path.startsWith('/api')) {
+    return res.status(err.status || 500).json({
+      error: err.message || 'Ocurrió un error inesperado en el servidor. Por favor intenta de nuevo.'
+    });
+  }
+  next(err);
+});
+
 // -------------------------------------------------------------
 // Vite Middleware / Production Static File Serving
 // -------------------------------------------------------------
@@ -1434,3 +1453,4 @@ async function startServer() {
 }
 
 startServer();
+
