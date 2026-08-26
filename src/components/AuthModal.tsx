@@ -12,11 +12,13 @@ import {
   Briefcase, 
   X,
   Trash2,
-  Check
+  Check,
+  Loader2
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
+import { compressImage } from '../utils/imageCompressor';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -74,22 +76,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
   if (!isOpen) return null;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     const file = files[0];
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const result = uploadEvent.target?.result as string;
-      if (result) {
-        setSelectedPhoto(result);
-        setCustomPhotos(prev => [result, ...prev]);
-      }
-    };
-    reader.readAsDataURL(file);
+    setUploadingPhoto(true);
+    try {
+      const compressed = await compressImage(file, 900, 0.82);
+      setSelectedPhoto(compressed);
+      setCustomPhotos(prev => [compressed, ...prev.filter(p => p !== compressed)].slice(0, 5));
+    } catch (err) {
+      console.error('Error compressing registration photo:', err);
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = '';
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {

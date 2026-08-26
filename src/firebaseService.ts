@@ -148,7 +148,7 @@ class FirebaseService {
 
   async updateUser(userId: string, data: Partial<User>): Promise<User> {
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, data);
+    await setDoc(userRef, data, { merge: true });
     const updated = await this.getUserById(userId);
     if (!updated) throw new Error('Usuario no encontrado tras actualizar.');
     return updated;

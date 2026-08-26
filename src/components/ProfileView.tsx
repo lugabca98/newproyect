@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Camera, 
   Trash2, 
@@ -16,10 +16,13 @@ import {
   Lock,
   Key,
   Eye,
-  EyeOff
+  EyeOff,
+  Loader2,
+  Upload
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
+import { compressImage } from '../utils/imageCompressor';
 
 interface ProfileViewProps {
   currentUser: User;
@@ -43,7 +46,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [newInterestInput, setNewInterestInput] = useState('');
   const [customPhotoUrl, setCustomPhotoUrl] = useState('');
   const [showPhotoUrlInput, setShowPhotoUrlInput] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   
+  // Sync when currentUser changes
+  useEffect(() => {
+    setName(currentUser.name);
+    setBio(currentUser.bio || '');
+    setAge(currentUser.age);
+    setGender(currentUser.gender);
+    setOccupation(currentUser.occupation || '');
+    setLocation(currentUser.location || '');
+    setPhotos(currentUser.photos || []);
+    setInterests(currentUser.interests || []);
+    setMinAge(currentUser.preferences?.minAge || 18);
+    setMaxAge(currentUser.preferences?.maxAge || 45);
+    setMaxDistance(currentUser.preferences?.maxDistanceKm || 50);
+    setInterestedIn(currentUser.preferences?.interestedIn || ['female', 'male']);
+  }, [currentUser.id]);
+
   // Preferences
   const [minAge, setMinAge] = useState(currentUser.preferences?.minAge || 18);
   const [maxAge, setMaxAge] = useState(currentUser.preferences?.maxAge || 45);
@@ -65,26 +85,71 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [passwordSuccessMsg, setPasswordSuccessMsg] = useState('');
   const [passwordErrorMsg, setPasswordErrorMsg] = useState('');
 
-  // Handle local file upload (converts to base64 data URL)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle local file upload with auto-compression (compact JPEG for fast Firestore saving)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (uploadEvent) => {
-        const result = uploadEvent.target?.result as string;
-        if (result) {
-          setPhotos(prev => [...prev, result]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    setUploadingPhoto(true);
+    setErrorMsg('');
+
+    try {
+      const compressedPhotos: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const compressed = await compressImage(file, 900, 0.82);
+        compressedPhotos.push(compressed);
+      }
+
+      setPhotos(prev => {
+        const combined = [...prev, ...compressedPhotos];
+        return combined.slice(0, 6);
+      });
+    } catch (err: any) {
+      console.error('Error processing image:', err);
+      setErrorMsg('Error al procesar la imagen. Intenta con otra foto.');
+    } finally {
+      setUploadingPhoto(false);
+      // Reset input
+      e.target.value = '';
+    }
+  };
+
+  // Direct avatar change (makes uploaded image the primary #1 photo)
+  const handleDirectAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingPhoto(true);
+    setErrorMsg('');
+
+    try {
+      const file = files[0];
+      const compressed = await compressImage(file, 900, 0.82);
+      
+      // Put at index 0 as main avatar photo
+      const newPhotosList = [compressed, ...photos.filter(p => p !== compressed)].slice(0, 6);
+      setPhotos(newPhotosList);
+
+      // Auto-save this new avatar to Firestore immediately
+      const updated = await api.updateProfile({
+        photos: newPhotosList
+      });
+      onUpdateUser(updated.user);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err: any) {
+      console.error('Error updating avatar:', err);
+      setErrorMsg('Error al cambiar la foto de perfil.');
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = '';
+    }
   };
 
   const handleAddPhotoUrl = () => {
     if (customPhotoUrl.trim()) {
-      setPhotos(prev => [...prev, customPhotoUrl.trim()]);
+      setPhotos(prev => [...prev, customPhotoUrl.trim()].slice(0, 6));
       setCustomPhotoUrl('');
       setShowPhotoUrlInput(false);
     }
@@ -193,17 +258,54 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {/* Header Profile Stats Card */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
         <div className="flex flex-col sm:flex-row items-center gap-5">
-          <div className="relative">
+          <div className="relative group">
             <img
               src={photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'}
               alt={name}
               className="w-24 h-24 rounded-full object-cover border-4 border-rose-500/50 shadow-xl"
             />
             {currentUser.verified && (
-              <span className="absolute bottom-0 right-0 p-1 bg-slate-900 rounded-full">
+              <span className="absolute top-0 right-0 p-1 bg-slate-900 rounded-full">
                 <CheckCircle2 className="w-5 h-5 text-sky-400 fill-sky-400" />
               </span>
             )}
+
+            {/* Quick avatar change button overlay */}
+            <label 
+              htmlFor="direct-avatar-upload"
+              className="absolute inset-0 bg-slate-950/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white text-[10px] font-bold gap-1"
+              title="Cambiar foto de perfil"
+            >
+              {uploadingPhoto ? (
+                <Loader2 className="w-6 h-6 animate-spin text-rose-400" />
+              ) : (
+                <>
+                  <Camera className="w-5 h-5 text-rose-400" />
+                  <span>Cambiar</span>
+                </>
+              )}
+            </label>
+            <input
+              id="direct-avatar-upload"
+              type="file"
+              accept="image/*"
+              onChange={handleDirectAvatarUpload}
+              className="hidden"
+              disabled={uploadingPhoto}
+            />
+
+            {/* Small camera badge */}
+            <label
+              htmlFor="direct-avatar-upload"
+              className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center cursor-pointer shadow-lg border-2 border-slate-900 transition sm:flex"
+              title="Subir nueva foto de perfil"
+            >
+              {uploadingPhoto ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Camera className="w-4 h-4" />
+              )}
+            </label>
           </div>
 
           <div className="text-center sm:text-left flex-1">
@@ -301,11 +403,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 multiple
                 onChange={handleFileUpload}
                 className="hidden"
+                disabled={uploadingPhoto}
               />
               <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center">
-                <Plus className="w-5 h-5" />
+                {uploadingPhoto ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-rose-400" />
+                ) : (
+                  <Plus className="w-5 h-5" />
+                )}
               </div>
-              <span className="text-[11px] font-medium text-center px-2">Subir Foto</span>
+              <span className="text-[11px] font-medium text-center px-2">
+                {uploadingPhoto ? 'Procesando...' : 'Subir Foto'}
+              </span>
             </label>
           )}
         </div>
