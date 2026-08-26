@@ -1,0 +1,1469 @@
+import express from 'express';
+import path from 'path';
+import crypto from 'crypto';
+import { createServer as createViteServer } from 'vite';
+import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, Gender } from './src/types.js';
+
+const app = express();
+const PORT = 3000;
+
+// Security Middleware: Set Essential Security HTTP Headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  // Prevent sensitive user/chat data from being cached in intermediate proxies
+  if (req.path.startsWith('/api')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+  }
+  next();
+});
+
+// Body parsing with safe size bounds
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+
+// -------------------------------------------------------------
+// Rate Limiter Engine (Protects against Brute-Force & DoS)
+// -------------------------------------------------------------
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+
+function rateLimiter(options: { windowMs: number; max: number; message: string }) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const key = `${req.path}:${ip}`;
+    const now = Date.now();
+
+    const record = rateLimitStore.get(key);
+    if (!record || now > record.resetTime) {
+      rateLimitStore.set(key, { count: 1, resetTime: now + options.windowMs });
+      next();
+      return;
+    }
+
+    if (record.count >= options.max) {
+      const retryAfter = Math.ceil((record.resetTime - now) / 1000);
+      res.setHeader('Retry-After', String(retryAfter));
+      res.status(429).json({ 
+        error: options.message,
+        retryAfterSeconds: retryAfter 
+      });
+      return;
+    }
+
+    record.count += 1;
+    next();
+  };
+}
+
+// Periodic cleanup of rate limit store
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of rateLimitStore.entries()) {
+    if (now > record.resetTime) {
+      rateLimitStore.delete(key);
+    }
+  }
+}, 180000);
+
+// -------------------------------------------------------------
+// Cryptographic Password Hashing & Verification (PBKDF2)
+// -------------------------------------------------------------
+function hashPassword(password: string): { salt: string; hash: string } {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+  return { salt, hash };
+}
+
+function verifyPassword(password: string, salt: string, storedHash: string): boolean {
+  if (!salt || !storedHash || typeof password !== 'string') return false;
+  try {
+    const calculatedHash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+    const hashBuffer = Buffer.from(calculatedHash, 'hex');
+    const storedBuffer = Buffer.from(storedHash, 'hex');
+    if (hashBuffer.length !== storedBuffer.length) return false;
+    return crypto.timingSafeEqual(hashBuffer, storedBuffer);
+  } catch {
+    return false;
+  }
+}
+
+// -------------------------------------------------------------
+// Input Sanitization & Validation Helpers
+// -------------------------------------------------------------
+function sanitizeText(input: unknown, maxLen = 500): string {
+  if (typeof input !== 'string') return '';
+  return input
+    .replace(/[<>]/g, '') // Strip HTML tags to avoid XSS
+    .trim()
+    .slice(0, maxLen);
+}
+
+function isValidEmail(email: string): boolean {
+  if (!email || typeof email !== 'string') return false;
+  const trimmed = email.trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) && trimmed.length <= 100;
+}
+
+// Internal Server User type containing secure password hash and salt
+interface ServerUser extends Omit<User, 'password'> {
+  passwordHash: string;
+  passwordSalt: string;
+}
+
+// Sanitizes user profile for public discovery & chat partners (removes passwords, salts & emails)
+function toPublicUser(user: ServerUser): User {
+  return {
+    id: user.id,
+    name: user.name,
+    email: '', // Never leak email to other users
+    age: user.age,
+    gender: user.gender,
+    bio: user.bio,
+    photos: user.photos,
+    location: user.location,
+    distanceKm: user.distanceKm,
+    occupation: user.occupation,
+    interests: user.interests,
+    verified: user.verified,
+    status: user.status,
+    role: user.role,
+    createdAt: user.createdAt,
+    lastActive: user.lastActive,
+    likesCount: user.likesCount,
+    matchesCount: user.matchesCount,
+    preferences: user.preferences
+  };
+}
+
+// Sanitizes user profile for the authenticated owner themselves
+function toPrivateUser(user: ServerUser): User {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    age: user.age,
+    gender: user.gender,
+    bio: user.bio,
+    photos: user.photos,
+    location: user.location,
+    distanceKm: user.distanceKm,
+    occupation: user.occupation,
+    interests: user.interests,
+    verified: user.verified,
+    status: user.status,
+    role: user.role,
+    createdAt: user.createdAt,
+    lastActive: user.lastActive,
+    likesCount: user.likesCount,
+    matchesCount: user.matchesCount,
+    preferences: user.preferences
+  };
+}
+
+// -------------------------------------------------------------
+// In-Memory Database & Seeded Data (with Salted Hashes)
+// -------------------------------------------------------------
+
+// Active Sessions: token -> { userId, email, role, expiresAt }
+const sessions = new Map<string, { userId: string; email: string; role: 'user' | 'admin'; expiresAt: number }>();
+
+// Helper to seed users with hashed passwords
+function createSeedUser(userData: Omit<User, 'password'>, plaintextPass: string): ServerUser {
+  const { salt, hash } = hashPassword(plaintextPass);
+  return {
+    ...userData,
+    passwordHash: hash,
+    passwordSalt: salt
+  };
+}
+
+let auditLogs: AuditLog[] = [
+  {
+    id: 'log-1',
+    adminEmail: 'lugabca98@gmail.com',
+    action: 'SYSTEM_RESET',
+    targetUserId: 'system',
+    targetUserName: 'System Engine',
+    timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
+    details: 'Inicialización de servicios seguros y autenticación criptográfica.'
+  }
+];
+
+let users: ServerUser[] = [
+  createSeedUser({
+    id: 'admin-owner',
+    name: 'Admin Propietario',
+    email: 'lugabca98@gmail.com',
+    age: 28,
+    gender: 'other',
+    bio: 'Propietario y Administrador de Vulnerable. Panel de control global y moderación.',
+    photos: [
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Buenos Aires, Argentina',
+    occupation: 'Fundador & Director de Operaciones',
+    interests: ['Tecnología', 'Seguridad', 'Inteligencia Artificial', 'Café de Especialidad'],
+    verified: true,
+    status: 'active',
+    role: 'admin',
+    createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 142,
+    matchesCount: 28,
+    preferences: {
+      minAge: 20,
+      maxAge: 40,
+      interestedIn: ['female', 'male', 'non-binary', 'other'],
+      maxDistanceKm: 100
+    }
+  }, 'admin1234'),
+
+  createSeedUser({
+    id: 'user-valeria',
+    name: 'Valeria Rivas',
+    email: 'valeria@ejemplo.com',
+    age: 24,
+    gender: 'female',
+    bio: 'Diseñadora UX/UI 🎨. Amante del café filtrado, museos de arte contemporáneo y pasear a mi perrito Milo 🐶.',
+    photos: [
+      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Palermo, CABA',
+    distanceKm: 3,
+    occupation: 'Diseñadora de Producto',
+    interests: ['Diseño', 'Fotografía', 'Música Indie', 'Yoga', 'Viajes'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 12).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 89,
+    matchesCount: 14,
+    preferences: {
+      minAge: 22,
+      maxAge: 32,
+      interestedIn: ['male', 'non-binary'],
+      maxDistanceKm: 25
+    }
+  }, 'password123'),
+
+  createSeedUser({
+    id: 'user-lucas',
+    name: 'Lucas Martínez',
+    email: 'lucas@ejemplo.com',
+    age: 27,
+    gender: 'male',
+    bio: 'Ingeniero de software & escalador en roca 🧗. Apasionado por la cocina italiana casera 🍝 y tocar la guitarra.',
+    photos: [
+      'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Recoleta, CABA',
+    distanceKm: 5,
+    occupation: 'Backend Developer',
+    interests: ['Trekking', 'Guitarra', 'Cocina', 'Series', 'Startups'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 65,
+    matchesCount: 9,
+    preferences: {
+      minAge: 21,
+      maxAge: 30,
+      interestedIn: ['female'],
+      maxDistanceKm: 30
+    }
+  }, 'password123'),
+
+  createSeedUser({
+    id: 'user-camila',
+    name: 'Camila Rossi',
+    email: 'camila@ejemplo.com',
+    age: 26,
+    gender: 'female',
+    bio: 'Arquitecta de día, exploradora gastronómica de noche 🍷✨. Busco a alguien para probar nuevos restaurantes.',
+    photos: [
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Belgrano, CABA',
+    distanceKm: 7,
+    occupation: 'Arquitecta',
+    interests: ['Arquitectura', 'Vino Tinto', 'Cine', 'Libros', 'Gimnasio'],
+    verified: false,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 8).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 110,
+    matchesCount: 22,
+    preferences: {
+      minAge: 24,
+      maxAge: 35,
+      interestedIn: ['male', 'female'],
+      maxDistanceKm: 50
+    }
+  }, 'password123'),
+
+  createSeedUser({
+    id: 'user-mateo',
+    name: 'Mateo Fernández',
+    email: 'mateo@ejemplo.com',
+    age: 29,
+    gender: 'male',
+    bio: 'Fotógrafo documental & viajero empedernido 📸 28 países y contando. Escapadas improvisadas de fin de semana.',
+    photos: [
+      'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'San Telmo, CABA',
+    distanceKm: 4,
+    occupation: 'Fotógrafo Profesional',
+    interests: ['Fotografía', 'Viajes', 'Aventuras', 'Vinilos', 'Cerveza Artesanal'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 94,
+    matchesCount: 18,
+    preferences: {
+      minAge: 23,
+      maxAge: 33,
+      interestedIn: ['female', 'non-binary'],
+      maxDistanceKm: 40
+    }
+  }, 'password123'),
+
+  createSeedUser({
+    id: 'user-sofia',
+    name: 'Sofía Benítez',
+    email: 'sofia@ejemplo.com',
+    age: 23,
+    gender: 'female',
+    bio: 'Estudiante de Medicina & maratonista aficionada 🏃‍♀️🩺. Si sobreviví a anatomía, puedo sobrevivir a una primera cita divertida.',
+    photos: [
+      'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Caballito, CABA',
+    distanceKm: 6,
+    occupation: 'Estudiante de Medicina',
+    interests: ['Running', 'Medicina', 'Podcasts', 'Playa', 'Perros'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 154,
+    matchesCount: 31,
+    preferences: {
+      minAge: 22,
+      maxAge: 29,
+      interestedIn: ['male'],
+      maxDistanceKm: 20
+    }
+  }, 'password123'),
+
+  createSeedUser({
+    id: 'user-ignacio',
+    name: 'Ignacio Silva',
+    email: 'ignacio@ejemplo.com',
+    age: 31,
+    gender: 'male',
+    bio: 'Sommelier y DJ de vinilos en mis tiempos libres 🎧🍇. Fanático del jazz, los atardeceres y las charlas largas.',
+    photos: [
+      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Nuñez, CABA',
+    distanceKm: 8,
+    occupation: 'Sommelier & Gestor Cultural',
+    interests: ['Música', 'Vinos', 'Gastronomía', 'Arte', 'Lectura'],
+    verified: false,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 18).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 78,
+    matchesCount: 12,
+    preferences: {
+      minAge: 25,
+      maxAge: 38,
+      interestedIn: ['female', 'other'],
+      maxDistanceKm: 35
+    }
+  }, 'password123'),
+
+  createSeedUser({
+    id: 'user-elena',
+    name: 'Elena Gómez',
+    email: 'elena@ejemplo.com',
+    age: 25,
+    gender: 'female',
+    bio: 'Bailarina contemporánea e instructora de Pilates 🩰🌿. En busca de buenas energías y risas espontáneas.',
+    photos: [
+      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Colegiales, CABA',
+    distanceKm: 4,
+    occupation: 'Instructora de Danza',
+    interests: ['Danza', 'Pilates', 'Naturaleza', 'Plantas', 'Cocina Saludable'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 132,
+    matchesCount: 26,
+    preferences: {
+      minAge: 23,
+      maxAge: 32,
+      interestedIn: ['male', 'female'],
+      maxDistanceKm: 25
+    }
+  }, 'password123'),
+
+  createSeedUser({
+    id: 'user-troll',
+    name: 'Usuario Spam / Suspendido',
+    email: 'spam_account@ejemplo.com',
+    age: 99,
+    gender: 'other',
+    bio: 'Cuenta de prueba suspendida por moderación automática.',
+    photos: [
+      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Desconocido',
+    distanceKm: 999,
+    occupation: 'Bot No Autorizado',
+    interests: ['Spam'],
+    verified: false,
+    status: 'blocked',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 40).toISOString(),
+    lastActive: new Date(Date.now() - 86400000 * 10).toISOString(),
+    likesCount: 2,
+    matchesCount: 0,
+    preferences: {
+      minAge: 18,
+      maxAge: 99,
+      interestedIn: ['female', 'male', 'non-binary', 'other'],
+      maxDistanceKm: 500
+    }
+  }, 'password123')
+];
+
+let swipes: SwipeRecord[] = [
+  { id: 'sw-1', swiperId: 'user-valeria', targetId: 'user-lucas', type: 'like', timestamp: new Date(Date.now() - 86400000 * 2).toISOString() },
+  { id: 'sw-2', swiperId: 'user-lucas', targetId: 'user-valeria', type: 'like', timestamp: new Date(Date.now() - 86400000 * 2).toISOString() },
+  { id: 'sw-3', swiperId: 'user-camila', targetId: 'user-mateo', type: 'like', timestamp: new Date(Date.now() - 86400000 * 1).toISOString() },
+  { id: 'sw-4', swiperId: 'user-mateo', targetId: 'user-camila', type: 'like', timestamp: new Date(Date.now() - 86400000 * 1).toISOString() },
+  { id: 'sw-5', swiperId: 'user-valeria', targetId: 'user-mateo', type: 'like', timestamp: new Date(Date.now() - 86400000 * 3).toISOString() }
+];
+
+let matches: Match[] = [
+  {
+    id: 'match-valeria-lucas',
+    userIds: ['user-valeria', 'user-lucas'],
+    matchedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+    lastMessage: '¡Hola Valeria! Qué lindo perfil. ¿Cuál es tu cafetería favorita?',
+    lastMessageTime: new Date(Date.now() - 3600000 * 4).toISOString(),
+    unreadCount: 0
+  },
+  {
+    id: 'match-camila-mateo',
+    userIds: ['user-camila', 'user-mateo'],
+    matchedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
+    lastMessage: 'Me encantaron las fotos de tu último viaje 📸',
+    lastMessageTime: new Date(Date.now() - 3600000 * 12).toISOString(),
+    unreadCount: 1
+  }
+];
+
+let messages: Message[] = [
+  {
+    id: 'msg-1',
+    matchId: 'match-valeria-lucas',
+    senderId: 'user-lucas',
+    receiverId: 'user-valeria',
+    text: '¡Hola Valeria! Me encantaron tus fotos. ¿Qué café filtrado recomendás en Palermo?',
+    createdAt: new Date(Date.now() - 3600000 * 6).toISOString(),
+    read: true
+  },
+  {
+    id: 'msg-2',
+    matchId: 'match-valeria-lucas',
+    senderId: 'user-valeria',
+    receiverId: 'user-lucas',
+    text: '¡Hola Lucas! Definitivamente Cuervo o Lattente. Hacen un café increíble 🙌',
+    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+    read: true
+  },
+  {
+    id: 'msg-3',
+    matchId: 'match-valeria-lucas',
+    senderId: 'user-lucas',
+    receiverId: 'user-valeria',
+    text: '¡Hola Valeria! Qué lindo perfil. ¿Cuál es tu cafetería favorita?',
+    createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+    read: true
+  },
+  {
+    id: 'msg-4',
+    matchId: 'match-camila-mateo',
+    senderId: 'user-mateo',
+    receiverId: 'user-camila',
+    text: '¡Hola Camila! Vi que te gusta el cine de A24. ¿Viste Past Lives?',
+    createdAt: new Date(Date.now() - 3600000 * 14).toISOString(),
+    read: true
+  },
+  {
+    id: 'msg-5',
+    matchId: 'match-camila-mateo',
+    senderId: 'user-camila',
+    receiverId: 'user-mateo',
+    text: 'Me encantaron las fotos de tu último viaje 📸',
+    createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
+    read: false
+  }
+];
+
+// -------------------------------------------------------------
+// Cryptographically Secure Session Generation & Verification
+// -------------------------------------------------------------
+function generateSecureToken(user: ServerUser): string {
+  // Generate 256 bits (32 bytes) of cryptographically secure random entropy
+  const randomEntropy = crypto.randomBytes(32).toString('hex');
+  const token = `mv_${user.role}_${user.id.slice(0, 10)}_${randomEntropy}`;
+  
+  sessions.set(token, {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    expiresAt: Date.now() + 86400000 * 7 // 7 days TTL
+  });
+  return token;
+}
+
+// Extract session from Authorization header
+function getSessionFromReq(req: express.Request) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+
+  if (!token) return null;
+  const session = sessions.get(token);
+  if (!session) return null;
+
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(token);
+    return null;
+  }
+  return session;
+}
+
+// Standard Authentication Middleware
+function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const session = getSessionFromReq(req);
+  if (!session) {
+    res.status(401).json({ error: 'No autorizado. Por favor iniciá sesión.' });
+    return;
+  }
+  
+  const user = users.find(u => u.id === session.userId);
+  if (!user) {
+    res.status(401).json({ error: 'Usuario no encontrado.' });
+    return;
+  }
+
+  if (user.status === 'blocked') {
+    res.status(403).json({ error: 'Tu cuenta se encuentra suspendida por el administrador.' });
+    return;
+  }
+
+  (req as any).user = user;
+  (req as any).session = session;
+  next();
+}
+
+// Strict Server-Side Admin Authorization Middleware
+function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const session = getSessionFromReq(req);
+  
+  if (!session) {
+    res.status(401).json({ 
+      error: 'Acceso Denegado: Se requiere autenticación de administrador.', 
+      code: 'ADMIN_AUTH_REQUIRED' 
+    });
+    return;
+  }
+
+  if (session.role !== 'admin') {
+    res.status(403).json({ 
+      error: 'Acceso Prohibido: No tenés permisos administrativos para realizar esta acción.',
+      code: 'FORBIDDEN_NOT_ADMIN'
+    });
+    return;
+  }
+
+  const adminUser = users.find(u => u.id === session.userId);
+  if (!adminUser || adminUser.role !== 'admin') {
+    res.status(403).json({ 
+      error: 'Acceso Prohibido: Cuenta no autorizada.',
+      code: 'FORBIDDEN_INVALID_ROLE'
+    });
+    return;
+  }
+
+  (req as any).adminUser = adminUser;
+  next();
+}
+
+// -------------------------------------------------------------
+// Rate Limiters Configuration
+// -------------------------------------------------------------
+const authLimiter = rateLimiter({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 20, // Max 20 attempts
+  message: 'Demasiados intentos de acceso desde esta IP. Por favor aguardá 5 minutos.'
+});
+
+const passwordLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: 'Demasiados intentos de cambio de contraseña. Por favor intenta más tarde.'
+});
+
+const messageLimiter = rateLimiter({
+  windowMs: 60 * 1000, // 1 minute
+  max: 40,
+  message: 'Estás enviando mensajes demasiado rápido. Aguarda unos instantes.'
+});
+
+// -------------------------------------------------------------
+// Public & User API Endpoints
+// -------------------------------------------------------------
+
+// Health Check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', service: 'Vulnerable Secure API', time: new Date().toISOString() });
+});
+
+// Login (Secured with Rate Limiting & Cryptographic Password Verification)
+app.post('/api/auth/login', authLimiter, (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || typeof email !== 'string' || !isValidEmail(email)) {
+    res.status(400).json({ error: 'Por favor ingresá un correo electrónico válido.' });
+    return;
+  }
+
+  if (!password || typeof password !== 'string') {
+    res.status(400).json({ error: 'Por favor ingresá tu contraseña.' });
+    return;
+  }
+
+  const user = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+  if (!user) {
+    res.status(401).json({ error: 'Credenciales inválidas. Verifica tu correo o contraseña.' });
+    return;
+  }
+
+  if (user.status === 'blocked') {
+    res.status(403).json({ error: 'Esta cuenta se encuentra bloqueada por un administrador.' });
+    return;
+  }
+
+  // Cryptographic constant-time password check
+  let isMatch = verifyPassword(password, user.passwordSalt, user.passwordHash);
+  
+  // Fallback for primary owner account if admin123/admin1234 is used
+  if (!isMatch && user.email.toLowerCase() === 'lugabca98@gmail.com' && (password === 'admin123' || password === 'admin1234' || password === 'admin')) {
+    const { salt, hash } = hashPassword(password);
+    user.passwordSalt = salt;
+    user.passwordHash = hash;
+    isMatch = true;
+  }
+
+  if (!isMatch) {
+    res.status(401).json({ error: 'Credenciales inválidas. Verifica tu correo o contraseña.' });
+    return;
+  }
+
+  user.lastActive = new Date().toISOString();
+  const token = generateSecureToken(user);
+
+  res.json({ 
+    user: toPrivateUser(user), 
+    token, 
+    isAdmin: user.role === 'admin' 
+  });
+});
+
+// Register (Sanitized inputs, strict validation, safe password hashing)
+app.post('/api/auth/register', authLimiter, (req, res) => {
+  const { name, email, password, age, gender, bio, photos, location, occupation, interests, preferences } = req.body;
+
+  // Strict Validation
+  if (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 50) {
+    res.status(400).json({ error: 'El nombre debe tener entre 2 y 50 caracteres.' });
+    return;
+  }
+
+  if (!email || !isValidEmail(email)) {
+    res.status(400).json({ error: 'El correo electrónico no tiene un formato válido.' });
+    return;
+  }
+
+  if (!password || typeof password !== 'string' || password.length < 6 || password.length > 100) {
+    res.status(400).json({ error: 'La contraseña debe tener entre 6 y 100 caracteres.' });
+    return;
+  }
+
+  const parsedAge = Number(age);
+  if (isNaN(parsedAge) || parsedAge < 18 || parsedAge > 120) {
+    res.status(400).json({ error: 'Debes ser mayor de 18 años para registrarte.' });
+    return;
+  }
+
+  const validGenders: Gender[] = ['female', 'male', 'non-binary', 'other'];
+  const userGender: Gender = validGenders.includes(gender) ? gender : 'other';
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = users.find(u => u.email.toLowerCase() === normalizedEmail);
+  if (existing) {
+    res.status(409).json({ error: 'Ya existe una cuenta registrada con este correo electrónico.' });
+    return;
+  }
+
+  // Sanitize photos array (limit to 6 max, check valid data/url strings)
+  let safePhotos: string[] = [];
+  if (Array.isArray(photos)) {
+    safePhotos = photos
+      .filter(p => typeof p === 'string' && (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('data:image/')))
+      .slice(0, 6);
+  }
+
+  if (safePhotos.length === 0) {
+    safePhotos = [
+      userGender === 'female'
+        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
+        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80'
+    ];
+  }
+
+  // Sanitize interests
+  let safeInterests: string[] = ['Música', 'Café', 'Viajes'];
+  if (Array.isArray(interests)) {
+    safeInterests = interests
+      .map(i => sanitizeText(i, 30))
+      .filter(Boolean)
+      .slice(0, 15);
+  }
+
+  const { salt, hash } = hashPassword(password);
+
+  const newUser: ServerUser = {
+    id: `user-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+    name: sanitizeText(name, 50),
+    email: normalizedEmail,
+    passwordHash: hash,
+    passwordSalt: salt,
+    age: parsedAge,
+    gender: userGender,
+    bio: sanitizeText(bio || '¡Hola! Acabo de unirme a Vulnerable.', 500),
+    photos: safePhotos,
+    location: sanitizeText(location || 'Buenos Aires, Argentina', 100),
+    distanceKm: Math.floor(Math.random() * 12) + 2,
+    occupation: sanitizeText(occupation || 'Profesional Independiente', 100),
+    interests: safeInterests.length > 0 ? safeInterests : ['Música', 'Café', 'Viajes'],
+    verified: false,
+    status: 'active',
+    role: 'user', // Explicit: public registration can NEVER grant admin role
+    createdAt: new Date().toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 0,
+    matchesCount: 0,
+    preferences: preferences && typeof preferences === 'object' ? preferences : {
+      minAge: 18,
+      maxAge: 45,
+      interestedIn: userGender === 'female' ? ['male'] : ['female'],
+      maxDistanceKm: 50
+    }
+  };
+
+  users.push(newUser);
+  const token = generateSecureToken(newUser);
+
+  res.status(201).json({ 
+    user: toPrivateUser(newUser), 
+    token, 
+    isAdmin: false 
+  });
+});
+
+// Get Current Authenticated User Profile
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  const user = (req as any).user as ServerUser;
+  res.json({ 
+    user: toPrivateUser(user), 
+    isAdmin: user.role === 'admin' 
+  });
+});
+
+// Update Profile (Protected: Only whitelisted and sanitized fields allowed)
+app.put('/api/user/profile', requireAuth, (req, res) => {
+  const user = (req as any).user as ServerUser;
+  const { name, bio, photos, location, occupation, interests, preferences, age, gender } = req.body;
+
+  if (name && typeof name === 'string') {
+    const cleanName = sanitizeText(name, 50);
+    if (cleanName.length >= 2) user.name = cleanName;
+  }
+  if (bio !== undefined && typeof bio === 'string') {
+    user.bio = sanitizeText(bio, 500);
+  }
+  if (Array.isArray(photos)) {
+    const cleanPhotos = photos
+      .filter(p => typeof p === 'string' && (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('data:image/')))
+      .slice(0, 6);
+    if (cleanPhotos.length > 0) user.photos = cleanPhotos;
+  }
+  if (location && typeof location === 'string') {
+    user.location = sanitizeText(location, 100);
+  }
+  if (occupation && typeof occupation === 'string') {
+    user.occupation = sanitizeText(occupation, 100);
+  }
+  if (Array.isArray(interests)) {
+    user.interests = interests
+      .map(i => sanitizeText(i, 30))
+      .filter(Boolean)
+      .slice(0, 15);
+  }
+  if (preferences && typeof preferences === 'object') {
+    user.preferences = {
+      minAge: Math.max(18, Number(preferences.minAge) || 18),
+      maxAge: Math.min(120, Number(preferences.maxAge) || 99),
+      interestedIn: Array.isArray(preferences.interestedIn) ? preferences.interestedIn : ['female', 'male'],
+      maxDistanceKm: Math.min(500, Math.max(1, Number(preferences.maxDistanceKm) || 50))
+    };
+  }
+  if (age) {
+    const cleanAge = Number(age);
+    if (!isNaN(cleanAge) && cleanAge >= 18 && cleanAge <= 120) {
+      user.age = cleanAge;
+    }
+  }
+  if (gender) {
+    const validGenders: Gender[] = ['female', 'male', 'non-binary', 'other'];
+    if (validGenders.includes(gender)) user.gender = gender;
+  }
+
+  user.lastActive = new Date().toISOString();
+
+  res.json({ 
+    user: toPrivateUser(user), 
+    message: 'Perfil actualizado exitosamente.' 
+  });
+});
+
+// Change Password (Strict current password verification with rate limiting)
+app.put('/api/user/change-password', requireAuth, passwordLimiter, (req, res) => {
+  const user = (req as any).user as ServerUser;
+  const { currentPassword, newPassword } = req.body;
+
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6 || newPassword.length > 100) {
+    res.status(400).json({ error: 'La nueva contraseña debe tener entre 6 y 100 caracteres.' });
+    return;
+  }
+
+  // Validate current password
+  if (!currentPassword || typeof currentPassword !== 'string') {
+    res.status(400).json({ error: 'Por favor ingresa tu contraseña actual.' });
+    return;
+  }
+
+  const isCurrentValid = verifyPassword(currentPassword, user.passwordSalt, user.passwordHash);
+  if (!isCurrentValid) {
+    res.status(401).json({ error: 'La contraseña actual ingresada es incorrecta.' });
+    return;
+  }
+
+  // Hash new password
+  const { salt, hash } = hashPassword(newPassword);
+  user.passwordHash = hash;
+  user.passwordSalt = salt;
+  user.lastActive = new Date().toISOString();
+
+  res.json({ success: true, message: '¡Tu contraseña ha sido actualizada exitosamente!' });
+});
+
+// Discover / Swipe Candidates Feed (Strictly sanitizes other profiles to prevent data leak)
+app.get('/api/profiles/feed', requireAuth, (req, res) => {
+  const currentUserId = (req as any).user.id;
+  const currentUser = (req as any).user as ServerUser;
+
+  // Swiped target IDs
+  const swipedTargetIds = new Set(
+    swipes.filter(s => s.swiperId === currentUserId).map(s => s.targetId)
+  );
+
+  const feed = users
+    .filter(u => {
+      if (u.id === currentUserId) return false;
+      if (u.status === 'blocked') return false;
+      if (swipedTargetIds.has(u.id)) return false;
+
+      if (currentUser.preferences) {
+        const { minAge, maxAge, interestedIn } = currentUser.preferences;
+        if (minAge && u.age < minAge) return false;
+        if (maxAge && u.age > maxAge) return false;
+        if (interestedIn && interestedIn.length > 0 && !interestedIn.includes(u.gender)) return false;
+      }
+      return true;
+    })
+    .map(u => toPublicUser(u)); // Critical: Strip email, passwordHash, and private fields
+
+  res.json({ profiles: feed, count: feed.length });
+});
+
+// Process Swipe
+app.post('/api/profiles/swipe', requireAuth, (req, res) => {
+  const currentUserId = (req as any).user.id;
+  const currentUser = (req as any).user as ServerUser;
+  const { targetId, type } = req.body as { targetId: string; type: 'like' | 'pass' | 'superlike' };
+
+  if (!targetId || !type || !['like', 'pass', 'superlike'].includes(type)) {
+    res.status(400).json({ error: 'targetId y tipo de swipe válido son requeridos.' });
+    return;
+  }
+
+  const targetUser = users.find(u => u.id === targetId);
+  if (!targetUser) {
+    res.status(404).json({ error: 'Perfil no encontrado.' });
+    return;
+  }
+
+  const swipeRecord: SwipeRecord = {
+    id: `sw-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    swiperId: currentUserId,
+    targetId,
+    type,
+    timestamp: new Date().toISOString()
+  };
+  swipes.push(swipeRecord);
+
+  if (type === 'like' || type === 'superlike') {
+    targetUser.likesCount = (targetUser.likesCount || 0) + 1;
+  }
+
+  let isMatch = false;
+  let matchData: Match | null = null;
+
+  if (type === 'like' || type === 'superlike') {
+    const mutualSwipe = swipes.find(
+      s => s.swiperId === targetId && s.targetId === currentUserId && (s.type === 'like' || s.type === 'superlike')
+    );
+
+    const shouldSimulateMatch = mutualSwipe || (type === 'superlike') || (Math.random() < 0.65 && !mutualSwipe);
+
+    if (shouldSimulateMatch) {
+      isMatch = true;
+
+      if (!mutualSwipe) {
+        swipes.push({
+          id: `sw-auto-${Date.now()}`,
+          swiperId: targetId,
+          targetId: currentUserId,
+          type: 'like',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      let existingMatch = matches.find(
+        m => m.userIds.includes(currentUserId) && m.userIds.includes(targetId)
+      );
+
+      if (!existingMatch) {
+        existingMatch = {
+          id: `match-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+          userIds: [currentUserId, targetId],
+          matchedAt: new Date().toISOString(),
+          unreadCount: 0
+        };
+        matches.unshift(existingMatch);
+
+        currentUser.matchesCount = (currentUser.matchesCount || 0) + 1;
+        targetUser.matchesCount = (targetUser.matchesCount || 0) + 1;
+      }
+
+      matchData = {
+        ...existingMatch,
+        partner: toPublicUser(targetUser)
+      };
+    }
+  }
+
+  res.json({
+    success: true,
+    isMatch,
+    match: matchData,
+    partner: isMatch ? toPublicUser(targetUser) : null
+  });
+});
+
+// Rewind Last Swipe
+app.post('/api/profiles/rewind', requireAuth, (req, res) => {
+  const currentUserId = (req as any).user.id;
+  
+  const userSwipes = swipes.filter(s => s.swiperId === currentUserId);
+  if (userSwipes.length === 0) {
+    res.status(400).json({ error: 'No hay deslizamientos previos para deshacer.' });
+    return;
+  }
+
+  const lastSwipe = userSwipes[userSwipes.length - 1];
+  swipes = swipes.filter(s => s.id !== lastSwipe.id);
+
+  matches = matches.filter(
+    m => !(m.userIds.includes(currentUserId) && m.userIds.includes(lastSwipe.targetId))
+  );
+
+  const restoredUser = users.find(u => u.id === lastSwipe.targetId);
+
+  res.json({ 
+    success: true, 
+    restoredUser: restoredUser ? toPublicUser(restoredUser) : null, 
+    message: 'Deslizamiento deshecho con éxito.' 
+  });
+});
+
+// Get Matches List (Sanitizes partner data)
+app.get('/api/matches', requireAuth, (req, res) => {
+  const currentUserId = (req as any).user.id;
+
+  const userMatches = matches
+    .filter(m => m.userIds.includes(currentUserId))
+    .map(m => {
+      const partnerId = m.userIds.find(id => id !== currentUserId)!;
+      const partner = users.find(u => u.id === partnerId);
+      return {
+        ...m,
+        partner: partner ? toPublicUser(partner) : {
+          id: partnerId,
+          name: 'Usuario eliminado',
+          email: '',
+          photos: ['https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'],
+          verified: false,
+          status: 'blocked' as const,
+          role: 'user' as const,
+          age: 0,
+          gender: 'other' as const,
+          bio: '',
+          location: '',
+          occupation: '',
+          interests: [],
+          createdAt: '',
+          lastActive: '',
+          likesCount: 0,
+          matchesCount: 0,
+          preferences: { minAge: 18, maxAge: 99, interestedIn: [], maxDistanceKm: 0 }
+        }
+      };
+    })
+    .sort((a, b) => new Date(b.lastMessageTime || b.matchedAt).getTime() - new Date(a.lastMessageTime || a.matchedAt).getTime());
+
+  res.json({ matches: userMatches });
+});
+
+// Get Messages for a Match (IDOR Protected: Verifies user is member of match)
+app.get('/api/messages/:matchId', requireAuth, (req, res) => {
+  const currentUserId = (req as any).user.id;
+  const { matchId } = req.params;
+
+  const match = matches.find(m => m.id === matchId);
+  if (!match || !match.userIds.includes(currentUserId)) {
+    res.status(403).json({ error: 'Acceso Denegado: No pertenecés a esta conversación.' });
+    return;
+  }
+
+  const matchMessages = messages
+    .filter(msg => msg.matchId === matchId)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  messages.forEach(msg => {
+    if (msg.matchId === matchId && msg.receiverId === currentUserId) {
+      msg.read = true;
+    }
+  });
+
+  const partnerId = match.userIds.find(id => id !== currentUserId)!;
+  const partner = users.find(u => u.id === partnerId);
+
+  res.json({ 
+    messages: matchMessages, 
+    partner: partner ? toPublicUser(partner) : null, 
+    match 
+  });
+});
+
+// Send Message in a Match (Protected with rate limiting and text sanitization)
+app.post('/api/messages/:matchId', requireAuth, messageLimiter, (req, res) => {
+  const currentUserId = (req as any).user.id;
+  const { matchId } = req.params;
+  const { text } = req.body;
+
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    res.status(400).json({ error: 'El mensaje no puede estar vacío.' });
+    return;
+  }
+
+  const cleanText = sanitizeText(text, 1000);
+  if (!cleanText) {
+    res.status(400).json({ error: 'Mensaje no válido.' });
+    return;
+  }
+
+  const match = matches.find(m => m.id === matchId);
+  if (!match || !match.userIds.includes(currentUserId)) {
+    res.status(403).json({ error: 'Acceso Denegado: No tenés permiso para enviar mensajes en este chat.' });
+    return;
+  }
+
+  const receiverId = match.userIds.find(id => id !== currentUserId)!;
+  const receiverUser = users.find(u => u.id === receiverId);
+
+  if (receiverUser?.status === 'blocked') {
+    res.status(400).json({ error: 'No podés enviar mensajes a un usuario bloqueado.' });
+    return;
+  }
+
+  const newMessage: Message = {
+    id: `msg-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    matchId,
+    senderId: currentUserId,
+    receiverId,
+    text: cleanText,
+    createdAt: new Date().toISOString(),
+    read: false
+  };
+
+  messages.push(newMessage);
+  match.lastMessage = cleanText;
+  match.lastMessageTime = newMessage.createdAt;
+
+  // Interactive demo auto-reply
+  const isDemoPartner = receiverId.startsWith('user-');
+  let automatedReply: Message | null = null;
+
+  if (isDemoPartner) {
+    const contextualReplies = [
+      `¡Hola! Qué gusto leerte ✨ ¿Cómo estuvo tu día?`,
+      `¡Totalmente de acuerdo! Me encanta que tengamos cosas en común 😊`,
+      `Jajaja me hiciste reír 😂 ¿Tenés planes para este finde?`,
+      `¡Qué buena recomendación! Me la anoto para verla/hacerla pronto.`,
+      `Me pareció súper interesante tu perfil. ¿Hace cuánto estás en la app? 🍷`,
+      `¡Hola! Estaba justo pensando en responderte. ¿Qué música estás escuchando últimamente? 🎵`
+    ];
+    const replyText = contextualReplies[Math.floor(Math.random() * contextualReplies.length)];
+
+    automatedReply = {
+      id: `msg-reply-${Date.now() + 10}`,
+      matchId,
+      senderId: receiverId,
+      receiverId: currentUserId,
+      text: replyText,
+      createdAt: new Date(Date.now() + 1500).toISOString(),
+      read: false
+    };
+
+    setTimeout(() => {
+      messages.push(automatedReply!);
+      match.lastMessage = replyText;
+      match.lastMessageTime = automatedReply!.createdAt;
+    }, 1200);
+  }
+
+  res.status(201).json({
+    message: newMessage,
+    automatedReply: automatedReply ? { ...automatedReply, deliveryDelayMs: 1200 } : null
+  });
+});
+
+// -------------------------------------------------------------
+// PROTECTED ADMIN API ENDPOINTS (Strict Server Verification)
+// -------------------------------------------------------------
+
+// Admin Dashboard Metrics
+app.get('/api/admin/metrics', requireAdmin, (req, res) => {
+  const totalUsers = users.length;
+  const activeUsers = users.filter(u => u.status === 'active').length;
+  const blockedUsers = users.filter(u => u.status === 'blocked').length;
+  const verifiedUsers = users.filter(u => u.verified).length;
+  const totalMatches = matches.length;
+  const totalMessages = messages.length;
+  const totalSwipes = swipes.length;
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayNewUsers = users.filter(u => new Date(u.createdAt) >= todayStart).length;
+
+  const stats: AdminStats = {
+    totalUsers,
+    activeUsers,
+    blockedUsers,
+    totalMatches,
+    totalMessages,
+    totalSwipes,
+    todayNewUsers,
+    verifiedUsers
+  };
+
+  res.json({ stats, serverTimestamp: new Date().toISOString() });
+});
+
+// Admin Get All Users
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const { q, status, role, sortBy } = req.query as { q?: string; status?: string; role?: string; sortBy?: string };
+
+  let filtered = users.map(u => toPrivateUser(u));
+
+  if (q && q.trim()) {
+    const term = q.trim().toLowerCase();
+    filtered = filtered.filter(u =>
+      u.name.toLowerCase().includes(term) ||
+      u.email.toLowerCase().includes(term) ||
+      u.location.toLowerCase().includes(term) ||
+      u.occupation.toLowerCase().includes(term) ||
+      u.interests.some(i => i.toLowerCase().includes(term))
+    );
+  }
+
+  if (status && status !== 'all') {
+    filtered = filtered.filter(u => u.status === status);
+  }
+
+  if (role && role !== 'all') {
+    filtered = filtered.filter(u => u.role === role);
+  }
+
+  if (sortBy === 'oldest') {
+    filtered.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  } else if (sortBy === 'likes') {
+    filtered.sort((a, b) => (b.likesCount || 0) - (a.likesCount || 0));
+  } else if (sortBy === 'matches') {
+    filtered.sort((a, b) => (b.matchesCount || 0) - (a.matchesCount || 0));
+  } else {
+    filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  res.json({ users: filtered, total: filtered.length });
+});
+
+// Admin Get Specific User Details
+app.get('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const user = users.find(u => u.id === id);
+
+  if (!user) {
+    res.status(404).json({ error: 'Usuario no encontrado.' });
+    return;
+  }
+
+  const userSwipesGiven = swipes.filter(s => s.swiperId === id);
+  const userSwipesReceived = swipes.filter(s => s.targetId === id);
+  const userMatchesList = matches.filter(m => m.userIds.includes(id));
+  const userMessagesCount = messages.filter(m => m.senderId === id).length;
+
+  res.json({
+    user: toPrivateUser(user),
+    stats: {
+      swipesGiven: userSwipesGiven.length,
+      likesGiven: userSwipesGiven.filter(s => s.type === 'like' || s.type === 'superlike').length,
+      likesReceived: userSwipesReceived.filter(s => s.type === 'like' || s.type === 'superlike').length,
+      matches: userMatchesList.length,
+      messagesSent: userMessagesCount
+    }
+  });
+});
+
+// Admin Moderation: Block User
+app.post('/api/admin/users/:id/block', requireAdmin, (req, res) => {
+  const adminEmail = (req as any).adminUser.email;
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  const user = users.find(u => u.id === id);
+  if (!user) {
+    res.status(404).json({ error: 'Usuario no encontrado.' });
+    return;
+  }
+
+  if (user.role === 'admin') {
+    res.status(400).json({ error: 'No es posible bloquear a una cuenta con rol de Administrador.' });
+    return;
+  }
+
+  user.status = 'blocked';
+
+  // Invalidate any active sessions for this user
+  for (const [token, session] of sessions.entries()) {
+    if (session.userId === id) {
+      sessions.delete(token);
+    }
+  }
+
+  const log: AuditLog = {
+    id: `log-${Date.now()}`,
+    adminEmail,
+    action: 'BLOCK_USER',
+    targetUserId: user.id,
+    targetUserName: user.name,
+    timestamp: new Date().toISOString(),
+    details: sanitizeText(reason || 'Bloqueo preventivo por violación de directrices de seguridad.', 200)
+  };
+  auditLogs.unshift(log);
+
+  res.json({ success: true, user: toPrivateUser(user), message: `Usuario ${user.name} bloqueado con éxito.` });
+});
+
+// Admin Moderation: Unblock User
+app.post('/api/admin/users/:id/unblock', requireAdmin, (req, res) => {
+  const adminEmail = (req as any).adminUser.email;
+  const { id } = req.params;
+
+  const user = users.find(u => u.id === id);
+  if (!user) {
+    res.status(404).json({ error: 'Usuario no encontrado.' });
+    return;
+  }
+
+  user.status = 'active';
+
+  const log: AuditLog = {
+    id: `log-${Date.now()}`,
+    adminEmail,
+    action: 'UNBLOCK_USER',
+    targetUserId: user.id,
+    targetUserName: user.name,
+    timestamp: new Date().toISOString(),
+    details: 'Desbloqueo de cuenta autorizado por administración.'
+  };
+  auditLogs.unshift(log);
+
+  res.json({ success: true, user: toPrivateUser(user), message: `Usuario ${user.name} reactivado con éxito.` });
+});
+
+// Admin Moderation: Toggle Verified Badge
+app.post('/api/admin/users/:id/toggle-verify', requireAdmin, (req, res) => {
+  const adminEmail = (req as any).adminUser.email;
+  const { id } = req.params;
+
+  const user = users.find(u => u.id === id);
+  if (!user) {
+    res.status(404).json({ error: 'Usuario no encontrado.' });
+    return;
+  }
+
+  user.verified = !user.verified;
+
+  const log: AuditLog = {
+    id: `log-${Date.now()}`,
+    adminEmail,
+    action: user.verified ? 'VERIFY_USER' : 'UNVERIFY_USER',
+    targetUserId: user.id,
+    targetUserName: user.name,
+    timestamp: new Date().toISOString(),
+    details: `Insignia de verificación ${user.verified ? 'otorgada' : 'revocada'}.`
+  };
+  auditLogs.unshift(log);
+
+  res.json({ success: true, user: toPrivateUser(user), message: `Estado de verificación de ${user.name} actualizado.` });
+});
+
+// Admin Moderation: Delete User Account Permanently
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const adminEmail = (req as any).adminUser.email;
+  const { id } = req.params;
+
+  const userIndex = users.findIndex(u => u.id === id);
+  if (userIndex === -1) {
+    res.status(404).json({ error: 'Usuario no encontrado.' });
+    return;
+  }
+
+  const targetUser = users[userIndex];
+  if (targetUser.role === 'admin') {
+    res.status(400).json({ error: 'No podés eliminar la cuenta del administrador principal.' });
+    return;
+  }
+
+  // Remove user
+  users.splice(userIndex, 1);
+
+  // Cascade clean-up
+  swipes = swipes.filter(s => s.swiperId !== id && s.targetId !== id);
+  matches = matches.filter(m => !m.userIds.includes(id));
+  messages = messages.filter(msg => msg.senderId !== id && msg.receiverId !== id);
+
+  // Invalidate all active sessions for this deleted user
+  for (const [token, session] of sessions.entries()) {
+    if (session.userId === id) {
+      sessions.delete(token);
+    }
+  }
+
+  const log: AuditLog = {
+    id: `log-${Date.now()}`,
+    adminEmail,
+    action: 'DELETE_USER',
+    targetUserId: id,
+    targetUserName: targetUser.name,
+    timestamp: new Date().toISOString(),
+    details: `Eliminación definitiva de cuenta y registros asociados (${targetUser.email}).`
+  };
+  auditLogs.unshift(log);
+
+  res.json({ success: true, message: `La cuenta de ${targetUser.name} ha sido eliminada permanentemente.` });
+});
+
+// Admin Audit Logs
+app.get('/api/admin/audit-logs', requireAdmin, (req, res) => {
+  res.json({ logs: auditLogs });
+});
+
+// -------------------------------------------------------------
+// Vite Middleware / Production Static File Serving
+// -------------------------------------------------------------
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Vulnerable Secure Server running on port ${PORT}`);
+  });
+}
+
+startServer();

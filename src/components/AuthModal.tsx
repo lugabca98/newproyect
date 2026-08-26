@@ -1,0 +1,578 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Sparkles, 
+  Flame, 
+  Camera, 
+  User as UserIcon, 
+  Mail, 
+  Lock, 
+  Eye,
+  EyeOff,
+  MapPin, 
+  Briefcase, 
+  X,
+  Trash2,
+  Check
+} from 'lucide-react';
+import { User, Gender } from '../types';
+import { api } from '../api';
+import { EmbraceHeartLogo } from './EmbraceHeartLogo';
+
+interface AuthModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: (user: User, isAdmin: boolean) => void;
+  initialMode?: 'login' | 'register';
+  canClose?: boolean;
+}
+
+const PRESET_AVATARS = [
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=600&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80',
+  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=600&q=80',
+  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80',
+  'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=600&q=80'
+];
+
+export const AuthModal: React.FC<AuthModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  initialMode = 'register',
+  canClose = true
+}) => {
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      setErrorMsg('');
+    }
+  }, [initialMode, isOpen]);
+  
+  // Login form
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Register form
+  const [name, setName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
+  const [age, setAge] = useState(24);
+  const [gender, setGender] = useState<Gender>('female');
+  const [occupation, setOccupation] = useState('');
+  const [location, setLocation] = useState('Buenos Aires, Argentina');
+  const [bio, setBio] = useState('¡Hola! Me gusta viajar, la música y probar buena comida.');
+  const [selectedPhoto, setSelectedPhoto] = useState(PRESET_AVATARS[0]);
+  const [customPhotos, setCustomPhotos] = useState<string[]>([]);
+  const [interestInput, setInterestInput] = useState('Música, Café, Viajes, Cine');
+
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const result = uploadEvent.target?.result as string;
+      if (result) {
+        setSelectedPhoto(result);
+        setCustomPhotos(prev => [result, ...prev]);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const res = await api.login(email, password);
+      onSuccess(res.user, res.isAdmin);
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al iniciar sesión');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !regEmail.trim() || !regPassword.trim()) {
+      setErrorMsg('Por favor completa todos los campos requeridos, incluyendo tu contraseña.');
+      return;
+    }
+
+    if (regPassword.length < 6) {
+      setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    if (regPassword !== regConfirmPassword) {
+      setErrorMsg('Las contraseñas no coinciden. Por favor verifícalas.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const interestsArray = interestInput.split(',').map(s => s.trim()).filter(Boolean);
+      const allPhotos = customPhotos.length > 0 ? [selectedPhoto, ...customPhotos.filter(p => p !== selectedPhoto)] : [selectedPhoto];
+
+      const res = await api.register({
+        name: name.trim(),
+        email: regEmail.trim(),
+        password: regPassword.trim(),
+        age: Number(age),
+        gender,
+        occupation: occupation.trim() || 'Estudiante / Profesional',
+        location: location.trim(),
+        bio: bio.trim(),
+        photos: allPhotos,
+        interests: interestsArray,
+        preferences: {
+          minAge: 18,
+          maxAge: 45,
+          interestedIn: gender === 'female' ? ['male'] : ['female'],
+          maxDistanceKm: 50
+        }
+      });
+
+      onSuccess(res.user, res.isAdmin);
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al registrar usuario');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Quick Fast-Login helper for test accounts
+  const handleQuickLogin = async (userEmail: string) => {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const res = await api.login(userEmail, 'password123');
+      onSuccess(res.user, res.isAdmin);
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+      <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto">
+        
+        {/* Close Button */}
+        {canClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-5 right-5 p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Brand Header */}
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-500 to-amber-400 p-0.5 shadow-lg shadow-rose-500/30 mb-2">
+            <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center p-1.5">
+              <EmbraceHeartLogo className="w-9 h-9" glow={true} />
+            </div>
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-tight">
+            {mode === 'register' ? 'Crear Cuenta' : 'Iniciar Sesión'}
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            {mode === 'register' ? 'Subí tus fotos y comenzá a deslizar hoy mismo' : 'Bienvenido de nuevo a Vulnerable'}
+          </p>
+        </div>
+
+        {/* Tab Toggle */}
+        <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-6">
+          <button
+            type="button"
+            onClick={() => { setMode('register'); setErrorMsg(''); }}
+            className={`py-2.5 rounded-xl text-xs font-bold transition ${
+              mode === 'register' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Registrarse
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('login'); setErrorMsg(''); }}
+            className={`py-2.5 rounded-xl text-xs font-bold transition ${
+              mode === 'login' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Ingresar
+          </button>
+        </div>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs text-center">
+            {errorMsg}
+          </div>
+        )}
+
+        {/* --- REGISTER FORM --- */}
+        {mode === 'register' && (
+          <form onSubmit={handleRegister} className="space-y-4">
+            
+            {/* Photo Selection */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-2">
+                Elegí o subí tu foto de perfil
+              </label>
+              
+              <div className="flex items-center gap-3 mb-3">
+                <img
+                  src={selectedPhoto}
+                  alt="Avatar seleccionado"
+                  className="w-16 h-16 rounded-full object-cover border-2 border-rose-500 shadow-md flex-shrink-0"
+                />
+                
+                <label className="flex-1 py-2.5 px-3 rounded-xl border border-dashed border-slate-700 hover:border-rose-500 bg-slate-950/60 text-slate-300 hover:text-rose-400 flex items-center justify-center gap-2 text-xs font-medium cursor-pointer transition">
+                  <Camera className="w-4 h-4" />
+                  <span>Subir foto desde dispositivo</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {/* Avatar Presets Grid & Custom Photos */}
+              <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar items-center">
+                {customPhotos.map((url, i) => (
+                  <div key={`custom-${i}`} className="relative flex-shrink-0">
+                    <img
+                      src={url}
+                      alt={`Foto subida ${i + 1}`}
+                      onClick={() => setSelectedPhoto(url)}
+                      className={`w-11 h-11 rounded-full object-cover cursor-pointer transition border-2 ${
+                        selectedPhoto === url ? 'border-rose-500 scale-105 shadow' : 'border-slate-700 opacity-80 hover:opacity-100'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCustomPhotos(prev => prev.filter((_, idx) => idx !== i));
+                        if (selectedPhoto === url) {
+                          setSelectedPhoto(PRESET_AVATARS[0]);
+                        }
+                      }}
+                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center text-[10px] shadow"
+                      title="Eliminar foto subida"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ))}
+
+                {PRESET_AVATARS.map((url, i) => (
+                  <img
+                    key={i}
+                    src={url}
+                    alt={`Preset ${i}`}
+                    onClick={() => setSelectedPhoto(url)}
+                    className={`w-11 h-11 rounded-full object-cover cursor-pointer transition flex-shrink-0 border-2 ${
+                      selectedPhoto === url ? 'border-rose-500 scale-105 shadow' : 'border-slate-800 opacity-60 hover:opacity-100'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Nombre</label>
+                <input
+                  id="reg-input-name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Tu nombre"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Email</label>
+                <input
+                  id="reg-input-email"
+                  type="email"
+                  required
+                  value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)}
+                  placeholder="tu@email.com"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                  Crear Contraseña <span className="text-slate-500 font-normal">(mín. 6)</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="w-3.5 h-3.5" />
+                  </div>
+                  <input
+                    id="reg-input-password"
+                    type={showRegPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="Tu contraseña"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-9 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPassword(!showRegPassword)}
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-200 transition"
+                    title={showRegPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                  >
+                    {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                  Confirmar Contraseña
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="w-3.5 h-3.5" />
+                  </div>
+                  <input
+                    id="reg-input-confirm-password"
+                    type={showRegConfirmPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={regConfirmPassword}
+                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    placeholder="Repite la contraseña"
+                    className={`w-full bg-slate-950 border rounded-xl pl-9 pr-9 py-2 text-xs text-white placeholder-slate-500 focus:outline-none ${
+                      regConfirmPassword && regPassword === regConfirmPassword
+                        ? 'border-emerald-500/60 focus:border-emerald-500'
+                        : regConfirmPassword && regPassword !== regConfirmPassword
+                        ? 'border-rose-500/60 focus:border-rose-500'
+                        : 'border-slate-800 focus:border-rose-500'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-200 transition"
+                    title={showRegConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                  >
+                    {showRegConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                {regConfirmPassword && (
+                  <p className={`text-[10px] mt-0.5 ${regPassword === regConfirmPassword ? 'text-emerald-400 font-medium' : 'text-rose-400'}`}>
+                    {regPassword === regConfirmPassword ? '✓ Las contraseñas coinciden' : '✕ Las contraseñas no coinciden'}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Edad</label>
+                  <input
+                    id="reg-input-age"
+                    type="number"
+                    min="18"
+                    max="99"
+                    value={age}
+                    onChange={(e) => setAge(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Género</label>
+                  <select
+                    id="reg-select-gender"
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value as Gender)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+                  >
+                    <option value="female">Mujer</option>
+                    <option value="male">Hombre</option>
+                    <option value="non-binary">No Binario</option>
+                    <option value="other">Otro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Ocupación</label>
+                <input
+                  id="reg-input-occupation"
+                  type="text"
+                  value={occupation}
+                  onChange={(e) => setOccupation(e.target.value)}
+                  placeholder="Ej. Fotógrafo, Abogada..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Ubicación</label>
+              <input
+                id="reg-input-location"
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Ciudad, País"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Biografía</label>
+              <textarea
+                id="reg-textarea-bio"
+                rows={2}
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Escribe algo sobre tus gustos..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 resize-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Intereses (separados por coma)</label>
+              <input
+                id="reg-input-interests"
+                type="text"
+                value={interestInput}
+                onChange={(e) => setInterestInput(e.target.value)}
+                placeholder="Cine, Música, Café, Yoga"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <button
+              id="btn-submit-register"
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01]"
+            >
+              {loading ? 'Creando tu cuenta...' : 'Crear Perfil y Empezar'}
+            </button>
+
+          </form>
+        )}
+
+        {/* --- LOGIN FORM --- */}
+        {mode === 'login' && (
+          <div className="space-y-5">
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Correo Electrónico</label>
+                <input
+                  id="login-input-email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="tu@email.com"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Contraseña</label>
+                <input
+                  id="login-input-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <button
+                id="btn-submit-login"
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01]"
+              >
+                {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
+              </button>
+            </form>
+
+            {/* Quick Demo Switcher */}
+            <div className="pt-2 border-t border-slate-800">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2 text-center">
+                O ingresá rápidamente con una cuenta demo:
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('valeria@ejemplo.com')}
+                  className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left flex items-center gap-2 transition"
+                >
+                  <img
+                    src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80"
+                    alt="Valeria"
+                    className="w-7 h-7 rounded-full object-cover"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-white block">Valeria</span>
+                    <span className="text-[10px] text-slate-400">Diseñadora, 24</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('lucas@ejemplo.com')}
+                  className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left flex items-center gap-2 transition"
+                >
+                  <img
+                    src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=100&q=80"
+                    alt="Lucas"
+                    className="w-7 h-7 rounded-full object-cover"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-white block">Lucas</span>
+                    <span className="text-[10px] text-slate-400">Desarrollador, 27</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+};

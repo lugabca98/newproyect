@@ -1,0 +1,8 @@
+{
+  "name": "Vulnerable - Citas & Admin",
+  "description": "App móvil de citas con deslizamiento de tarjetas, fotos, chat en tiempo real y panel de administración protegido para moderación de usuarios.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
