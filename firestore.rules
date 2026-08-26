@@ -2,12 +2,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Default Deny: Ningún acceso no autorizado
+    // -------------------------------------------------------------
+    // DEFAULT DENY: Cierre total por defecto
+    // -------------------------------------------------------------
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Funciones de validación criptográfica y autenticación Firebase
+    // -------------------------------------------------------------
+    // FUNCIONES DE CONTROL DE ACCESO
+    // -------------------------------------------------------------
     function isSignedIn() {
       return request.auth != null;
     }
@@ -16,12 +20,19 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // El rol admin se verifica mediante Custom Claims del token JWT o en la colección reservada /admins/
+    // ÚNICA FUENTE DE AUTORIDAD ADMINISTRATIVA: Custom Claims criptográfico en el token JWT
     function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    // Validación de usuario activo: solo usuarios autenticados con status 'active' en /publicProfiles (o administradores)
+    function isActiveUser() {
       return isSignedIn() && (
-        request.auth.token.admin == true ||
-        request.auth.token.email == 'lugabca98@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/publicProfiles/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/publicProfiles/$(request.auth.uid)).data.status == 'active'
+        )
       );
     }
 
@@ -35,31 +46,37 @@ service cloud.firestore {
 
     // -------------------------------------------------------------
     // 1. PERFILES PÚBLICOS (/publicProfiles/{userId})
-    // Accesible para que otros usuarios descubran el perfil en el feed.
-    // NO CONTIENE EMAIL, PREFERENCIAS PRIVADAS NI DATOS DE AUDITORÍA.
     // -------------------------------------------------------------
     match /publicProfiles/{userId} {
-      allow read: if isSignedIn();
+      // Un usuario bloqueado NO puede consultar perfiles públicos ni el feed
+      allow read: if isActiveUser();
 
+      // Registro inicial: valores de seguridad estrictos (role='user', status='active', verified=false)
       allow create: if isSignedIn() && (
-        isOwner(userId) &&
-        (incoming().role == 'user' || isAdmin()) &&
-        (incoming().status == 'active') &&
-        (incoming().verified == false || isAdmin())
+        (
+          isOwner(userId) && 
+          incoming().role == 'user' && 
+          incoming().status == 'active' && 
+          incoming().verified == false &&
+          incoming().likesCount == 0 &&
+          incoming().matchesCount == 0
+        ) ||
+        isAdmin()
       );
 
-      // Los usuarios solo pueden actualizar campos visuales de su propio perfil
-      // ESTÁ PROHIBIDO auto-asignarse role='admin', cambiar status o verified
+      // Edición de perfil: se remueven likesCount, matchesCount y distanceKm de los campos permitidos al usuario
       allow update: if isSignedIn() && (
         isAdmin() || (
           isOwner(userId) &&
+          isActiveUser() &&
           incoming().role == existing().role &&
           incoming().status == existing().status &&
           incoming().verified == existing().verified &&
+          incoming().likesCount == existing().likesCount &&
+          incoming().matchesCount == existing().matchesCount &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'name', 'bio', 'photos', 'age', 'gender', 'location', 
-            'occupation', 'interests', 'lastActive', 
-            'distanceKm', 'likesCount', 'matchesCount'
+            'occupation', 'interests', 'lastActive'
           ])
         )
       );
@@ -69,24 +86,39 @@ service cloud.firestore {
 
     // -------------------------------------------------------------
     // 2. PERFILES PRIVADOS (/users/{userId})
-    // Contiene el email, preferencias de distancia/edad y configuración privada.
-    // SOLAMENTE EL PROPIO USUARIO O UN ADMINISTRADOR PUEDEN LEER O MODIFICAR.
     // -------------------------------------------------------------
     match /users/{userId} {
-      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      // Solo el propietario activo (o admin) puede leer sus datos privados
+      allow read: if isSignedIn() && (
+        (isOwner(userId) && isActiveUser()) || 
+        isAdmin()
+      );
 
       allow create: if isSignedIn() && (
-        isOwner(userId) &&
-        (incoming().role == 'user' || isAdmin()) &&
-        (incoming().status == 'active')
+        (
+          isOwner(userId) && 
+          incoming().role == 'user' && 
+          incoming().status == 'active' && 
+          incoming().verified == false &&
+          incoming().likesCount == 0 &&
+          incoming().matchesCount == 0
+        ) ||
+        isAdmin()
       );
 
       allow update: if isSignedIn() && (
         isAdmin() || (
           isOwner(userId) &&
+          isActiveUser() &&
           incoming().role == existing().role &&
           incoming().status == existing().status &&
-          incoming().verified == existing().verified
+          incoming().verified == existing().verified &&
+          incoming().likesCount == existing().likesCount &&
+          incoming().matchesCount == existing().matchesCount &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'bio', 'photos', 'age', 'gender', 'location', 
+            'occupation', 'interests', 'preferences', 'lastActive'
+          ])
         )
       );
 
@@ -94,44 +126,49 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------
-    // 3. REGISTRO DE ADMINISTRADORES (/admins/{adminId})
-    // -------------------------------------------------------------
-    match /admins/{adminId} {
-      allow read, write: if isAdmin();
-    }
-
-    // -------------------------------------------------------------
-    // 4. SWIPES (/swipes/{swipeId})
+    // 3. SWIPES (/swipes/{swipeId})
+    // Formato determinístico: sw_{swiperId}_{targetId}
     // -------------------------------------------------------------
     match /swipes/{swipeId} {
-      allow read: if isSignedIn() && (
+      allow read: if isActiveUser() && (
         request.auth.uid == resource.data.swiperId || 
         request.auth.uid == resource.data.targetId ||
         isAdmin()
       );
 
-      // El swiperId DEBE coincidir con el UID autenticado en Firebase
-      allow create: if isSignedIn() && request.auth.uid == incoming().swiperId;
+      allow create: if isActiveUser() && 
+        request.auth.uid == incoming().swiperId &&
+        incoming().targetId != request.auth.uid &&
+        incoming().type in ['like', 'pass', 'superlike'] &&
+        swipeId == ('sw_' + request.auth.uid + '_' + incoming().targetId);
 
-      allow update, delete: if isAdmin();
+      allow update: if false; // Inmutables
+      allow delete: if isAdmin();
     }
 
     // -------------------------------------------------------------
-    // 5. MATCHES (/matches/{matchId})
+    // 4. MATCHES (/matches/{matchId})
+    // Validación recíproca criptográfica de likes cruzados
     // -------------------------------------------------------------
     match /matches/{matchId} {
-      allow read: if isSignedIn() && (
+      allow read: if isActiveUser() && (
         request.auth.uid in resource.data.userIds || 
         isAdmin()
       );
 
-      // Requiere que el creador forme parte de userIds
-      allow create: if isSignedIn() && (
-        request.auth.uid in incoming().userIds
+      allow create: if isActiveUser() && (
+        isAdmin() || (
+          request.auth.uid in incoming().userIds &&
+          incoming().userIds.size() == 2 &&
+          exists(/databases/$(database)/documents/swipes/$( 'sw_' + incoming().userIds[0] + '_' + incoming().userIds[1] )) &&
+          exists(/databases/$(database)/documents/swipes/$( 'sw_' + incoming().userIds[1] + '_' + incoming().userIds[0] )) &&
+          get(/databases/$(database)/documents/swipes/$( 'sw_' + incoming().userIds[0] + '_' + incoming().userIds[1] )).data.type in ['like', 'superlike'] &&
+          get(/databases/$(database)/documents/swipes/$( 'sw_' + incoming().userIds[1] + '_' + incoming().userIds[0] )).data.type in ['like', 'superlike']
+        )
       );
 
-      allow update: if isSignedIn() && (
-        request.auth.uid in resource.data.userIds || 
+      allow update: if isActiveUser() && (
+        (request.auth.uid in resource.data.userIds && incoming().userIds == existing().userIds) || 
         isAdmin()
       );
 
@@ -139,41 +176,48 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------
-    // 6. MENSAJES DE CHAT (/messages/{messageId})
+    // 5. MENSAJES DE CHAT PRIVADOS (/messages/{messageId})
     // -------------------------------------------------------------
     match /messages/{messageId} {
-      // Solo los participantes directos (sender/receiver) o el Admin pueden leer
-      allow read: if isSignedIn() && (
+      allow read: if isActiveUser() && (
         request.auth.uid == resource.data.senderId || 
         request.auth.uid == resource.data.receiverId || 
         isAdmin()
       );
 
-      // No se puede suplantar la identidad al enviar mensajes
-      allow create: if isSignedIn() && (
-        request.auth.uid == incoming().senderId
+      allow create: if isActiveUser() && (
+        request.auth.uid == incoming().senderId &&
+        incoming().receiverId != incoming().senderId &&
+        exists(/databases/$(database)/documents/matches/$(incoming().matchId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/matches/$(incoming().matchId)).data.userIds &&
+        incoming().receiverId in get(/databases/$(database)/documents/matches/$(incoming().matchId)).data.userIds
       );
 
-      allow update: if isSignedIn() && (
-        request.auth.uid == resource.data.receiverId || 
-        isAdmin()
+      // Únicamente el destinatario puede marcar como leído ('read')
+      allow update: if isActiveUser() && (
+        isAdmin() || (
+          isOwner(resource.data.receiverId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['read'])
+        )
       );
 
       allow delete: if isAdmin();
     }
 
     // -------------------------------------------------------------
-    // 7. AUDITORÍA (/auditLogs/{logId})
+    // 6. REGISTRO DE AUDITORÍA (/auditLogs/{logId})
     // -------------------------------------------------------------
     match /auditLogs/{logId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      allow create: if isAdmin() && incoming().adminUid == request.auth.uid;
+      allow update, delete: if false; // Inmutable
     }
 
     // -------------------------------------------------------------
-    // 8. REPORTES (/reports/{reportId})
+    // 7. REPORTES (/reports/{reportId})
     // -------------------------------------------------------------
     match /reports/{reportId} {
-      allow create: if isSignedIn();
+      allow create: if isActiveUser() && incoming().reporterId == request.auth.uid;
       allow read, update, delete: if isAdmin();
     }
   }

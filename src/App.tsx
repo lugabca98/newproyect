@@ -72,13 +72,30 @@ export function App() {
     }
   };
 
+  // Real-time listener for current user status (Disconnect instantly if blocked by Admin)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const unsub = firebaseService.onAuthChange((fbUser) => {
+      if (!fbUser) {
+        setCurrentUser(null);
+        setAuthModalOpen(true);
+      }
+    });
+
+    return () => unsub();
+  }, [currentUser?.id]);
+
   // Reload feed whenever current user changes or preferences change
   useEffect(() => {
     if (currentUser) {
+      if (currentUser.status === 'blocked') {
+        handleLogout();
+        return;
+      }
       loadFeed();
       loadUnreadMatches();
     }
-  }, [currentUser?.id, currentUser?.preferences]);
+  }, [currentUser?.id, currentUser?.preferences, currentUser?.status]);
 
   const loadFeed = async () => {
     setFeedLoading(true);

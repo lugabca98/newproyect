@@ -399,7 +399,8 @@ class FirebaseService {
     match: Match | null;
     partner: User | null;
   }> {
-    const swipeId = `sw-${swiperId}-${targetId}-${Date.now()}`;
+    // Deterministic Swipe ID to enforce uniqueness and security rules
+    const swipeId = `sw_${swiperId}_${targetId}`;
     const swipeRecord: SwipeRecord = {
       id: swipeId,
       swiperId,
@@ -427,28 +428,20 @@ class FirebaseService {
     }
 
     // 3. STRICT MUTUAL MATCH CHECK:
-    // Only matches if targetUser has legitimately liked the swiper in Firestore
-    const swipesCol = collection(db, 'swipes');
-    const mutualQuery = query(
-      swipesCol, 
-      where('swiperId', '==', targetId), 
-      where('targetId', '==', swiperId)
-    );
-    const mutualSnap = await getDocs(mutualQuery);
-    const hasTargetLikedSwiper = mutualSnap.docs.some(d => {
-      const t = d.data().type;
-      return t === 'like' || t === 'superlike';
-    });
+    // Check if reciprocal swipe exists with 'like' or 'superlike'
+    const reciprocalSwipeDoc = await getDoc(doc(db, 'swipes', `sw_${targetId}_${swiperId}`));
+    const hasTargetLikedSwiper = reciprocalSwipeDoc.exists() && 
+      (reciprocalSwipeDoc.data().type === 'like' || reciprocalSwipeDoc.data().type === 'superlike');
 
     if (hasTargetLikedSwiper) {
       isMatch = true;
       const firstId = swiperId < targetId ? swiperId : targetId;
       const secondId = swiperId < targetId ? targetId : swiperId;
-      const matchId = `match-${firstId}-${secondId}`;
+      const matchId = `match_${firstId}_${secondId}`;
       
       createdMatch = {
         id: matchId,
-        userIds: [swiperId, targetId],
+        userIds: [firstId, secondId],
         matchedAt: new Date().toISOString(),
         lastMessage: `¡Hiciste match con ${targetUser?.name || 'alguien especial'}!`,
         lastMessageTime: new Date().toISOString(),
@@ -459,21 +452,21 @@ class FirebaseService {
       // Save match document to Firestore
       await setDoc(doc(db, 'matches', matchId), {
         id: matchId,
-        userIds: [swiperId, targetId],
+        userIds: [firstId, secondId],
         matchedAt: createdMatch.matchedAt,
         lastMessage: createdMatch.lastMessage,
         lastMessageTime: createdMatch.lastMessageTime,
         unreadCount: 0
       }, { merge: true });
 
-      // Automatically create welcoming greeting message from the match
+      // Create welcoming greeting message with valid authenticated senderId
       const msgId = `msg-${Date.now()}`;
       await setDoc(doc(db, 'messages', msgId), {
         id: msgId,
         matchId,
-        senderId: targetId,
-        receiverId: swiperId,
-        text: `¡Hola! Me alegra mucho que hayamos conectado. 😊`,
+        senderId: swiperId,
+        receiverId: targetId,
+        text: `¡Hola! Me alegra que hayamos conectado. 😊`,
         createdAt: new Date().toISOString(),
         read: false
       });

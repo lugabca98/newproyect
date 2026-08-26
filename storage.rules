@@ -1,0 +1,36 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Default Deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    // Reglas para fotos de perfil de usuarios:
+    match /users/{userId}/photos/{photoId} {
+      // Solo usuarios autenticados y con sesión válida (o administradores) pueden visualizar fotos
+      allow read: if isSignedIn();
+
+      // Subida de fotografías: solo el dueño de la cuenta o admin, límite de 5MB y tipo MIME imagen
+      allow write: if (isOwner(userId) || isAdmin()) &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/(jpeg|png|webp|jpg)');
+
+      // Eliminación: solo el dueño de la cuenta o admin
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+  }
+}
