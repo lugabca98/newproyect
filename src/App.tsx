@@ -8,6 +8,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { AuthModal } from './components/AuthModal';
 import { User, Match, SwipeType } from './types';
 import { api } from './api';
+import { firebaseService } from './firebaseService';
 import { 
   Flame, 
   Sparkles, 
@@ -46,6 +47,9 @@ export function App() {
 
   const initAuth = async () => {
     try {
+      // Trigger cloud initialization in background
+      firebaseService.initializeDatabase().catch(() => {});
+      
       const token = api.getToken();
       if (token) {
         const me = await api.getMe();

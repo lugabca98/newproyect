@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Match, Message, User } from '../types';
 import { api } from '../api';
+import { firebaseService } from '../firebaseService';
 
 interface ChatViewProps {
   currentUser: User;
@@ -37,10 +38,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load matches
+  // Load matches and listen in real-time
   useEffect(() => {
     loadMatches();
-  }, []);
+    const unsub = firebaseService.subscribeMatches(currentUser.id, (realtimeMatches) => {
+      if (realtimeMatches && realtimeMatches.length > 0) {
+        setMatches(realtimeMatches);
+      }
+    });
+    return () => unsub?.();
+  }, [currentUser.id]);
 
   const loadMatches = async () => {
     try {
@@ -54,14 +61,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
-  // Load messages and poll periodically for real user replies
+  // Real-time Firestore messages subscription with polling fallback
   useEffect(() => {
     if (selectedMatchId) {
       loadMessages(selectedMatchId, true);
-      const interval = setInterval(() => {
-        loadMessages(selectedMatchId, false);
-      }, 3000);
-      return () => clearInterval(interval);
+      const unsub = firebaseService.subscribeMessages(selectedMatchId, (realtimeMsgs) => {
+        if (realtimeMsgs && realtimeMsgs.length > 0) {
+          setMessages(realtimeMsgs);
+          scrollToBottom();
+        }
+      });
+      return () => unsub?.();
     }
   }, [selectedMatchId]);
 

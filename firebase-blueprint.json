@@ -1,0 +1,109 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile for neurodivergent dating / connection",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "age": { "type": "number" },
+        "gender": { "type": "string" },
+        "bio": { "type": "string" },
+        "photos": { "type": "array", "items": { "type": "string" } },
+        "location": { "type": "string" },
+        "distanceKm": { "type": "number" },
+        "occupation": { "type": "string" },
+        "interests": { "type": "array", "items": { "type": "string" } },
+        "verified": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "blocked"] },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string" },
+        "lastActive": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "matchesCount": { "type": "number" }
+      },
+      "required": ["id", "name", "email", "age", "gender"]
+    },
+    "Swipe": {
+      "title": "Swipe",
+      "description": "Swipe or interaction record between users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "swiperId": { "type": "string" },
+        "targetId": { "type": "string" },
+        "type": { "type": "string", "enum": ["like", "pass", "superlike"] },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["swiperId", "targetId", "type", "timestamp"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Match between two users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userIds": { "type": "array", "items": { "type": "string" } },
+        "matchedAt": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "lastMessageTime": { "type": "string" },
+        "unreadCount": { "type": "number" }
+      },
+      "required": ["id", "userIds", "matchedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Chat message between matched users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matchId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["matchId", "senderId", "receiverId", "text", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Administrative action logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "targetUserId": { "type": "string" },
+        "targetUserName": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["adminEmail", "action", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "entity": "User",
+      "description": "Collection of user profiles"
+    },
+    "swipes": {
+      "entity": "Swipe",
+      "description": "Collection of user swipes and likes"
+    },
+    "matches": {
+      "entity": "Match",
+      "description": "Collection of mutual matches"
+    },
+    "messages": {
+      "entity": "Message",
+      "description": "Collection of direct chat messages"
+    },
+    "auditLogs": {
+      "entity": "AuditLog",
+      "description": "Collection of admin activity audit logs"
+    }
+  }
+}

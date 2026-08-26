@@ -10,7 +10,7 @@ const STORAGE_KEY_PASSWORDS = 'mv_db_passwords'; // email -> password
 export const DEFAULT_ADMIN_EMAIL = 'lugabca98@gmail.com';
 export const DEFAULT_ADMIN_PASS = 'admin1234';
 
-const INITIAL_ADMIN: User = {
+export const INITIAL_ADMIN: User = {
   id: 'admin-owner',
   name: 'Admin Propietario',
   email: DEFAULT_ADMIN_EMAIL,
@@ -39,7 +39,7 @@ const INITIAL_ADMIN: User = {
   }
 };
 
-const INITIAL_SEED_USERS: User[] = [
+export const INITIAL_SEED_USERS: User[] = [
   INITIAL_ADMIN,
   {
     id: 'user-valeria',

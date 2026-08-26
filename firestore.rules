@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+
+    // Swipes Collection
+    match /swipes/{swipeId} {
+      allow read, write: if true;
+    }
+
+    // Matches Collection
+    match /matches/{matchId} {
+      allow read, write: if true;
+    }
+
+    // Messages Collection
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // Audit Logs Collection
+    match /auditLogs/{logId} {
+      allow read, write: if true;
+    }
+
+    // Reports Collection
+    match /reports/{reportId} {
+      allow read, write: if true;
+    }
+  }
+}

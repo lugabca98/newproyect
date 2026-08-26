@@ -1,5 +1,6 @@
 import { User, Match, Message, AdminStats, AuditLog, SwipeRecord } from './types';
 import { localDb, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASS } from './localStore';
+import { firebaseService } from './firebaseService';
 
 class ApiService {
   private token: string | null = localStorage.getItem('mv_auth_token');
@@ -29,79 +30,37 @@ class ApiService {
     return this.currentLocalUserId || localStorage.getItem('mv_current_user_id') || 'admin-owner';
   }
 
-  private getHeaders(): HeadersInit {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    const token = this.getToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    return headers;
-  }
-
-  private async request<T = any>(url: string, options: RequestInit = {}, defaultErrorMsg = 'Error en la solicitud'): Promise<T> {
-    const res = await fetch(url, options);
-    const contentType = res.headers.get('content-type') || '';
-    let parsedData: any = null;
-
-    if (contentType.includes('application/json')) {
-      try {
-        parsedData = await res.json();
-      } catch {
-        parsedData = null;
-      }
-    } else {
-      try {
-        const text = await res.text();
-        if (text) {
-          parsedData = { error: text.slice(0, 160) };
-        }
-      } catch {
-        parsedData = null;
-      }
-    }
-
-    if (!res.ok) {
-      const errorMsg = parsedData?.error || parsedData?.message || (res.status === 404 ? 'NOT_FOUND' : defaultErrorMsg);
-      throw new Error(errorMsg);
-    }
-
-    if (parsedData === null) {
-      throw new Error(defaultErrorMsg);
-    }
-
-    return parsedData as T;
-  }
-
   // -------------------------------------------------------------
-  // AUTHENTICATION
+  // AUTHENTICATION (Firestore Cloud + Local Fallback)
   // -------------------------------------------------------------
   async login(email?: string, password?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanPass = password || '';
 
-    // First attempt server request
+    // Attempt Firebase Cloud Login
     try {
-      const res = await this.request<{ user: User; token: string; isAdmin: boolean }>(
-        '/api/auth/login',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail, password: cleanPass }),
-        },
-        'Error al iniciar sesión'
-      );
-      this.setToken(res.token, res.user.id);
-      return res;
+      const user = await firebaseService.loginUser(cleanEmail, cleanPass);
+      const token = `fb_token_${user.id}_${Date.now()}`;
+      const isAdmin = user.role === 'admin' || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+      this.setToken(token, user.id);
+      
+      // Keep local store in sync
+      const users = localDb.getUsers();
+      const idx = users.findIndex(u => u.id === user.id || u.email.toLowerCase() === cleanEmail);
+      if (idx !== -1) {
+        users[idx] = user;
+      } else {
+        users.push(user);
+      }
+      localDb.saveUsers(users);
+
+      return { user, token, isAdmin };
     } catch (err: any) {
       const msg = err.message || '';
-      // If server returned a business error (wrong password, blocked account), throw it
-      if (msg.includes('inválidas') || msg.includes('bloqueada') || msg.includes('suspendida')) {
+      if (msg.includes('Credenciales') || msg.includes('suspendida')) {
         throw err;
       }
-      
-      // If server is 404 / Cloud Run NOT_FOUND / offline, fallback to local store seamlessly
+      // Fallback to local store
       return this.localLogin(cleanEmail, cleanPass);
     }
   }
@@ -140,23 +99,21 @@ class ApiService {
 
   async register(userData: Partial<User>): Promise<{ user: User; token: string; isAdmin: boolean }> {
     try {
-      const res = await this.request<{ user: User; token: string; isAdmin: boolean }>(
-        '/api/auth/register',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(userData),
-        },
-        'Error al registrarse'
-      );
-      this.setToken(res.token, res.user.id);
-      return res;
+      const newUser = await firebaseService.registerUser(userData, userData.password);
+      const token = `fb_token_${newUser.id}_${Date.now()}`;
+      this.setToken(token, newUser.id);
+
+      // Keep local store in sync
+      const users = localDb.getUsers();
+      users.push(newUser);
+      localDb.saveUsers(users);
+
+      return { user: newUser, token, isAdmin: newUser.role === 'admin' };
     } catch (err: any) {
       const msg = err.message || '';
       if (msg.includes('ya está registrado')) {
         throw err;
       }
-      // If server is offline / 404 NOT_FOUND, fallback to local registration
       return this.localRegister(userData);
     }
   }
@@ -212,36 +169,38 @@ class ApiService {
   }
 
   async getMe(): Promise<{ user: User; isAdmin: boolean }> {
+    const currentId = this.getCurrentUserId();
     try {
-      return await this.request<{ user: User; isAdmin: boolean }>(
-        '/api/auth/me',
-        { headers: this.getHeaders() },
-        'Error al obtener perfil'
-      );
+      const fbUser = await firebaseService.getUserById(currentId);
+      if (fbUser) {
+        return { user: fbUser, isAdmin: fbUser.role === 'admin' };
+      }
     } catch {
-      const currentId = this.getCurrentUserId();
-      const users = localDb.getUsers();
-      const user = users.find(u => u.id === currentId) || users[0];
-      return { user, isAdmin: user.role === 'admin' };
+      // ignore and fallback to local
     }
+    const users = localDb.getUsers();
+    const user = users.find(u => u.id === currentId) || users[0];
+    return { user, isAdmin: user.role === 'admin' };
   }
 
   // -------------------------------------------------------------
   // USER PROFILE
   // -------------------------------------------------------------
   async updateProfile(profileData: Partial<User>): Promise<{ user: User; message: string }> {
+    const currentId = this.getCurrentUserId();
     try {
-      return await this.request<{ user: User; message: string }>(
-        '/api/user/profile',
-        {
-          method: 'PUT',
-          headers: this.getHeaders(),
-          body: JSON.stringify(profileData),
-        },
-        'Error al actualizar perfil'
-      );
+      const updated = await firebaseService.updateUser(currentId, profileData);
+      
+      // Sync local
+      const users = localDb.getUsers();
+      const idx = users.findIndex(u => u.id === currentId);
+      if (idx !== -1) {
+        users[idx] = { ...users[idx], ...profileData };
+        localDb.saveUsers(users);
+      }
+
+      return { user: updated, message: '¡Perfil actualizado con éxito!' };
     } catch {
-      const currentId = this.getCurrentUserId();
       const users = localDb.getUsers();
       const index = users.findIndex(u => u.id === currentId);
       if (index === -1) throw new Error('Usuario no encontrado');
@@ -253,46 +212,42 @@ class ApiService {
   }
 
   async changePassword(currentPassword?: string, newPassword?: string): Promise<{ success: boolean; message: string }> {
-    try {
-      return await this.request<{ success: boolean; message: string }>(
-        '/api/user/change-password',
-        {
-          method: 'PUT',
-          headers: this.getHeaders(),
-          body: JSON.stringify({ currentPassword, newPassword }),
-        },
-        'Error al cambiar contraseña'
-      );
-    } catch {
-      const currentId = this.getCurrentUserId();
+    const currentId = this.getCurrentUserId();
+    if (newPassword) {
+      try {
+        await firebaseService.changePassword(currentId, newPassword);
+      } catch {
+        // Fallback
+      }
       const users = localDb.getUsers();
       const user = users.find(u => u.id === currentId);
-      if (user && newPassword) {
+      if (user) {
         localDb.setPassword(user.email, newPassword);
       }
-      return { success: true, message: '¡Tu contraseña ha sido actualizada exitosamente!' };
     }
+    return { success: true, message: '¡Tu contraseña ha sido actualizada exitosamente!' };
   }
 
   // -------------------------------------------------------------
   // FEED & SWIPES
   // -------------------------------------------------------------
   async getFeed(): Promise<{ profiles: User[]; count: number }> {
+    const currentId = this.getCurrentUserId();
     try {
-      return await this.request<{ profiles: User[]; count: number }>(
-        '/api/profiles/feed',
-        { headers: this.getHeaders() },
-        'Error al cargar candidatos'
-      );
-    } catch {
-      const currentId = this.getCurrentUserId();
-      const users = localDb.getUsers();
-      const swipes = localDb.getSwipes();
-      const swipedIds = new Set(swipes.filter(s => s.swiperId === currentId).map(s => s.targetId));
-      
-      const feed = users.filter(u => u.id !== currentId && u.role !== 'admin' && u.status === 'active' && !swipedIds.has(u.id));
-      return { profiles: feed, count: feed.length };
+      const feed = await firebaseService.getFeed(currentId);
+      if (feed.length > 0) {
+        return { profiles: feed, count: feed.length };
+      }
+    } catch (err) {
+      console.warn('Firestore feed error, fallback to local:', err);
     }
+
+    const users = localDb.getUsers();
+    const swipes = localDb.getSwipes();
+    const swipedIds = new Set(swipes.filter(s => s.swiperId === currentId).map(s => s.targetId));
+    
+    const feed = users.filter(u => u.id !== currentId && u.role !== 'admin' && u.status === 'active' && !swipedIds.has(u.id));
+    return { profiles: feed, count: feed.length };
   }
 
   async swipe(targetId: string, type: 'like' | 'pass' | 'superlike'): Promise<{
@@ -301,23 +256,17 @@ class ApiService {
     match: Match | null;
     partner: User | null;
   }> {
+    const currentId = this.getCurrentUserId();
     try {
-      return await this.request<{
-        success: boolean;
-        isMatch: boolean;
-        match: Match | null;
-        partner: User | null;
-      }>(
-        '/api/profiles/swipe',
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify({ targetId, type }),
-        },
-        'Error al procesar deslizamiento'
-      );
-    } catch {
-      const currentId = this.getCurrentUserId();
+      const res = await firebaseService.recordSwipe(currentId, targetId, type);
+      return {
+        success: true,
+        isMatch: res.isMatch,
+        match: res.match,
+        partner: res.partner
+      };
+    } catch (err) {
+      console.warn('Firestore swipe fallback to local:', err);
       const swipes = localDb.getSwipes();
       const users = localDb.getUsers();
       const matches = localDb.getMatches();
@@ -339,7 +288,6 @@ class ApiService {
 
       if (isLike && target) {
         target.likesCount = (target.likesCount || 0) + 1;
-        // In local mode, create exciting match
         isMatch = true;
         createdMatch = {
           id: `match-${currentId}-${targetId}-${Date.now()}`,
@@ -365,100 +313,90 @@ class ApiService {
   }
 
   async rewind(): Promise<{ success: boolean; restoredUser: User; message: string }> {
-    try {
-      return await this.request<{ success: boolean; restoredUser: User; message: string }>(
-        '/api/profiles/rewind',
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-        },
-        'Error al deshacer'
-      );
-    } catch {
-      const currentId = this.getCurrentUserId();
-      const swipes = localDb.getSwipes();
-      const lastSwipeIndex = swipes.map(s => s.swiperId).lastIndexOf(currentId);
+    const currentId = this.getCurrentUserId();
+    const swipes = localDb.getSwipes();
+    const lastSwipeIndex = swipes.map(s => s.swiperId).lastIndexOf(currentId);
 
-      if (lastSwipeIndex === -1) {
-        throw new Error('No hay perfiles recientes para deshacer.');
-      }
-
-      const lastSwipe = swipes[lastSwipeIndex];
-      swipes.splice(lastSwipeIndex, 1);
-      localDb.saveSwipes(swipes);
-
-      const users = localDb.getUsers();
-      const restored = users.find(u => u.id === lastSwipe.targetId);
-      if (!restored) throw new Error('No se pudo recuperar el perfil.');
-
-      return { success: true, restoredUser: restored, message: `Deshiciste la acción sobre ${restored.name}.` };
+    if (lastSwipeIndex === -1) {
+      throw new Error('No hay perfiles recientes para deshacer.');
     }
+
+    const lastSwipe = swipes[lastSwipeIndex];
+    swipes.splice(lastSwipeIndex, 1);
+    localDb.saveSwipes(swipes);
+
+    const users = localDb.getUsers();
+    const restored = users.find(u => u.id === lastSwipe.targetId);
+    if (!restored) throw new Error('No se pudo recuperar el perfil.');
+
+    return { success: true, restoredUser: restored, message: `Deshiciste la acción sobre ${restored.name}.` };
   }
 
   // -------------------------------------------------------------
   // MATCHES & MESSAGES
   // -------------------------------------------------------------
   async getMatches(): Promise<{ matches: Match[] }> {
+    const currentId = this.getCurrentUserId();
     try {
-      return await this.request<{ matches: Match[] }>(
-        '/api/matches',
-        { headers: this.getHeaders() },
-        'Error al cargar matches'
-      );
+      const fbMatches = await firebaseService.getMatches(currentId);
+      if (fbMatches.length > 0) {
+        return { matches: fbMatches };
+      }
     } catch {
-      const currentId = this.getCurrentUserId();
-      const allMatches = localDb.getMatches();
-      const users = localDb.getUsers();
-
-      const userMatches = allMatches
-        .filter(m => m.userIds.includes(currentId as any))
-        .map(m => {
-          const partnerId = m.userIds.find(id => id !== currentId);
-          const partner = users.find(u => u.id === partnerId);
-          return { ...m, partner };
-        });
-
-      return { matches: userMatches };
+      // Fallback to local
     }
+
+    const allMatches = localDb.getMatches();
+    const users = localDb.getUsers();
+
+    const userMatches = allMatches
+      .filter(m => m.userIds.includes(currentId as any))
+      .map(m => {
+        const partnerId = m.userIds.find(id => id !== currentId);
+        const partner = users.find(u => u.id === partnerId);
+        return { ...m, partner };
+      });
+
+    return { matches: userMatches };
   }
 
   async getMessages(matchId: string): Promise<{ messages: Message[]; partner: User; match: Match }> {
+    const currentId = this.getCurrentUserId();
     try {
-      return await this.request<{ messages: Message[]; partner: User; match: Match }>(
-        `/api/messages/${matchId}`,
-        { headers: this.getHeaders() },
-        'Error al cargar mensajes'
-      );
-    } catch {
-      const currentId = this.getCurrentUserId();
-      const matches = localDb.getMatches();
+      const msgs = await firebaseService.getMessages(matchId);
+      const matches = await firebaseService.getMatches(currentId);
       const match = matches.find(m => m.id === matchId);
-      if (!match) throw new Error('Match no encontrado');
-
-      const users = localDb.getUsers();
-      const partnerId = match.userIds.find(id => id !== currentId)!;
-      const partner = users.find(u => u.id === partnerId) || users[0];
-
-      const allMessages = localDb.getMessages();
-      const matchMessages = allMessages.filter(msg => msg.matchId === matchId);
-
-      return { messages: matchMessages, partner, match };
+      if (match && match.partner) {
+        return { messages: msgs, partner: match.partner, match };
+      }
+    } catch {
+      // Fallback
     }
+
+    const matches = localDb.getMatches();
+    const match = matches.find(m => m.id === matchId);
+    if (!match) throw new Error('Match no encontrado');
+
+    const users = localDb.getUsers();
+    const partnerId = match.userIds.find(id => id !== currentId)!;
+    const partner = users.find(u => u.id === partnerId) || users[0];
+
+    const allMessages = localDb.getMessages();
+    const matchMessages = allMessages.filter(msg => msg.matchId === matchId);
+
+    return { messages: matchMessages, partner, match };
   }
 
   async sendMessage(matchId: string, text: string): Promise<{ message: Message }> {
+    const currentId = this.getCurrentUserId();
     try {
-      return await this.request<{ message: Message }>(
-        `/api/messages/${matchId}`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify({ text }),
-        },
-        'Error al enviar mensaje'
-      );
+      const matches = await firebaseService.getMatches(currentId);
+      const match = matches.find(m => m.id === matchId);
+      const partnerId = match?.userIds.find(id => id !== currentId) || 'partner';
+      
+      const newMsg = await firebaseService.sendMessage(matchId, currentId, partnerId, text);
+      return { message: newMsg };
     } catch {
-      const currentId = this.getCurrentUserId();
       const matches = localDb.getMatches();
       const match = matches.find(m => m.id === matchId);
       if (!match) throw new Error('Conversación no encontrada');
@@ -491,11 +429,8 @@ class ApiService {
   // -------------------------------------------------------------
   async getAdminMetrics(): Promise<{ stats: AdminStats; serverTimestamp: string }> {
     try {
-      return await this.request<{ stats: AdminStats; serverTimestamp: string }>(
-        '/api/admin/metrics',
-        { headers: this.getHeaders() },
-        'No autorizado para acceder a métricas de administración'
-      );
+      const stats = await firebaseService.getAdminStats();
+      return { stats, serverTimestamp: new Date().toISOString() };
     } catch {
       const users = localDb.getUsers();
       const matches = localDb.getMatches();
@@ -519,17 +454,8 @@ class ApiService {
 
   async getAdminUsers(params?: { q?: string; status?: string; role?: string; sortBy?: string }): Promise<{ users: User[]; total: number }> {
     try {
-      const query = new URLSearchParams();
-      if (params?.q) query.set('q', params.q);
-      if (params?.status) query.set('status', params.status);
-      if (params?.role) query.set('role', params.role);
-      if (params?.sortBy) query.set('sortBy', params.sortBy);
-
-      return await this.request<{ users: User[]; total: number }>(
-        `/api/admin/users?${query.toString()}`,
-        { headers: this.getHeaders() },
-        'No autorizado para gestionar usuarios'
-      );
+      const users = await firebaseService.getAllUsers(params);
+      return { users, total: users.length };
     } catch {
       let users = [...localDb.getUsers()];
 
@@ -550,118 +476,65 @@ class ApiService {
 
   async getAdminUserDetail(id: string): Promise<{ user: User; stats: any }> {
     try {
-      return await this.request<{ user: User; stats: any }>(
-        `/api/admin/users/${id}`,
-        { headers: this.getHeaders() },
-        'Error al cargar detalles de usuario'
-      );
+      const user = await firebaseService.getUserById(id);
+      if (user) {
+        return { user, stats: { totalLikesGiven: 12, totalLikesReceived: user.likesCount } };
+      }
     } catch {
-      const users = localDb.getUsers();
-      const user = users.find(u => u.id === id);
-      if (!user) throw new Error('Usuario no encontrado');
-      return { user, stats: { totalLikesGiven: 12, totalLikesReceived: user.likesCount } };
+      // fallback
     }
+    const users = localDb.getUsers();
+    const user = users.find(u => u.id === id);
+    if (!user) throw new Error('Usuario no encontrado');
+    return { user, stats: { totalLikesGiven: 12, totalLikesReceived: user.likesCount } };
   }
 
   async blockUser(id: string, reason?: string): Promise<{ success: boolean; user: User; message: string }> {
     try {
-      return await this.request<{ success: boolean; user: User; message: string }>(
-        `/api/admin/users/${id}/block`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify({ reason }),
-        },
-        'Error al bloquear usuario'
-      );
+      const user = await firebaseService.blockUser(id, reason);
+      return { success: true, user, message: `Usuario ${user.name} bloqueado con éxito en la nube.` };
     } catch {
       const users = localDb.getUsers();
       const user = users.find(u => u.id === id);
       if (!user) throw new Error('Usuario no encontrado');
       user.status = 'blocked';
       localDb.saveUsers(users);
-      localDb.addAuditLog({
-        id: `log-${Date.now()}`,
-        adminEmail: DEFAULT_ADMIN_EMAIL,
-        action: 'BLOCK_USER',
-        targetUserId: user.id,
-        targetUserName: user.name,
-        timestamp: new Date().toISOString(),
-        details: reason || 'Bloqueo administrativo de cuenta'
-      });
       return { success: true, user, message: `Usuario ${user.name} bloqueado con éxito.` };
     }
   }
 
   async unblockUser(id: string): Promise<{ success: boolean; user: User; message: string }> {
     try {
-      return await this.request<{ success: boolean; user: User; message: string }>(
-        `/api/admin/users/${id}/unblock`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify({ reason: 'Desbloqueo de cuenta' }),
-        },
-        'Error al desbloquear usuario'
-      );
+      const user = await firebaseService.unblockUser(id);
+      return { success: true, user, message: `Usuario ${user.name} reactivado con éxito en la nube.` };
     } catch {
       const users = localDb.getUsers();
       const user = users.find(u => u.id === id);
       if (!user) throw new Error('Usuario no encontrado');
       user.status = 'active';
       localDb.saveUsers(users);
-      localDb.addAuditLog({
-        id: `log-${Date.now()}`,
-        adminEmail: DEFAULT_ADMIN_EMAIL,
-        action: 'UNBLOCK_USER',
-        targetUserId: user.id,
-        targetUserName: user.name,
-        timestamp: new Date().toISOString(),
-        details: 'Desbloqueo administrativo autorizado.'
-      });
       return { success: true, user, message: `Usuario ${user.name} reactivado con éxito.` };
     }
   }
 
   async toggleVerifyUser(id: string): Promise<{ success: boolean; user: User; message: string }> {
     try {
-      return await this.request<{ success: boolean; user: User; message: string }>(
-        `/api/admin/users/${id}/toggle-verify`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-        },
-        'Error al alternar verificación'
-      );
+      const user = await firebaseService.toggleVerifyUser(id);
+      return { success: true, user, message: `Insignia de verificación de ${user.name} actualizada en Firestore.` };
     } catch {
       const users = localDb.getUsers();
       const user = users.find(u => u.id === id);
       if (!user) throw new Error('Usuario no encontrado');
       user.verified = !user.verified;
       localDb.saveUsers(users);
-      localDb.addAuditLog({
-        id: `log-${Date.now()}`,
-        adminEmail: DEFAULT_ADMIN_EMAIL,
-        action: user.verified ? 'VERIFY_USER' : 'UNVERIFY_USER',
-        targetUserId: user.id,
-        targetUserName: user.name,
-        timestamp: new Date().toISOString(),
-        details: `Insignia de verificación ${user.verified ? 'otorgada' : 'revocada'}.`
-      });
       return { success: true, user, message: `Estado de verificación de ${user.name} actualizado.` };
     }
   }
 
   async deleteUser(id: string): Promise<{ success: boolean; message: string }> {
     try {
-      return await this.request<{ success: boolean; message: string }>(
-        `/api/admin/users/${id}`,
-        {
-          method: 'DELETE',
-          headers: this.getHeaders(),
-        },
-        'Error al eliminar usuario'
-      );
+      await firebaseService.deleteUser(id);
+      return { success: true, message: `La cuenta ha sido eliminada de Firestore.` };
     } catch {
       let users = localDb.getUsers();
       const targetUser = users.find(u => u.id === id);
@@ -670,29 +543,20 @@ class ApiService {
 
       users = users.filter(u => u.id !== id);
       localDb.saveUsers(users);
-      localDb.addAuditLog({
-        id: `log-${Date.now()}`,
-        adminEmail: DEFAULT_ADMIN_EMAIL,
-        action: 'DELETE_USER',
-        targetUserId: id,
-        targetUserName: targetUser.name,
-        timestamp: new Date().toISOString(),
-        details: `Eliminación de cuenta (${targetUser.email}).`
-      });
       return { success: true, message: `La cuenta de ${targetUser.name} ha sido eliminada.` };
     }
   }
 
   async getAdminAuditLogs(): Promise<{ logs: AuditLog[] }> {
     try {
-      return await this.request<{ logs: AuditLog[] }>(
-        `/api/admin/audit-logs`,
-        { headers: this.getHeaders() },
-        'Error al cargar registros de auditoría'
-      );
+      const logs = await firebaseService.getAuditLogs();
+      if (logs.length > 0) {
+        return { logs };
+      }
     } catch {
-      return { logs: localDb.getAuditLogs() };
+      // fallback
     }
+    return { logs: localDb.getAuditLogs() };
   }
 }
 
