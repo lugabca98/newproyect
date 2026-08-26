@@ -1163,41 +1163,8 @@ app.post('/api/messages/:matchId', requireAuth, messageLimiter, (req, res) => {
   match.lastMessage = cleanText;
   match.lastMessageTime = newMessage.createdAt;
 
-  // Interactive demo auto-reply
-  const isDemoPartner = receiverId.startsWith('user-');
-  let automatedReply: Message | null = null;
-
-  if (isDemoPartner) {
-    const contextualReplies = [
-      `¡Hola! Qué gusto leerte ✨ ¿Cómo estuvo tu día?`,
-      `¡Totalmente de acuerdo! Me encanta que tengamos cosas en común 😊`,
-      `Jajaja me hiciste reír 😂 ¿Tenés planes para este finde?`,
-      `¡Qué buena recomendación! Me la anoto para verla/hacerla pronto.`,
-      `Me pareció súper interesante tu perfil. ¿Hace cuánto estás en la app? 🍷`,
-      `¡Hola! Estaba justo pensando en responderte. ¿Qué música estás escuchando últimamente? 🎵`
-    ];
-    const replyText = contextualReplies[Math.floor(Math.random() * contextualReplies.length)];
-
-    automatedReply = {
-      id: `msg-reply-${Date.now() + 10}`,
-      matchId,
-      senderId: receiverId,
-      receiverId: currentUserId,
-      text: replyText,
-      createdAt: new Date(Date.now() + 1500).toISOString(),
-      read: false
-    };
-
-    setTimeout(() => {
-      messages.push(automatedReply!);
-      match.lastMessage = replyText;
-      match.lastMessageTime = automatedReply!.createdAt;
-    }, 1200);
-  }
-
   res.status(201).json({
-    message: newMessage,
-    automatedReply: automatedReply ? { ...automatedReply, deliveryDelayMs: 1200 } : null
+    message: newMessage
   });
 });
 

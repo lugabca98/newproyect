@@ -34,7 +34,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [partner, setPartner] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -55,24 +54,30 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
-  // Load messages when selected match changes
+  // Load messages and poll periodically for real user replies
   useEffect(() => {
     if (selectedMatchId) {
-      loadMessages(selectedMatchId);
+      loadMessages(selectedMatchId, true);
+      const interval = setInterval(() => {
+        loadMessages(selectedMatchId, false);
+      }, 3000);
+      return () => clearInterval(interval);
     }
   }, [selectedMatchId]);
 
-  const loadMessages = async (matchId: string) => {
-    setLoading(true);
+  const loadMessages = async (matchId: string, isInitial = false) => {
+    if (isInitial) setLoading(true);
     try {
       const data = await api.getMessages(matchId);
       setMessages(data.messages);
       setPartner(data.partner);
+      if (isInitial) {
+        scrollToBottom();
+      }
     } catch (err) {
       console.error('Error fetching messages:', err);
     } finally {
-      setLoading(false);
-      scrollToBottom();
+      if (isInitial) setLoading(false);
     }
   };
 
@@ -105,21 +110,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
     try {
       const res = await api.sendMessage(selectedMatchId, textToSend);
-      // Replace optimistic message with actual
+      // Replace optimistic message with saved server message
       setMessages(prev => prev.map(m => m.id === optimisticMsg.id ? res.message : m));
-
-      // If automated reply was triggered, simulate typing indicator
-      if (res.automatedReply) {
-        setIsTyping(true);
-        setTimeout(() => {
-          setIsTyping(false);
-          setMessages(prev => [...prev, res.automatedReply!]);
-          scrollToBottom();
-          loadMatches(); // refresh last message preview
-        }, 1200);
-      } else {
-        loadMatches();
-      }
+      loadMatches(); // refresh match preview
     } catch (err) {
       console.error('Failed to send message:', err);
     }
@@ -355,18 +348,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   </div>
                 );
               })}
-
-              {/* Typing indicator */}
-              {isTyping && (
-                <div className="flex items-center gap-2 text-slate-400 text-xs py-1">
-                  <div className="flex gap-1 bg-slate-800 px-3 py-2 rounded-2xl rounded-bl-none border border-slate-700">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-bounce" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-bounce [animation-delay:0.2s]" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-bounce [animation-delay:0.4s]" />
-                  </div>
-                  <span className="text-[11px] text-slate-400">{partner.name.split(' ')[0]} está escribiendo...</span>
-                </div>
-              )}
 
               <div ref={messagesEndRef} />
             </div>

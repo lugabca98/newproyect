@@ -135,7 +135,7 @@ class ApiService {
     return data;
   }
 
-  async sendMessage(matchId: string, text: string): Promise<{ message: Message; automatedReply?: Message }> {
+  async sendMessage(matchId: string, text: string): Promise<{ message: Message }> {
     const res = await fetch(`/api/messages/${matchId}`, {
       method: 'POST',
       headers: this.getHeaders(),
