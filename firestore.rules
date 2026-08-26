@@ -2,12 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Global Default Deny
+    // Default Deny: Ningún acceso no autorizado
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helper Functions
+    // Funciones de validación criptográfica y autenticación Firebase
     function isSignedIn() {
       return request.auth != null;
     }
@@ -16,8 +16,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // El rol admin se verifica mediante Custom Claims del token JWT o en la colección reservada /admins/
     function isAdmin() {
       return isSignedIn() && (
+        request.auth.token.admin == true ||
         request.auth.token.email == 'lugabca98@gmail.com' ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
@@ -31,12 +33,14 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // 1. Users Collection
-    match /users/{userId} {
-      // Any authenticated user can read public profile cards for feed & matching
+    // -------------------------------------------------------------
+    // 1. PERFILES PÚBLICOS (/publicProfiles/{userId})
+    // Accesible para que otros usuarios descubran el perfil en el feed.
+    // NO CONTIENE EMAIL, PREFERENCIAS PRIVADAS NI DATOS DE AUDITORÍA.
+    // -------------------------------------------------------------
+    match /publicProfiles/{userId} {
       allow read: if isSignedIn();
 
-      // Creation on sign-up: Owner only, cannot self-assign admin role or verified badge
       allow create: if isSignedIn() && (
         isOwner(userId) &&
         (incoming().role == 'user' || isAdmin()) &&
@@ -44,7 +48,8 @@ service cloud.firestore {
         (incoming().verified == false || isAdmin())
       );
 
-      // Updates: Admins can update anything; regular owners can only update safe profile fields (NOT role/status/verified)
+      // Los usuarios solo pueden actualizar campos visuales de su propio perfil
+      // ESTÁ PROHIBIDO auto-asignarse role='admin', cambiar status o verified
       allow update: if isSignedIn() && (
         isAdmin() || (
           isOwner(userId) &&
@@ -53,7 +58,7 @@ service cloud.firestore {
           incoming().verified == existing().verified &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'name', 'bio', 'photos', 'age', 'gender', 'location', 
-            'occupation', 'interests', 'preferences', 'lastActive', 
+            'occupation', 'interests', 'lastActive', 
             'distanceKm', 'likesCount', 'matchesCount'
           ])
         )
@@ -62,35 +67,65 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // 2. Admins Registry Collection
+    // -------------------------------------------------------------
+    // 2. PERFILES PRIVADOS (/users/{userId})
+    // Contiene el email, preferencias de distancia/edad y configuración privada.
+    // SOLAMENTE EL PROPIO USUARIO O UN ADMINISTRADOR PUEDEN LEER O MODIFICAR.
+    // -------------------------------------------------------------
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+      allow create: if isSignedIn() && (
+        isOwner(userId) &&
+        (incoming().role == 'user' || isAdmin()) &&
+        (incoming().status == 'active')
+      );
+
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          isOwner(userId) &&
+          incoming().role == existing().role &&
+          incoming().status == existing().status &&
+          incoming().verified == existing().verified
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 3. REGISTRO DE ADMINISTRADORES (/admins/{adminId})
+    // -------------------------------------------------------------
     match /admins/{adminId} {
       allow read, write: if isAdmin();
     }
 
-    // 3. Swipes Collection
+    // -------------------------------------------------------------
+    // 4. SWIPES (/swipes/{swipeId})
+    // -------------------------------------------------------------
     match /swipes/{swipeId} {
-      // Swiper can read their own swipes; Admin can audit
       allow read: if isSignedIn() && (
         request.auth.uid == resource.data.swiperId || 
         request.auth.uid == resource.data.targetId ||
         isAdmin()
       );
 
-      // Can only create swipe where authenticated user is the swiper
+      // El swiperId DEBE coincidir con el UID autenticado en Firebase
       allow create: if isSignedIn() && request.auth.uid == incoming().swiperId;
 
       allow update, delete: if isAdmin();
     }
 
-    // 4. Matches Collection
+    // -------------------------------------------------------------
+    // 5. MATCHES (/matches/{matchId})
+    // -------------------------------------------------------------
     match /matches/{matchId} {
-      // Only users who are in userIds can read/update their match
       allow read: if isSignedIn() && (
         request.auth.uid in resource.data.userIds || 
         isAdmin()
       );
 
-      // Creating a match requires authenticated user to be one of the participants
+      // Requiere que el creador forme parte de userIds
       allow create: if isSignedIn() && (
         request.auth.uid in incoming().userIds
       );
@@ -103,21 +138,22 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // 5. Messages Collection
+    // -------------------------------------------------------------
+    // 6. MENSAJES DE CHAT (/messages/{messageId})
+    // -------------------------------------------------------------
     match /messages/{messageId} {
-      // Only participants (sender/receiver) or admin can read messages
+      // Solo los participantes directos (sender/receiver) o el Admin pueden leer
       allow read: if isSignedIn() && (
         request.auth.uid == resource.data.senderId || 
         request.auth.uid == resource.data.receiverId || 
         isAdmin()
       );
 
-      // Can only send message as oneself
+      // No se puede suplantar la identidad al enviar mensajes
       allow create: if isSignedIn() && (
         request.auth.uid == incoming().senderId
       );
 
-      // Receiver can mark as read; Admin can update
       allow update: if isSignedIn() && (
         request.auth.uid == resource.data.receiverId || 
         isAdmin()
@@ -126,12 +162,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // 6. Audit Logs Collection
+    // -------------------------------------------------------------
+    // 7. AUDITORÍA (/auditLogs/{logId})
+    // -------------------------------------------------------------
     match /auditLogs/{logId} {
       allow read, write: if isAdmin();
     }
 
-    // 7. Reports Collection
+    // -------------------------------------------------------------
+    // 8. REPORTES (/reports/{reportId})
+    // -------------------------------------------------------------
     match /reports/{reportId} {
       allow create: if isSignedIn();
       allow read, update, delete: if isAdmin();

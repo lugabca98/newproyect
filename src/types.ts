@@ -1,4 +1,6 @@
 export type Gender = 'female' | 'male' | 'non-binary' | 'other';
+export type UserStatus = 'active' | 'blocked';
+export type UserRole = 'user' | 'admin';
 
 export interface UserPreferences {
   minAge: number;
@@ -20,8 +22,8 @@ export interface User {
   occupation: string;
   interests: string[];
   verified: boolean;
-  status: 'active' | 'blocked';
-  role: 'user' | 'admin';
+  status: UserStatus;
+  role: UserRole;
   createdAt: string;
   lastActive: string;
   likesCount: number;

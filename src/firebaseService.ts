@@ -8,7 +8,6 @@ import {
   deleteDoc, 
   query, 
   where, 
-  orderBy, 
   onSnapshot, 
   Unsubscribe 
 } from 'firebase/firestore';
@@ -19,30 +18,30 @@ import {
   GoogleAuthProvider, 
   signOut, 
   onAuthStateChanged,
+  getIdTokenResult,
   User as FirebaseUser
 } from 'firebase/auth';
 import { auth, db } from './firebase';
-import { User, Match, Message, AuditLog, SwipeRecord, AdminStats } from './types';
+import { User, Match, Message, AuditLog, SwipeRecord, AdminStats, UserStatus, UserRole } from './types';
 import { INITIAL_SEED_USERS, INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL } from './localStore';
 
 class FirebaseService {
   private initialized = false;
 
-  // Initialize Firestore collections with seed profiles if empty
+  // Initialize Firestore collections with seed profiles in publicProfiles & users if empty
   async initializeDatabase(): Promise<void> {
     if (this.initialized) return;
     try {
-      const usersCol = collection(db, 'users');
-      const snapshot = await getDocs(usersCol);
+      const publicCol = collection(db, 'publicProfiles');
+      const snapshot = await getDocs(publicCol);
       
       if (snapshot.empty) {
-        console.log('[Firestore] Seeding sample neurodivergent profiles...');
+        console.log('[Firestore] Seeding public and user profiles...');
         for (const user of INITIAL_SEED_USERS) {
-          // Exclude admin or dummy passwords
-          await setDoc(doc(db, 'users', user.id), {
+          // Public profile (NO email, NO private preferences)
+          const publicProfile = {
             id: user.id,
             name: user.name,
-            email: user.email,
             age: user.age,
             gender: user.gender,
             bio: user.bio,
@@ -57,7 +56,14 @@ class FirebaseService {
             createdAt: user.createdAt || new Date().toISOString(),
             lastActive: new Date().toISOString(),
             likesCount: user.likesCount || 0,
-            matchesCount: user.matchesCount || 0,
+            matchesCount: user.matchesCount || 0
+          };
+          await setDoc(doc(db, 'publicProfiles', user.id), publicProfile);
+
+          // Private user document (Owner / Admin only)
+          await setDoc(doc(db, 'users', user.id), {
+            ...publicProfile,
+            email: user.email,
             preferences: user.preferences || {
               minAge: 18,
               maxAge: 60,
@@ -74,24 +80,37 @@ class FirebaseService {
   }
 
   // -------------------------------------------------------------
-  // SECURE AUTHENTICATION (Firebase Auth SDK)
+  // SECURE AUTHENTICATION & ROLE CHECKS (Firebase Auth SDK)
   // -------------------------------------------------------------
+  async isCurrentUserAdmin(): Promise<boolean> {
+    const user = auth.currentUser;
+    if (!user) return false;
+    try {
+      const token = await getIdTokenResult(user);
+      if (token.claims.admin === true) return true;
+      if (user.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) return true;
+      const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+      return adminDoc.exists();
+    } catch {
+      return false;
+    }
+  }
+
   async registerUser(userData: Partial<User>, plainPassword: string): Promise<User> {
     const email = (userData.email || '').trim().toLowerCase();
     if (!email || !plainPassword || plainPassword.length < 6) {
       throw new Error('El correo y una contraseña de al menos 6 caracteres son requeridos.');
     }
 
-    // 1. Create account in Firebase Authentication (Password is hashed & handled securely by Firebase Auth)
+    // 1. Create account in Firebase Authentication (Password handled securely by Firebase Auth)
     const cred = await createUserWithEmailAndPassword(auth, email, plainPassword);
     const uid = cred.user.uid;
     const isOwnerAdmin = email === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
-    // 2. Create public user profile in Firestore (/users/{uid})
-    const newUser: User = {
+    // 2. Public profile (visible in feed - NO EMAIL, NO PREFERENCES)
+    const publicProfile = {
       id: uid,
       name: userData.name?.trim() || 'Nuevo Miembro',
-      email,
       age: Number(userData.age) || 24,
       gender: userData.gender || 'female',
       bio: userData.bio?.trim() || '',
@@ -103,12 +122,18 @@ class FirebaseService {
       occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
       verified: isOwnerAdmin,
-      status: 'active',
-      role: isOwnerAdmin ? 'admin' : 'user',
+      status: ('active' as UserStatus),
+      role: (isOwnerAdmin ? 'admin' : 'user') as UserRole,
       createdAt: new Date().toISOString(),
       lastActive: new Date().toISOString(),
       likesCount: 0,
-      matchesCount: 0,
+      matchesCount: 0
+    };
+
+    // 3. Full private profile (for settings & account management)
+    const newUser: User = {
+      ...publicProfile,
+      email,
       preferences: {
         minAge: 18,
         maxAge: 60,
@@ -117,7 +142,7 @@ class FirebaseService {
       }
     };
 
-    // Storing ONLY profile attributes, NO password attribute!
+    await setDoc(doc(db, 'publicProfiles', uid), publicProfile);
     await setDoc(doc(db, 'users', uid), newUser);
 
     // If owner admin, also write to admin registry
@@ -142,7 +167,7 @@ class FirebaseService {
     // Fetch user profile from Firestore
     let user = await this.getUserById(uid);
     
-    // If profile doesn't exist yet (e.g. newly authenticated), create profile
+    // If profile doesn't exist yet, bootstrap it
     if (!user) {
       const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
       user = {
@@ -171,6 +196,23 @@ class FirebaseService {
           maxDistanceKm: 50
         }
       };
+      await setDoc(doc(db, 'publicProfiles', uid), {
+        id: user.id,
+        name: user.name,
+        age: user.age,
+        gender: user.gender,
+        bio: user.bio,
+        photos: user.photos,
+        location: user.location,
+        distanceKm: user.distanceKm,
+        occupation: user.occupation,
+        interests: user.interests,
+        verified: user.verified,
+        status: user.status,
+        role: user.role,
+        createdAt: user.createdAt,
+        lastActive: user.lastActive
+      });
       await setDoc(doc(db, 'users', uid), user);
     }
 
@@ -179,10 +221,10 @@ class FirebaseService {
       throw new Error('Esta cuenta se encuentra temporalmente suspendida.');
     }
 
-    // Update lastActive timestamp
     const now = new Date().toISOString();
     user.lastActive = now;
     await updateDoc(doc(db, 'users', uid), { lastActive: now }).catch(() => {});
+    await updateDoc(doc(db, 'publicProfiles', uid), { lastActive: now }).catch(() => {});
 
     return user;
   }
@@ -222,6 +264,23 @@ class FirebaseService {
           maxDistanceKm: 50
         }
       };
+      await setDoc(doc(db, 'publicProfiles', uid), {
+        id: user.id,
+        name: user.name,
+        age: user.age,
+        gender: user.gender,
+        bio: user.bio,
+        photos: user.photos,
+        location: user.location,
+        distanceKm: user.distanceKm,
+        occupation: user.occupation,
+        interests: user.interests,
+        verified: user.verified,
+        status: user.status,
+        role: user.role,
+        createdAt: user.createdAt,
+        lastActive: user.lastActive
+      });
       await setDoc(doc(db, 'users', uid), user);
     }
 
@@ -247,6 +306,17 @@ class FirebaseService {
       if (userSnap.exists()) {
         return userSnap.data() as User;
       }
+      // Fallback to public profile if querying other profile
+      const pubRef = doc(db, 'publicProfiles', userId);
+      const pubSnap = await getDoc(pubRef);
+      if (pubSnap.exists()) {
+        const pub = pubSnap.data();
+        return {
+          ...pub,
+          email: '', // Never leak email of another user
+          preferences: { minAge: 18, maxAge: 65, interestedIn: ['female', 'male', 'non-binary', 'other'], maxDistanceKm: 50 }
+        } as User;
+      }
     } catch (err) {
       console.warn('[Firestore] Error getting user:', err);
     }
@@ -255,8 +325,9 @@ class FirebaseService {
 
   async updateUser(userId: string, data: Partial<User>): Promise<User> {
     const userRef = doc(db, 'users', userId);
+    const pubRef = doc(db, 'publicProfiles', userId);
     
-    // Filter out forbidden keys (e.g. role, status, verified cannot be modified by user)
+    // Filter out forbidden keys (e.g. role, status, verified cannot be modified by regular user)
     const sanitizedData: Partial<User> = {
       ...(data.name !== undefined && { name: data.name }),
       ...(data.bio !== undefined && { bio: data.bio }),
@@ -271,13 +342,18 @@ class FirebaseService {
     };
 
     await setDoc(userRef, sanitizedData, { merge: true });
+    
+    // Also update public profile
+    const { email, preferences, ...publicOnly } = sanitizedData;
+    await setDoc(pubRef, publicOnly, { merge: true });
+
     const updated = await this.getUserById(userId);
     if (!updated) throw new Error('Usuario no encontrado tras actualizar.');
     return updated;
   }
 
   // -------------------------------------------------------------
-  // FEED & MUTUAL SWIPING LOGIC (Fixing Issue #6)
+  // FEED & MUTUAL SWIPING LOGIC (NO EMAIL LEAKS & REAL MUTUAL MATCHES)
   // -------------------------------------------------------------
   async getFeed(currentUserId: string): Promise<User[]> {
     await this.initializeDatabase();
@@ -292,11 +368,11 @@ class FirebaseService {
         if (sw.targetId) swipedTargetIds.add(sw.targetId);
       });
 
-      // 2. Query available candidate profiles
-      const usersCol = collection(db, 'users');
-      const usersSnap = await getDocs(usersCol);
+      // 2. Query public profiles (PRIVACY: Never query /users directly in feed)
+      const publicCol = collection(db, 'publicProfiles');
+      const publicSnap = await getDocs(publicCol);
       const users: User[] = [];
-      usersSnap.forEach(d => {
+      publicSnap.forEach(d => {
         const u = d.data() as User;
         if (
           u.id !== currentUserId && 
@@ -304,7 +380,10 @@ class FirebaseService {
           u.status === 'active' && 
           !swipedTargetIds.has(u.id)
         ) {
-          users.push(u);
+          users.push({
+            ...u,
+            email: '' // Strictly stripped for privacy
+          });
         }
       });
 
@@ -336,20 +415,19 @@ class FirebaseService {
     let isMatch = false;
     let createdMatch: Match | null = null;
 
-    // If it's a pass, no match can occur
     if (type === 'pass') {
       return { isMatch: false, match: null, partner: targetUser };
     }
 
-    // 2. Increment target's likesCount
+    // 2. Increment target's likesCount in public profile
     if (targetUser) {
-      await updateDoc(doc(db, 'users', targetId), {
+      await updateDoc(doc(db, 'publicProfiles', targetId), {
         likesCount: (targetUser.likesCount || 0) + 1
       }).catch(() => {});
     }
 
-    // 3. MUTUAL MATCH CHECK:
-    // Check if targetUser has ALREADY swiped 'like' or 'superlike' on current user
+    // 3. STRICT MUTUAL MATCH CHECK:
+    // Only matches if targetUser has legitimately liked the swiper in Firestore
     const swipesCol = collection(db, 'swipes');
     const mutualQuery = query(
       swipesCol, 
@@ -362,11 +440,7 @@ class FirebaseService {
       return t === 'like' || t === 'superlike';
     });
 
-    // If target is a seeded demo profile, simulate realistic reciprocal interest
-    const isSeedProfile = targetUser && (targetUser.email.includes('@ejemplo.com') || targetId.startsWith('user-'));
-    const isReciprocal = hasTargetLikedSwiper || (isSeedProfile && (type === 'superlike' || Math.random() > 0.3));
-
-    if (isReciprocal) {
+    if (hasTargetLikedSwiper) {
       isMatch = true;
       const firstId = swiperId < targetId ? swiperId : targetId;
       const secondId = swiperId < targetId ? targetId : swiperId;
@@ -392,25 +466,14 @@ class FirebaseService {
         unreadCount: 0
       }, { merge: true });
 
-      // Update matches count for both
-      await updateDoc(doc(db, 'users', swiperId), {
-        matchesCount: ((await this.getUserById(swiperId))?.matchesCount || 0) + 1
-      }).catch(() => {});
-
-      if (targetUser) {
-        await updateDoc(doc(db, 'users', targetId), {
-          matchesCount: (targetUser.matchesCount || 0) + 1
-        }).catch(() => {});
-      }
-
-      // Automatically create a welcoming greeting message from the match
+      // Automatically create welcoming greeting message from the match
       const msgId = `msg-${Date.now()}`;
       await setDoc(doc(db, 'messages', msgId), {
         id: msgId,
         matchId,
         senderId: targetId,
         receiverId: swiperId,
-        text: `¡Hola! Me alegra mucho que hayamos conectado. ¿Cómo va tu día? 😊`,
+        text: `¡Hola! Me alegra mucho que hayamos conectado. 😊`,
         createdAt: new Date().toISOString(),
         read: false
       });
@@ -507,7 +570,6 @@ class FirebaseService {
 
     await setDoc(doc(db, 'messages', msgId), newMsg);
 
-    // Update match summary in Firestore
     await updateDoc(doc(db, 'matches', matchId), {
       lastMessage: cleanText,
       lastMessageTime: now
@@ -517,9 +579,12 @@ class FirebaseService {
   }
 
   // -------------------------------------------------------------
-  // ADMIN & AUDIT
+  // ADMIN & AUDIT (Verifies Server-Side Authorization)
   // -------------------------------------------------------------
   async getAdminStats(): Promise<AdminStats> {
+    const isAdmin = await this.isCurrentUserAdmin();
+    if (!isAdmin) throw new Error('Acceso no autorizado al panel administrativo.');
+
     const usersSnap = await getDocs(collection(db, 'users'));
     const matchesSnap = await getDocs(collection(db, 'matches'));
     const messagesSnap = await getDocs(collection(db, 'messages'));
@@ -546,22 +611,30 @@ class FirebaseService {
   }
 
   async getAllUsersAdmin(): Promise<User[]> {
+    const isAdmin = await this.isCurrentUserAdmin();
+    if (!isAdmin) throw new Error('Acceso no autorizado.');
     const snap = await getDocs(collection(db, 'users'));
     return snap.docs.map(d => d.data() as User);
   }
 
-  async adminToggleUserStatus(targetUserId: string, adminEmail: string): Promise<User> {
+  async adminToggleUserStatus(targetUserId: string): Promise<User> {
+    const isAdmin = await this.isCurrentUserAdmin();
+    if (!isAdmin) throw new Error('Operación no autorizada.');
+
     const user = await this.getUserById(targetUserId);
     if (!user) throw new Error('Usuario no encontrado');
 
     const newStatus = user.status === 'active' ? 'blocked' : 'active';
     await updateDoc(doc(db, 'users', targetUserId), { status: newStatus });
+    await updateDoc(doc(db, 'publicProfiles', targetUserId), { status: newStatus }).catch(() => {});
     
-    // Log action to auditLogs collection
+    // Log action using authenticated admin user
+    const currentAdmin = auth.currentUser;
     const logId = `log-${Date.now()}`;
     await setDoc(doc(db, 'auditLogs', logId), {
       id: logId,
-      adminEmail,
+      adminEmail: currentAdmin?.email || 'admin',
+      adminUid: currentAdmin?.uid || '',
       action: newStatus === 'blocked' ? 'BLOCK_USER' : 'UNBLOCK_USER',
       targetUserId,
       targetUserName: user.name,
@@ -572,17 +645,23 @@ class FirebaseService {
     return { ...user, status: newStatus };
   }
 
-  async adminToggleUserVerification(targetUserId: string, adminEmail: string): Promise<User> {
+  async adminToggleUserVerification(targetUserId: string): Promise<User> {
+    const isAdmin = await this.isCurrentUserAdmin();
+    if (!isAdmin) throw new Error('Operación no autorizada.');
+
     const user = await this.getUserById(targetUserId);
     if (!user) throw new Error('Usuario no encontrado');
 
     const newVerified = !user.verified;
     await updateDoc(doc(db, 'users', targetUserId), { verified: newVerified });
+    await updateDoc(doc(db, 'publicProfiles', targetUserId), { verified: newVerified }).catch(() => {});
 
+    const currentAdmin = auth.currentUser;
     const logId = `log-${Date.now()}`;
     await setDoc(doc(db, 'auditLogs', logId), {
       id: logId,
-      adminEmail,
+      adminEmail: currentAdmin?.email || 'admin',
+      adminUid: currentAdmin?.uid || '',
       action: newVerified ? 'VERIFY_USER' : 'UNVERIFY_USER',
       targetUserId,
       targetUserName: user.name,
@@ -593,14 +672,20 @@ class FirebaseService {
     return { ...user, verified: newVerified };
   }
 
-  async adminDeleteUser(targetUserId: string, adminEmail: string): Promise<void> {
+  async adminDeleteUser(targetUserId: string): Promise<void> {
+    const isAdmin = await this.isCurrentUserAdmin();
+    if (!isAdmin) throw new Error('Operación no autorizada.');
+
     const user = await this.getUserById(targetUserId);
     await deleteDoc(doc(db, 'users', targetUserId));
+    await deleteDoc(doc(db, 'publicProfiles', targetUserId)).catch(() => {});
 
+    const currentAdmin = auth.currentUser;
     const logId = `log-${Date.now()}`;
     await setDoc(doc(db, 'auditLogs', logId), {
       id: logId,
-      adminEmail,
+      adminEmail: currentAdmin?.email || 'admin',
+      adminUid: currentAdmin?.uid || '',
       action: 'DELETE_USER',
       targetUserId,
       targetUserName: user?.name || targetUserId,
@@ -610,6 +695,8 @@ class FirebaseService {
   }
 
   async getAuditLogs(): Promise<AuditLog[]> {
+    const isAdmin = await this.isCurrentUserAdmin();
+    if (!isAdmin) throw new Error('Operación no autorizada.');
     const snap = await getDocs(collection(db, 'auditLogs'));
     const logs = snap.docs.map(d => d.data() as AuditLog);
     logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());

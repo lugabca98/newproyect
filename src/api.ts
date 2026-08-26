@@ -1,6 +1,5 @@
-import { User, Match, Message, AdminStats, AuditLog, SwipeRecord } from './types';
+import { User, Match, Message, AdminStats, AuditLog } from './types';
 import { firebaseService } from './firebaseService';
-import { DEFAULT_ADMIN_EMAIL } from './localStore';
 
 class ApiService {
   private currentUserId: string | null = null;
@@ -29,14 +28,14 @@ class ApiService {
   async login(email: string, password: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const cleanEmail = email.trim().toLowerCase();
     const user = await firebaseService.loginUser(cleanEmail, password);
-    const isAdmin = user.role === 'admin' || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+    const isAdmin = await firebaseService.isCurrentUserAdmin();
     this.setToken(user.id, user.id);
     return { user, token: user.id, isAdmin };
   }
 
   async loginWithGoogle(): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginWithGoogle();
-    const isAdmin = user.role === 'admin' || user.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
+    const isAdmin = await firebaseService.isCurrentUserAdmin();
     this.setToken(user.id, user.id);
     return { user, token: user.id, isAdmin };
   }
@@ -46,8 +45,9 @@ class ApiService {
       throw new Error('La contraseña es requerida para el registro.');
     }
     const newUser = await firebaseService.registerUser(userData, password);
+    const isAdmin = await firebaseService.isCurrentUserAdmin();
     this.setToken(newUser.id, newUser.id);
-    return { user: newUser, token: newUser.id, isAdmin: newUser.role === 'admin' };
+    return { user: newUser, token: newUser.id, isAdmin };
   }
 
   async getMe(): Promise<{ user: User; isAdmin: boolean }> {
@@ -58,7 +58,7 @@ class ApiService {
     const user = await firebaseService.getUserById(currentId);
     if (!user) throw new Error('Usuario no encontrado.');
 
-    const isAdmin = user.role === 'admin' || user.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
+    const isAdmin = await firebaseService.isCurrentUserAdmin();
     return { user, isAdmin };
   }
 
@@ -169,44 +169,37 @@ class ApiService {
   }
 
   async blockUser(userId: string, _reason?: string): Promise<{ user: User; message: string }> {
-    const me = await this.getMe();
-    const user = await firebaseService.adminToggleUserStatus(userId, me.user.email);
+    const user = await firebaseService.adminToggleUserStatus(userId);
     return { user, message: 'Usuario bloqueado exitosamente.' };
   }
 
   async unblockUser(userId: string): Promise<{ user: User; message: string }> {
-    const me = await this.getMe();
-    const user = await firebaseService.adminToggleUserStatus(userId, me.user.email);
+    const user = await firebaseService.adminToggleUserStatus(userId);
     return { user, message: 'Usuario desbloqueado exitosamente.' };
   }
 
   async toggleVerifyUser(userId: string): Promise<{ user: User; message: string }> {
-    const me = await this.getMe();
-    const user = await firebaseService.adminToggleUserVerification(userId, me.user.email);
+    const user = await firebaseService.adminToggleUserVerification(userId);
     return { user, message: `Insignia de verificación actualizada (${user.verified ? 'Verificado' : 'No verificado'}).` };
   }
 
   async deleteUser(userId: string): Promise<{ success: boolean; message: string }> {
-    const me = await this.getMe();
-    await firebaseService.adminDeleteUser(userId, me.user.email);
+    await firebaseService.adminDeleteUser(userId);
     return { success: true, message: 'Usuario eliminado permanentemente de la base de datos.' };
   }
 
   async toggleUserStatusAdmin(targetUserId: string): Promise<{ user: User }> {
-    const me = await this.getMe();
-    const user = await firebaseService.adminToggleUserStatus(targetUserId, me.user.email);
+    const user = await firebaseService.adminToggleUserStatus(targetUserId);
     return { user };
   }
 
   async toggleUserVerificationAdmin(targetUserId: string): Promise<{ user: User }> {
-    const me = await this.getMe();
-    const user = await firebaseService.adminToggleUserVerification(targetUserId, me.user.email);
+    const user = await firebaseService.adminToggleUserVerification(targetUserId);
     return { user };
   }
 
   async deleteUserAdmin(targetUserId: string): Promise<{ success: boolean }> {
-    const me = await this.getMe();
-    await firebaseService.adminDeleteUser(targetUserId, me.user.email);
+    await firebaseService.adminDeleteUser(targetUserId);
     return { success: true };
   }
 
