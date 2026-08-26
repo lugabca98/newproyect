@@ -160,21 +160,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Quick Fast-Login helper for test accounts
-  const handleQuickLogin = async (userEmail: string) => {
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      const res = await api.login(userEmail, 'password123');
-      onSuccess(res.user, res.isAdmin);
-      onClose();
-    } catch (err: any) {
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
       <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto">
@@ -530,46 +515,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
               </button>
             </form>
-
-            {/* Quick Demo Switcher */}
-            <div className="pt-2 border-t border-slate-800">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2 text-center">
-                O ingresá rápidamente con una cuenta demo:
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin('valeria@ejemplo.com')}
-                  className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left flex items-center gap-2 transition"
-                >
-                  <img
-                    src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80"
-                    alt="Valeria"
-                    className="w-7 h-7 rounded-full object-cover"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-white block">Valeria</span>
-                    <span className="text-[10px] text-slate-400">Diseñadora, 24</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin('lucas@ejemplo.com')}
-                  className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left flex items-center gap-2 transition"
-                >
-                  <img
-                    src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=100&q=80"
-                    alt="Lucas"
-                    className="w-7 h-7 rounded-full object-cover"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-white block">Lucas</span>
-                    <span className="text-[10px] text-slate-400">Desarrollador, 27</span>
-                  </div>
-                </button>
-              </div>
-            </div>
           </div>
         )}
 
