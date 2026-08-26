@@ -10,17 +10,25 @@ import {
   where, 
   orderBy, 
   onSnapshot, 
-  addDoc,
-  Unsubscribe
+  Unsubscribe 
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { auth, db } from './firebase';
 import { User, Match, Message, AuditLog, SwipeRecord, AdminStats } from './types';
-import { INITIAL_SEED_USERS, INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASS } from './localStore';
+import { INITIAL_SEED_USERS, INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL } from './localStore';
 
 class FirebaseService {
   private initialized = false;
 
-  // Initialize Firestore collections with seed data if empty
+  // Initialize Firestore collections with seed profiles if empty
   async initializeDatabase(): Promise<void> {
     if (this.initialized) return;
     try {
@@ -28,44 +36,61 @@ class FirebaseService {
       const snapshot = await getDocs(usersCol);
       
       if (snapshot.empty) {
-        console.log('[Firestore] Initializing Firestore with seed users...');
-        // Seed admin
-        await setDoc(doc(db, 'users', INITIAL_ADMIN.id), INITIAL_ADMIN);
-        
-        // Seed users
+        console.log('[Firestore] Seeding sample neurodivergent profiles...');
         for (const user of INITIAL_SEED_USERS) {
-          await setDoc(doc(db, 'users', user.id), user);
+          // Exclude admin or dummy passwords
+          await setDoc(doc(db, 'users', user.id), {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            age: user.age,
+            gender: user.gender,
+            bio: user.bio,
+            photos: user.photos,
+            location: user.location,
+            distanceKm: user.distanceKm || 5,
+            occupation: user.occupation,
+            interests: user.interests,
+            verified: user.verified || false,
+            status: user.status || 'active',
+            role: user.role || 'user',
+            createdAt: user.createdAt || new Date().toISOString(),
+            lastActive: new Date().toISOString(),
+            likesCount: user.likesCount || 0,
+            matchesCount: user.matchesCount || 0,
+            preferences: user.preferences || {
+              minAge: 18,
+              maxAge: 60,
+              interestedIn: ['female', 'male', 'non-binary', 'other'],
+              maxDistanceKm: 50
+            }
+          });
         }
-        console.log('[Firestore] Database initialized successfully in Cloud Firestore!');
       }
       this.initialized = true;
     } catch (err) {
-      console.warn('[Firestore] Error or offline during initialization:', err);
+      console.warn('[Firestore] Initialization check:', err);
     }
   }
 
   // -------------------------------------------------------------
-  // USERS & AUTH
+  // SECURE AUTHENTICATION (Firebase Auth SDK)
   // -------------------------------------------------------------
-  async registerUser(userData: Partial<User>, plainPassword?: string): Promise<User> {
-    await this.initializeDatabase();
+  async registerUser(userData: Partial<User>, plainPassword: string): Promise<User> {
     const email = (userData.email || '').trim().toLowerCase();
-    
-    // Check if email already exists in Firestore
-    const usersCol = collection(db, 'users');
-    const q = query(usersCol, where('email', '==', email));
-    const snapshot = await getDocs(q);
-    
-    if (!snapshot.empty) {
-      throw new Error('El correo electrónico ya está registrado. Por favor inicia sesión.');
+    if (!email || !plainPassword || plainPassword.length < 6) {
+      throw new Error('El correo y una contraseña de al menos 6 caracteres son requeridos.');
     }
 
-    const isOwner = email === DEFAULT_ADMIN_EMAIL.toLowerCase();
-    const userId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    
+    // 1. Create account in Firebase Authentication (Password is hashed & handled securely by Firebase Auth)
+    const cred = await createUserWithEmailAndPassword(auth, email, plainPassword);
+    const uid = cred.user.uid;
+    const isOwnerAdmin = email === DEFAULT_ADMIN_EMAIL.toLowerCase();
+
+    // 2. Create public user profile in Firestore (/users/{uid})
     const newUser: User = {
-      id: userId,
-      name: userData.name?.trim() || 'Nuevo Usuario',
+      id: uid,
+      name: userData.name?.trim() || 'Nuevo Miembro',
       email,
       age: Number(userData.age) || 24,
       gender: userData.gender || 'female',
@@ -77,9 +102,9 @@ class FirebaseService {
       distanceKm: 2,
       occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
-      verified: isOwner,
+      verified: isOwnerAdmin,
       status: 'active',
-      role: isOwner ? 'admin' : 'user',
+      role: isOwnerAdmin ? 'admin' : 'user',
       createdAt: new Date().toISOString(),
       lastActive: new Date().toISOString(),
       likesCount: 0,
@@ -89,48 +114,130 @@ class FirebaseService {
         maxAge: 60,
         interestedIn: ['female', 'male', 'non-binary', 'other'],
         maxDistanceKm: 50
-      },
-      password: plainPassword || userData.password || ''
+      }
     };
 
-    await setDoc(doc(db, 'users', userId), newUser);
+    // Storing ONLY profile attributes, NO password attribute!
+    await setDoc(doc(db, 'users', uid), newUser);
+
+    // If owner admin, also write to admin registry
+    if (isOwnerAdmin) {
+      try {
+        await setDoc(doc(db, 'admins', uid), { email, role: 'admin', assignedAt: new Date().toISOString() });
+      } catch (e) {
+        console.warn('Could not set admin record:', e);
+      }
+    }
+
     return newUser;
   }
 
   async loginUser(email: string, pass: string): Promise<User> {
-    await this.initializeDatabase();
     const cleanEmail = email.trim().toLowerCase();
     
-    const usersCol = collection(db, 'users');
-    const q = query(usersCol, where('email', '==', cleanEmail));
-    const snapshot = await getDocs(q);
+    // Authenticate securely with Firebase Authentication
+    const cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
+    const uid = cred.user.uid;
+
+    // Fetch user profile from Firestore
+    let user = await this.getUserById(uid);
     
-    if (snapshot.empty) {
-      throw new Error('Credenciales inválidas. Verifica tu correo o contraseña.');
+    // If profile doesn't exist yet (e.g. newly authenticated), create profile
+    if (!user) {
+      const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+      user = {
+        id: uid,
+        name: cred.user.displayName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        age: 25,
+        gender: 'other',
+        bio: 'Miembro de Vulnerable.',
+        photos: [cred.user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'],
+        location: 'Buenos Aires',
+        distanceKm: 3,
+        occupation: 'Neurodivergente',
+        interests: ['Tecnología', 'Música'],
+        verified: isOwnerAdmin,
+        status: 'active',
+        role: isOwnerAdmin ? 'admin' : 'user',
+        createdAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        likesCount: 0,
+        matchesCount: 0,
+        preferences: {
+          minAge: 18,
+          maxAge: 65,
+          interestedIn: ['female', 'male', 'non-binary', 'other'],
+          maxDistanceKm: 50
+        }
+      };
+      await setDoc(doc(db, 'users', uid), user);
     }
 
-    const userDoc = snapshot.docs[0];
-    const user = userDoc.data() as User;
-
     if (user.status === 'blocked') {
+      await signOut(auth);
       throw new Error('Esta cuenta se encuentra temporalmente suspendida.');
     }
 
-    const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
-    const passMatches = 
-      (user.password && user.password === pass) ||
-      (isOwnerAdmin && (pass === DEFAULT_ADMIN_PASS || pass === 'admin1234' || pass === 'admin123' || pass === 'admin'));
-
-    if (!passMatches && user.password) {
-      throw new Error('Credenciales inválidas. Verifica tu correo o contraseña.');
-    }
-
-    // Update lastActive in Firestore
+    // Update lastActive timestamp
     const now = new Date().toISOString();
     user.lastActive = now;
-    await updateDoc(doc(db, 'users', user.id), { lastActive: now });
+    await updateDoc(doc(db, 'users', uid), { lastActive: now }).catch(() => {});
 
     return user;
+  }
+
+  async loginWithGoogle(): Promise<User> {
+    const provider = new GoogleAuthProvider();
+    const cred = await signInWithPopup(auth, provider);
+    const uid = cred.user.uid;
+    const email = cred.user.email || '';
+    const isOwnerAdmin = email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
+
+    let user = await this.getUserById(uid);
+    if (!user) {
+      user = {
+        id: uid,
+        name: cred.user.displayName || 'Usuario Google',
+        email,
+        age: 25,
+        gender: 'other',
+        bio: 'Conectando en Vulnerable.',
+        photos: [cred.user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'],
+        location: 'Buenos Aires, Argentina',
+        distanceKm: 3,
+        occupation: 'Neurodivergente',
+        interests: ['Música', 'Lectura'],
+        verified: isOwnerAdmin,
+        status: 'active',
+        role: isOwnerAdmin ? 'admin' : 'user',
+        createdAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        likesCount: 0,
+        matchesCount: 0,
+        preferences: {
+          minAge: 18,
+          maxAge: 60,
+          interestedIn: ['female', 'male', 'non-binary', 'other'],
+          maxDistanceKm: 50
+        }
+      };
+      await setDoc(doc(db, 'users', uid), user);
+    }
+
+    return user;
+  }
+
+  async logout(): Promise<void> {
+    await signOut(auth);
+  }
+
+  getCurrentAuthUser(): FirebaseUser | null {
+    return auth.currentUser;
+  }
+
+  onAuthChange(callback: (user: FirebaseUser | null) => void): Unsubscribe {
+    return onAuthStateChanged(auth, callback);
   }
 
   async getUserById(userId: string): Promise<User | null> {
@@ -148,40 +255,55 @@ class FirebaseService {
 
   async updateUser(userId: string, data: Partial<User>): Promise<User> {
     const userRef = doc(db, 'users', userId);
-    await setDoc(userRef, data, { merge: true });
+    
+    // Filter out forbidden keys (e.g. role, status, verified cannot be modified by user)
+    const sanitizedData: Partial<User> = {
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.bio !== undefined && { bio: data.bio }),
+      ...(data.photos !== undefined && { photos: data.photos }),
+      ...(data.age !== undefined && { age: Number(data.age) }),
+      ...(data.gender !== undefined && { gender: data.gender }),
+      ...(data.location !== undefined && { location: data.location }),
+      ...(data.occupation !== undefined && { occupation: data.occupation }),
+      ...(data.interests !== undefined && { interests: data.interests }),
+      ...(data.preferences !== undefined && { preferences: data.preferences }),
+      lastActive: new Date().toISOString()
+    };
+
+    await setDoc(userRef, sanitizedData, { merge: true });
     const updated = await this.getUserById(userId);
     if (!updated) throw new Error('Usuario no encontrado tras actualizar.');
     return updated;
   }
 
-  async changePassword(userId: string, newPass: string): Promise<void> {
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { password: newPass });
-  }
-
   // -------------------------------------------------------------
-  // FEED & SWIPING
+  // FEED & MUTUAL SWIPING LOGIC (Fixing Issue #6)
   // -------------------------------------------------------------
   async getFeed(currentUserId: string): Promise<User[]> {
     await this.initializeDatabase();
     try {
-      // Get all swipes by current user
+      // 1. Get all swipes recorded by current user
       const swipesCol = collection(db, 'swipes');
       const qSwipes = query(swipesCol, where('swiperId', '==', currentUserId));
       const swipeSnap = await getDocs(qSwipes);
-      const swipedIds = new Set<string>();
+      const swipedTargetIds = new Set<string>();
       swipeSnap.forEach(d => {
         const sw = d.data() as SwipeRecord;
-        if (sw.targetId) swipedIds.add(sw.targetId);
+        if (sw.targetId) swipedTargetIds.add(sw.targetId);
       });
 
-      // Get active users
+      // 2. Query available candidate profiles
       const usersCol = collection(db, 'users');
       const usersSnap = await getDocs(usersCol);
       const users: User[] = [];
       usersSnap.forEach(d => {
         const u = d.data() as User;
-        if (u.id !== currentUserId && u.role !== 'admin' && u.status === 'active' && !swipedIds.has(u.id)) {
+        if (
+          u.id !== currentUserId && 
+          u.role !== 'admin' && 
+          u.status === 'active' && 
+          !swipedTargetIds.has(u.id)
+        ) {
           users.push(u);
         }
       });
@@ -207,70 +329,91 @@ class FirebaseService {
       timestamp: new Date().toISOString()
     };
 
-    // Save swipe to Firestore
+    // 1. Record the swipe in Firestore
     await setDoc(doc(db, 'swipes', swipeId), swipeRecord);
 
     const targetUser = await this.getUserById(targetId);
     let isMatch = false;
     let createdMatch: Match | null = null;
 
-    if (type === 'like' || type === 'superlike') {
+    // If it's a pass, no match can occur
+    if (type === 'pass') {
+      return { isMatch: false, match: null, partner: targetUser };
+    }
+
+    // 2. Increment target's likesCount
+    if (targetUser) {
+      await updateDoc(doc(db, 'users', targetId), {
+        likesCount: (targetUser.likesCount || 0) + 1
+      }).catch(() => {});
+    }
+
+    // 3. MUTUAL MATCH CHECK:
+    // Check if targetUser has ALREADY swiped 'like' or 'superlike' on current user
+    const swipesCol = collection(db, 'swipes');
+    const mutualQuery = query(
+      swipesCol, 
+      where('swiperId', '==', targetId), 
+      where('targetId', '==', swiperId)
+    );
+    const mutualSnap = await getDocs(mutualQuery);
+    const hasTargetLikedSwiper = mutualSnap.docs.some(d => {
+      const t = d.data().type;
+      return t === 'like' || t === 'superlike';
+    });
+
+    // If target is a seeded demo profile, simulate realistic reciprocal interest
+    const isSeedProfile = targetUser && (targetUser.email.includes('@ejemplo.com') || targetId.startsWith('user-'));
+    const isReciprocal = hasTargetLikedSwiper || (isSeedProfile && (type === 'superlike' || Math.random() > 0.3));
+
+    if (isReciprocal) {
+      isMatch = true;
+      const firstId = swiperId < targetId ? swiperId : targetId;
+      const secondId = swiperId < targetId ? targetId : swiperId;
+      const matchId = `match-${firstId}-${secondId}`;
+      
+      createdMatch = {
+        id: matchId,
+        userIds: [swiperId, targetId],
+        matchedAt: new Date().toISOString(),
+        lastMessage: `¡Hiciste match con ${targetUser?.name || 'alguien especial'}!`,
+        lastMessageTime: new Date().toISOString(),
+        unreadCount: 0,
+        partner: targetUser || undefined
+      };
+
+      // Save match document to Firestore
+      await setDoc(doc(db, 'matches', matchId), {
+        id: matchId,
+        userIds: [swiperId, targetId],
+        matchedAt: createdMatch.matchedAt,
+        lastMessage: createdMatch.lastMessage,
+        lastMessageTime: createdMatch.lastMessageTime,
+        unreadCount: 0
+      }, { merge: true });
+
+      // Update matches count for both
+      await updateDoc(doc(db, 'users', swiperId), {
+        matchesCount: ((await this.getUserById(swiperId))?.matchesCount || 0) + 1
+      }).catch(() => {});
+
       if (targetUser) {
-        // Increment target's likes count
         await updateDoc(doc(db, 'users', targetId), {
-          likesCount: (targetUser.likesCount || 0) + 1
-        });
+          matchesCount: (targetUser.matchesCount || 0) + 1
+        }).catch(() => {});
       }
 
-      // Check if target has liked current user (mutual match)
-      const swipesCol = collection(db, 'swipes');
-      const q = query(
-        swipesCol, 
-        where('swiperId', '==', targetId), 
-        where('targetId', '==', swiperId)
-      );
-      const mutualSnap = await getDocs(q);
-      const mutualLikes = mutualSnap.docs.filter(d => {
-        const t = d.data().type;
-        return t === 'like' || t === 'superlike';
+      // Automatically create a welcoming greeting message from the match
+      const msgId = `msg-${Date.now()}`;
+      await setDoc(doc(db, 'messages', msgId), {
+        id: msgId,
+        matchId,
+        senderId: targetId,
+        receiverId: swiperId,
+        text: `¡Hola! Me alegra mucho que hayamos conectado. ¿Cómo va tu día? 😊`,
+        createdAt: new Date().toISOString(),
+        read: false
       });
-
-      // If mutual or seed user match simulation
-      if (mutualLikes.length > 0 || (targetUser && !targetUser.email.includes('@ejemplo.com') ? false : true)) {
-        isMatch = true;
-        const matchId = `match-${swiperId < targetId ? swiperId : targetId}-${swiperId < targetId ? targetId : swiperId}`;
-        
-        createdMatch = {
-          id: matchId,
-          userIds: [swiperId, targetId],
-          matchedAt: new Date().toISOString(),
-          lastMessage: `¡Hiciste match con ${targetUser?.name || 'alguien especial'}!`,
-          lastMessageTime: new Date().toISOString(),
-          unreadCount: 0,
-          partner: targetUser || undefined
-        };
-
-        await setDoc(doc(db, 'matches', matchId), {
-          id: matchId,
-          userIds: [swiperId, targetId],
-          matchedAt: createdMatch.matchedAt,
-          lastMessage: createdMatch.lastMessage,
-          lastMessageTime: createdMatch.lastMessageTime,
-          unreadCount: 0
-        });
-
-        // Add welcome system message
-        const msgId = `msg-${Date.now()}`;
-        await setDoc(doc(db, 'messages', msgId), {
-          id: msgId,
-          matchId,
-          senderId: targetId,
-          receiverId: swiperId,
-          text: `¡Hola! Me alegra que hayamos conectado. ¿Qué tal estás? 😊`,
-          createdAt: new Date().toISOString(),
-          read: false
-        });
-      }
     }
 
     return { isMatch, match: createdMatch, partner: targetUser };
@@ -302,10 +445,10 @@ class FirebaseService {
     }
   }
 
-  subscribeMatches(currentUserId: string, onUpdate: (matches: Match[]) => void): Unsubscribe {
+  subscribeMatches(currentUserId: string, callback: (matches: Match[]) => void): Unsubscribe {
     const matchesCol = collection(db, 'matches');
     const q = query(matchesCol, where('userIds', 'array-contains', currentUserId));
-
+    
     return onSnapshot(q, async (snap) => {
       const matches: Match[] = [];
       for (const d of snap.docs) {
@@ -316,210 +459,161 @@ class FirebaseService {
           matches.push({ ...m, partner: partner || undefined });
         }
       }
-      onUpdate(matches);
+      callback(matches);
     }, (err) => {
-      console.warn('[Firestore] Matches listener error:', err);
+      console.warn('[Firestore] Matches subscription error:', err);
     });
   }
 
-  async getMessages(matchId: string): Promise<Message[]> {
-    try {
-      const msgsCol = collection(db, 'messages');
-      const q = query(msgsCol, where('matchId', '==', matchId));
-      const snap = await getDocs(q);
-      const msgs = snap.docs.map(d => d.data() as Message);
-      msgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      return msgs;
-    } catch (err) {
-      console.warn('[Firestore] Error getting messages:', err);
-      return [];
-    }
-  }
-
-  subscribeMessages(matchId: string, onUpdate: (messages: Message[]) => void): Unsubscribe {
-    const msgsCol = collection(db, 'messages');
-    const q = query(msgsCol, where('matchId', '==', matchId));
+  subscribeMessages(matchId: string, currentUserId: string, callback: (messages: Message[]) => void): Unsubscribe {
+    const messagesCol = collection(db, 'messages');
+    const q = query(
+      messagesCol, 
+      where('matchId', '==', matchId)
+    );
 
     return onSnapshot(q, (snap) => {
-      const msgs = snap.docs.map(d => d.data() as Message);
-      msgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      onUpdate(msgs);
+      const messages: Message[] = [];
+      snap.forEach(d => {
+        const msg = d.data() as Message;
+        // Verify current user belongs to the message exchange
+        if (msg.senderId === currentUserId || msg.receiverId === currentUserId) {
+          messages.push(msg);
+        }
+      });
+      messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      callback(messages);
     }, (err) => {
-      console.warn('[Firestore] Message listener error:', err);
+      console.warn('[Firestore] Messages subscription error:', err);
     });
   }
 
   async sendMessage(matchId: string, senderId: string, receiverId: string, text: string): Promise<Message> {
-    const msgId = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const cleanText = text.trim();
+    if (!cleanText) throw new Error('El mensaje no puede estar vacío.');
+
+    const msgId = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    
     const newMsg: Message = {
       id: msgId,
       matchId,
       senderId,
       receiverId,
-      text: text.trim(),
-      createdAt: new Date().toISOString(),
-      read: true
+      text: cleanText,
+      createdAt: now,
+      read: false
     };
 
-    // Add to messages collection
     await setDoc(doc(db, 'messages', msgId), newMsg);
 
-    // Update match's lastMessage in Firestore
-    const matchRef = doc(db, 'matches', matchId);
-    await updateDoc(matchRef, {
-      lastMessage: text.trim(),
-      lastMessageTime: newMsg.createdAt
-    });
+    // Update match summary in Firestore
+    await updateDoc(doc(db, 'matches', matchId), {
+      lastMessage: cleanText,
+      lastMessageTime: now
+    }).catch(() => {});
 
     return newMsg;
   }
 
   // -------------------------------------------------------------
-  // ADMIN PANEL CONTROLS
+  // ADMIN & AUDIT
   // -------------------------------------------------------------
   async getAdminStats(): Promise<AdminStats> {
-    await this.initializeDatabase();
-    try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const matchesSnap = await getDocs(collection(db, 'matches'));
-      const swipesSnap = await getDocs(collection(db, 'swipes'));
-      const messagesSnap = await getDocs(collection(db, 'messages'));
+    const usersSnap = await getDocs(collection(db, 'users'));
+    const matchesSnap = await getDocs(collection(db, 'matches'));
+    const messagesSnap = await getDocs(collection(db, 'messages'));
+    const swipesSnap = await getDocs(collection(db, 'swipes'));
 
-      const users = usersSnap.docs.map(d => d.data() as User);
+    const users = usersSnap.docs.map(d => d.data() as User);
+    const active = users.filter(u => u.status === 'active').length;
+    const blocked = users.filter(u => u.status === 'blocked').length;
+    const verified = users.filter(u => u.verified).length;
 
-      return {
-        totalUsers: users.length,
-        activeUsers: users.filter(u => u.status === 'active').length,
-        blockedUsers: users.filter(u => u.status === 'blocked').length,
-        totalMatches: matchesSnap.size,
-        totalSwipes: swipesSnap.size,
-        totalMessages: messagesSnap.size,
-        todayNewUsers: users.filter(u => {
-          const created = new Date(u.createdAt);
-          const today = new Date();
-          return created.toDateString() === today.toDateString();
-        }).length || 1,
-        verifiedUsers: users.filter(u => u.verified).length
-      };
-    } catch (err) {
-      console.warn('[Firestore] Error getting admin stats:', err);
-      return {
-        totalUsers: 0,
-        activeUsers: 0,
-        blockedUsers: 0,
-        totalMatches: 0,
-        totalSwipes: 0,
-        totalMessages: 0,
-        todayNewUsers: 0,
-        verifiedUsers: 0
-      };
-    }
+    return {
+      totalUsers: users.length,
+      activeUsers: active,
+      blockedUsers: blocked,
+      totalMatches: matchesSnap.size,
+      totalMessages: messagesSnap.size,
+      totalSwipes: swipesSnap.size,
+      todayNewUsers: users.filter(u => {
+        const diff = Date.now() - new Date(u.createdAt).getTime();
+        return diff < 86400000;
+      }).length,
+      verifiedUsers: verified
+    };
   }
 
-  async getAllUsers(params?: { q?: string; status?: string; role?: string; sortBy?: string }): Promise<User[]> {
-    await this.initializeDatabase();
+  async getAllUsersAdmin(): Promise<User[]> {
     const snap = await getDocs(collection(db, 'users'));
-    let users = snap.docs.map(d => d.data() as User);
-
-    if (params?.q) {
-      const q = params.q.toLowerCase();
-      users = users.filter(u => 
-        u.name.toLowerCase().includes(q) || 
-        u.email.toLowerCase().includes(q) || 
-        u.location.toLowerCase().includes(q) ||
-        (u.occupation && u.occupation.toLowerCase().includes(q))
-      );
-    }
-    if (params?.status && params.status !== 'all') {
-      users = users.filter(u => u.status === params.status);
-    }
-    if (params?.role && params.role !== 'all') {
-      users = users.filter(u => u.role === params.role);
-    }
-
-    return users;
+    return snap.docs.map(d => d.data() as User);
   }
 
-  async blockUser(id: string, reason?: string, adminEmail = DEFAULT_ADMIN_EMAIL): Promise<User> {
-    const user = await this.updateUser(id, { status: 'blocked' });
-    await this.addAuditLog({
-      id: `log-${Date.now()}`,
+  async adminToggleUserStatus(targetUserId: string, adminEmail: string): Promise<User> {
+    const user = await this.getUserById(targetUserId);
+    if (!user) throw new Error('Usuario no encontrado');
+
+    const newStatus = user.status === 'active' ? 'blocked' : 'active';
+    await updateDoc(doc(db, 'users', targetUserId), { status: newStatus });
+    
+    // Log action to auditLogs collection
+    const logId = `log-${Date.now()}`;
+    await setDoc(doc(db, 'auditLogs', logId), {
+      id: logId,
       adminEmail,
-      action: 'BLOCK_USER',
-      targetUserId: user.id,
+      action: newStatus === 'blocked' ? 'BLOCK_USER' : 'UNBLOCK_USER',
+      targetUserId,
       targetUserName: user.name,
       timestamp: new Date().toISOString(),
-      details: reason || 'Bloqueo administrativo de cuenta'
+      details: `Usuario cambiado a estado: ${newStatus}`
     });
-    return user;
+
+    return { ...user, status: newStatus };
   }
 
-  async unblockUser(id: string, adminEmail = DEFAULT_ADMIN_EMAIL): Promise<User> {
-    const user = await this.updateUser(id, { status: 'active' });
-    await this.addAuditLog({
-      id: `log-${Date.now()}`,
-      adminEmail,
-      action: 'UNBLOCK_USER',
-      targetUserId: user.id,
-      targetUserName: user.name,
-      timestamp: new Date().toISOString(),
-      details: 'Desbloqueo administrativo autorizado'
-    });
-    return user;
-  }
+  async adminToggleUserVerification(targetUserId: string, adminEmail: string): Promise<User> {
+    const user = await this.getUserById(targetUserId);
+    if (!user) throw new Error('Usuario no encontrado');
 
-  async toggleVerifyUser(id: string, adminEmail = DEFAULT_ADMIN_EMAIL): Promise<User> {
-    const current = await this.getUserById(id);
-    if (!current) throw new Error('Usuario no encontrado');
-    const newVerified = !current.verified;
-    const user = await this.updateUser(id, { verified: newVerified });
-    await this.addAuditLog({
-      id: `log-${Date.now()}`,
+    const newVerified = !user.verified;
+    await updateDoc(doc(db, 'users', targetUserId), { verified: newVerified });
+
+    const logId = `log-${Date.now()}`;
+    await setDoc(doc(db, 'auditLogs', logId), {
+      id: logId,
       adminEmail,
       action: newVerified ? 'VERIFY_USER' : 'UNVERIFY_USER',
-      targetUserId: user.id,
+      targetUserId,
       targetUserName: user.name,
       timestamp: new Date().toISOString(),
-      details: `Insignia de verificación ${newVerified ? 'otorgada' : 'revocada'}.`
+      details: `Insignia de verificación: ${newVerified ? 'Otorgada' : 'Revocada'}`
     });
-    return user;
+
+    return { ...user, verified: newVerified };
   }
 
-  async deleteUser(id: string, adminEmail = DEFAULT_ADMIN_EMAIL): Promise<void> {
-    const targetUser = await this.getUserById(id);
-    if (!targetUser) throw new Error('Usuario no encontrado');
-    if (targetUser.role === 'admin') throw new Error('No podés eliminar la cuenta de administrador principal.');
+  async adminDeleteUser(targetUserId: string, adminEmail: string): Promise<void> {
+    const user = await this.getUserById(targetUserId);
+    await deleteDoc(doc(db, 'users', targetUserId));
 
-    await deleteDoc(doc(db, 'users', id));
-    await this.addAuditLog({
-      id: `log-${Date.now()}`,
+    const logId = `log-${Date.now()}`;
+    await setDoc(doc(db, 'auditLogs', logId), {
+      id: logId,
       adminEmail,
       action: 'DELETE_USER',
-      targetUserId: id,
-      targetUserName: targetUser.name,
+      targetUserId,
+      targetUserName: user?.name || targetUserId,
       timestamp: new Date().toISOString(),
-      details: `Eliminación de cuenta (${targetUser.email}).`
+      details: `Cuenta eliminada permanentemente por el administrador.`
     });
-  }
-
-  async addAuditLog(log: AuditLog): Promise<void> {
-    try {
-      await setDoc(doc(db, 'auditLogs', log.id), log);
-    } catch (err) {
-      console.warn('[Firestore] Error saving audit log:', err);
-    }
   }
 
   async getAuditLogs(): Promise<AuditLog[]> {
-    try {
-      const snap = await getDocs(collection(db, 'auditLogs'));
-      const logs = snap.docs.map(d => d.data() as AuditLog);
-      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      return logs;
-    } catch (err) {
-      console.warn('[Firestore] Error getting audit logs:', err);
-      return [];
-    }
+    const snap = await getDocs(collection(db, 'auditLogs'));
+    const logs = snap.docs.map(d => d.data() as AuditLog);
+    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return logs;
   }
 }
 

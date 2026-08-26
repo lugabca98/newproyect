@@ -5,10 +5,7 @@ const STORAGE_KEY_SWIPES = 'mv_db_swipes';
 const STORAGE_KEY_MATCHES = 'mv_db_matches';
 const STORAGE_KEY_MESSAGES = 'mv_db_messages';
 const STORAGE_KEY_LOGS = 'mv_db_logs';
-const STORAGE_KEY_PASSWORDS = 'mv_db_passwords'; // email -> password
-
 export const DEFAULT_ADMIN_EMAIL = 'lugabca98@gmail.com';
-export const DEFAULT_ADMIN_PASS = 'admin1234';
 
 export const INITIAL_ADMIN: User = {
   id: 'admin-owner',
@@ -352,18 +349,6 @@ class LocalDatabaseStore {
       this.setStored(STORAGE_KEY_MATCHES, INITIAL_MATCHES);
       this.setStored(STORAGE_KEY_MESSAGES, INITIAL_MESSAGES);
       this.setStored(STORAGE_KEY_LOGS, INITIAL_LOGS);
-      
-      const passwords: Record<string, string> = {
-        [DEFAULT_ADMIN_EMAIL.toLowerCase()]: DEFAULT_ADMIN_PASS,
-        'valeria@ejemplo.com': 'password123',
-        'lucas@ejemplo.com': 'password123',
-        'camila@ejemplo.com': 'password123',
-        'mateo@ejemplo.com': 'password123',
-        'sofia@ejemplo.com': 'password123',
-        'ignacio@ejemplo.com': 'password123',
-        'elena@ejemplo.com': 'password123'
-      };
-      this.setStored(STORAGE_KEY_PASSWORDS, passwords);
     } else {
       // Ensure seed users have updated neurodivergences if previously seeded with old professions
       let changed = false;
@@ -395,10 +380,6 @@ class LocalDatabaseStore {
       if (changed) {
         this.setStored(STORAGE_KEY_USERS, users);
       }
-
-      const passwords = this.getStored<Record<string, string>>(STORAGE_KEY_PASSWORDS, {});
-      passwords[DEFAULT_ADMIN_EMAIL.toLowerCase()] = DEFAULT_ADMIN_PASS;
-      this.setStored(STORAGE_KEY_PASSWORDS, passwords);
     }
   }
 
@@ -409,17 +390,6 @@ class LocalDatabaseStore {
 
   saveUsers(users: User[]): void {
     this.setStored(STORAGE_KEY_USERS, users);
-  }
-
-  getPassword(email: string): string | null {
-    const passwords = this.getStored<Record<string, string>>(STORAGE_KEY_PASSWORDS, {});
-    return passwords[email.toLowerCase()] || null;
-  }
-
-  setPassword(email: string, pass: string): void {
-    const passwords = this.getStored<Record<string, string>>(STORAGE_KEY_PASSWORDS, {});
-    passwords[email.toLowerCase()] = pass;
-    this.setStored(STORAGE_KEY_PASSWORDS, passwords);
   }
 
   getSwipes(): SwipeRecord[] {

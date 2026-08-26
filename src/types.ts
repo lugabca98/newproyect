@@ -27,7 +27,6 @@ export interface User {
   likesCount: number;
   matchesCount: number;
   preferences: UserPreferences;
-  password?: string;
 }
 
 export type SwipeType = 'like' | 'pass' | 'superlike';

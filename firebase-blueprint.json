@@ -86,23 +86,23 @@
   },
   "firestore": {
     "users": {
-      "entity": "User",
+      "schema": "User",
       "description": "Collection of user profiles"
     },
     "swipes": {
-      "entity": "Swipe",
+      "schema": "Swipe",
       "description": "Collection of user swipes and likes"
     },
     "matches": {
-      "entity": "Match",
+      "schema": "Match",
       "description": "Collection of mutual matches"
     },
     "messages": {
-      "entity": "Message",
+      "schema": "Message",
       "description": "Collection of direct chat messages"
     },
     "auditLogs": {
-      "entity": "AuditLog",
+      "schema": "AuditLog",
       "description": "Collection of admin activity audit logs"
     }
   }

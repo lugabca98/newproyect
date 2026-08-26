@@ -1,45 +1,140 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
-    function isAuthenticated() {
+    
+    // Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
       return request.auth != null;
     }
     
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Users Collection
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'lugabca98@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 1. Users Collection
     match /users/{userId} {
-      allow read: if true;
-      allow create: if true;
-      allow update, delete: if true;
+      // Any authenticated user can read public profile cards for feed & matching
+      allow read: if isSignedIn();
+
+      // Creation on sign-up: Owner only, cannot self-assign admin role or verified badge
+      allow create: if isSignedIn() && (
+        isOwner(userId) &&
+        (incoming().role == 'user' || isAdmin()) &&
+        (incoming().status == 'active') &&
+        (incoming().verified == false || isAdmin())
+      );
+
+      // Updates: Admins can update anything; regular owners can only update safe profile fields (NOT role/status/verified)
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          isOwner(userId) &&
+          incoming().role == existing().role &&
+          incoming().status == existing().status &&
+          incoming().verified == existing().verified &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'bio', 'photos', 'age', 'gender', 'location', 
+            'occupation', 'interests', 'preferences', 'lastActive', 
+            'distanceKm', 'likesCount', 'matchesCount'
+          ])
+        )
+      );
+
+      allow delete: if isAdmin();
     }
 
-    // Swipes Collection
+    // 2. Admins Registry Collection
+    match /admins/{adminId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 3. Swipes Collection
     match /swipes/{swipeId} {
-      allow read, write: if true;
+      // Swiper can read their own swipes; Admin can audit
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.swiperId || 
+        request.auth.uid == resource.data.targetId ||
+        isAdmin()
+      );
+
+      // Can only create swipe where authenticated user is the swiper
+      allow create: if isSignedIn() && request.auth.uid == incoming().swiperId;
+
+      allow update, delete: if isAdmin();
     }
 
-    // Matches Collection
+    // 4. Matches Collection
     match /matches/{matchId} {
-      allow read, write: if true;
+      // Only users who are in userIds can read/update their match
+      allow read: if isSignedIn() && (
+        request.auth.uid in resource.data.userIds || 
+        isAdmin()
+      );
+
+      // Creating a match requires authenticated user to be one of the participants
+      allow create: if isSignedIn() && (
+        request.auth.uid in incoming().userIds
+      );
+
+      allow update: if isSignedIn() && (
+        request.auth.uid in resource.data.userIds || 
+        isAdmin()
+      );
+
+      allow delete: if isAdmin();
     }
 
-    // Messages Collection
+    // 5. Messages Collection
     match /messages/{messageId} {
-      allow read, write: if true;
+      // Only participants (sender/receiver) or admin can read messages
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.senderId || 
+        request.auth.uid == resource.data.receiverId || 
+        isAdmin()
+      );
+
+      // Can only send message as oneself
+      allow create: if isSignedIn() && (
+        request.auth.uid == incoming().senderId
+      );
+
+      // Receiver can mark as read; Admin can update
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.receiverId || 
+        isAdmin()
+      );
+
+      allow delete: if isAdmin();
     }
 
-    // Audit Logs Collection
+    // 6. Audit Logs Collection
     match /auditLogs/{logId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Reports Collection
+    // 7. Reports Collection
     match /reports/{reportId} {
-      allow read, write: if true;
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
     }
   }
 }

@@ -61,11 +61,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
+  // Update partner whenever selectedMatchId or matches change
+  useEffect(() => {
+    if (selectedMatchId && matches.length > 0) {
+      const currentMatch = matches.find(m => m.id === selectedMatchId);
+      if (currentMatch?.partner) {
+        setPartner(currentMatch.partner);
+      }
+    }
+  }, [selectedMatchId, matches]);
+
   // Real-time Firestore messages subscription with polling fallback
   useEffect(() => {
     if (selectedMatchId) {
       loadMessages(selectedMatchId, true);
-      const unsub = firebaseService.subscribeMessages(selectedMatchId, (realtimeMsgs) => {
+      const unsub = firebaseService.subscribeMessages(selectedMatchId, currentUser.id, (realtimeMsgs) => {
         if (realtimeMsgs && realtimeMsgs.length > 0) {
           setMessages(realtimeMsgs);
           scrollToBottom();
@@ -80,7 +90,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
     try {
       const data = await api.getMessages(matchId);
       setMessages(data.messages);
-      setPartner(data.partner);
       if (isInitial) {
         scrollToBottom();
       }

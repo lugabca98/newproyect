@@ -132,7 +132,8 @@ export function App() {
     try {
       const res = await api.rewind();
       if (res.success && res.restoredUser) {
-        setFeedProfiles(prev => [res.restoredUser, ...prev]);
+        const user = res.restoredUser;
+        setFeedProfiles(prev => [user, ...prev]);
         setCanRewind(false);
       }
     } catch (err: any) {
@@ -156,8 +157,8 @@ export function App() {
     }
   };
 
-  const handleLogout = () => {
-    api.setToken(null);
+  const handleLogout = async () => {
+    await api.logout();
     setCurrentUser(null);
     setCurrentTab('discover');
     setAuthModalMode('register');
