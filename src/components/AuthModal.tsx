@@ -190,17 +190,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {/* Brand Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-500 to-amber-400 p-0.5 shadow-lg shadow-rose-500/30 mb-2">
+        <div className="text-center mb-5">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-500 to-amber-400 p-0.5 shadow-lg shadow-rose-500/30 mb-2.5">
             <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center p-1.5">
               <EmbraceHeartLogo className="w-9 h-9" glow={true} />
             </div>
           </div>
-          <h2 className="text-2xl font-black text-white tracking-tight">
-            {mode === 'register' ? 'Crear Cuenta' : 'Iniciar Sesión'}
+          <h2 className="text-2xl sm:text-3xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-pink-400 to-amber-300 uppercase">
+            VULNERABLE
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            {mode === 'register' ? 'Subí tus fotos y comenzá a deslizar hoy mismo' : 'Bienvenido de nuevo a Vulnerable'}
+          <p className="text-xs text-slate-400 mt-1 font-medium">
+            {mode === 'register' ? 'Crear cuenta • Conectá auténticamente' : 'Iniciar sesión • Bienvenido de nuevo'}
           </p>
         </div>
 
