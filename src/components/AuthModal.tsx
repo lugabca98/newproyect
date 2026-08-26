@@ -144,7 +144,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         password: regPassword.trim(),
         age: Number(age),
         gender,
-        occupation: occupation.trim() || 'Estudiante / Profesional',
+        occupation: occupation.trim() || 'Neurodivergente',
         location: location.trim(),
         bio: bio.trim(),
         photos: allPhotos,
@@ -422,13 +422,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Ocupación</label>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Neurodivergencia</label>
                 <input
                   id="reg-input-occupation"
                   type="text"
                   value={occupation}
                   onChange={(e) => setOccupation(e.target.value)}
-                  placeholder="Ej. Fotógrafo, Abogada..."
+                  placeholder="Ej. Bipolaridad, depresión, TDAH, TEA..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                 />
               </div>

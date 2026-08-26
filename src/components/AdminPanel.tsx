@@ -421,7 +421,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
                           <div>
                             <span className="font-bold text-white block">{user.name}</span>
-                            <span className="text-[11px] text-slate-400">{user.occupation || 'Sin ocupación'}</span>
+                            <span className="text-[11px] text-rose-300/90 font-medium">{user.occupation || 'Neurodivergente'}</span>
                           </div>
                         </div>
                       </td>
@@ -704,7 +704,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </p>
 
               <div className="grid grid-cols-2 gap-2 pt-1 text-slate-400">
-                <div><strong>Ocupación:</strong> {inspectedUser.occupation}</div>
+                <div><strong>Neurodivergencia:</strong> {inspectedUser.occupation}</div>
                 <div><strong>Ubicación:</strong> {inspectedUser.location}</div>
                 <div><strong>Registro:</strong> {new Date(inspectedUser.createdAt).toLocaleDateString()}</div>
                 <div><strong>Última actividad:</strong> {new Date(inspectedUser.lastActive).toLocaleDateString()}</div>

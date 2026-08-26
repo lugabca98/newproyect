@@ -12,7 +12,10 @@ export const EmbraceHeartLogo: React.FC<EmbraceHeartLogoProps> = ({
   glow = false 
 }) => {
   return (
-    <div className={`relative inline-flex items-center justify-center ${className}`} style={size ? { width: size, height: size } : undefined}>
+    <div 
+      className={`relative inline-flex items-center justify-center ${className}`} 
+      style={size ? { width: size, height: size } : undefined}
+    >
       {glow && (
         <div className="absolute inset-0 rounded-full bg-rose-500/40 blur-md -z-10 animate-pulse" />
       )}
@@ -81,7 +84,6 @@ export const EmbraceHeartLogo: React.FC<EmbraceHeartLogoProps> = ({
             strokeWidth="1"
           />
           {/* Left Hand hugging and resting on the right side of heart */}
-          {/* Palm & 4 distinct curved hugging fingers */}
           <path
             d="M 55 52 C 58 50.5 63 51 66 54 C 67.5 55.5 67 58 64 59.5 C 60 61.5 56 60.5 53 58 Z"
             fill="#ffedd5"
@@ -170,3 +172,4 @@ export const EmbraceHeartLogo: React.FC<EmbraceHeartLogoProps> = ({
   );
 };
 
+export const BrandLogo = EmbraceHeartLogo;

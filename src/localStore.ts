@@ -16,13 +16,13 @@ const INITIAL_ADMIN: User = {
   email: DEFAULT_ADMIN_EMAIL,
   age: 28,
   gender: 'other',
-  bio: 'Propietario y Administrador de Vulnerable. Panel de control global y moderación.',
+  bio: 'Propietario y Administrador de Vulnerable. Espacio seguro y empático para personas neurodivergentes.',
   photos: [
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
   ],
   location: 'Buenos Aires, Argentina',
   distanceKm: 0,
-  occupation: 'Fundador & Director de Operaciones',
+  occupation: 'Altas Capacidades (AACC) & TDAH',
   interests: ['Tecnología', 'Seguridad', 'Inteligencia Artificial', 'Café de Especialidad'],
   verified: true,
   status: 'active',
@@ -47,7 +47,7 @@ const INITIAL_SEED_USERS: User[] = [
     email: 'valeria@ejemplo.com',
     age: 24,
     gender: 'female',
-    bio: 'Diseñadora UX/UI 🎨. Amante del café filtrado, museos de arte contemporáneo y pasear a mi perrito Milo 🐶.',
+    bio: 'TDAH creativa 🎨. Amante del café filtrado, hiperfoco en diseño, museos de arte contemporáneo y pasear a mi perrito Milo 🐶.',
     photos: [
       'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
@@ -55,7 +55,7 @@ const INITIAL_SEED_USERS: User[] = [
     ],
     location: 'Palermo, CABA',
     distanceKm: 3,
-    occupation: 'Diseñadora de Producto',
+    occupation: 'TDAH & Ansiedad',
     interests: ['Diseño', 'Fotografía', 'Música Indie', 'Yoga', 'Viajes'],
     verified: true,
     status: 'active',
@@ -77,7 +77,7 @@ const INITIAL_SEED_USERS: User[] = [
     email: 'lucas@ejemplo.com',
     age: 27,
     gender: 'male',
-    bio: 'Ingeniero de software & escalador en roca 🧗. Apasionado por la cocina italiana casera 🍝 y tocar la guitarra.',
+    bio: 'En el espectro autista (TEA) & apasionado por la programación y la escalada en roca 🧗. Valoro la comunicación directa y honesta.',
     photos: [
       'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
@@ -85,7 +85,7 @@ const INITIAL_SEED_USERS: User[] = [
     ],
     location: 'Recoleta, CABA',
     distanceKm: 5,
-    occupation: 'Backend Developer',
+    occupation: 'Autismo / TEA & Hiperfoco',
     interests: ['Trekking', 'Guitarra', 'Cocina', 'Series', 'Startups'],
     verified: true,
     status: 'active',
@@ -107,14 +107,14 @@ const INITIAL_SEED_USERS: User[] = [
     email: 'camila@ejemplo.com',
     age: 26,
     gender: 'female',
-    bio: 'Arquitecta de día, exploradora gastronómica de noche 🍷✨. Busco a alguien para probar nuevos restaurantes.',
+    bio: 'Bipolar tipo II & mente creativa 🍷✨. Busco conexiones genuinas sin máscaras, charlas profundas y explorar nuevos restaurantes.',
     photos: [
       'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80'
     ],
     location: 'Belgrano, CABA',
     distanceKm: 7,
-    occupation: 'Arquitecta',
+    occupation: 'Bipolaridad',
     interests: ['Arquitectura', 'Vino Tinto', 'Cine', 'Libros', 'Gimnasio'],
     verified: false,
     status: 'active',
@@ -136,14 +136,14 @@ const INITIAL_SEED_USERS: User[] = [
     email: 'mateo@ejemplo.com',
     age: 29,
     gender: 'male',
-    bio: 'Fotógrafo documental & viajero empedernido 📸 28 países y contando. Escapadas improvisadas de fin de semana.',
+    bio: 'Fotógrafo & navegando la depresión y el TDAH 📸. Los viajes y capturar luces me ayudan a reconectar con el presente.',
     photos: [
       'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80'
     ],
     location: 'San Telmo, CABA',
     distanceKm: 4,
-    occupation: 'Fotógrafo Profesional',
+    occupation: 'Depresión & TDAH',
     interests: ['Fotografía', 'Viajes', 'Aventuras', 'Vinilos', 'Cerveza Artesanal'],
     verified: true,
     status: 'active',
@@ -165,14 +165,14 @@ const INITIAL_SEED_USERS: User[] = [
     email: 'sofia@ejemplo.com',
     age: 23,
     gender: 'female',
-    bio: 'Estudiante de Medicina & maratonista aficionada 🏃‍♀️🩺. Si sobreviví a anatomía, puedo sobrevivir a una primera cita divertida.',
+    bio: 'Altas capacidades (AACC) & maratonista aficionada 🏃‍♀️🩺. Curiosidad insaciable por aprender todo sobre el mundo.',
     photos: [
       'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'
     ],
     location: 'Caballito, CABA',
     distanceKm: 6,
-    occupation: 'Estudiante de Medicina',
+    occupation: 'Altas Capacidades (AACC)',
     interests: ['Running', 'Medicina', 'Podcasts', 'Playa', 'Perros'],
     verified: true,
     status: 'active',
@@ -194,14 +194,14 @@ const INITIAL_SEED_USERS: User[] = [
     email: 'ignacio@ejemplo.com',
     age: 31,
     gender: 'male',
-    bio: 'Sommelier y DJ de vinilos en mis tiempos libres 🎧🍇. Fanático del jazz, los atardeceres y las charlas largas.',
+    bio: 'TOC & Bipolaridad. Coleccionista de vinilos 🎧🍇. Fanático del jazz, los atardeceres y los entornos tranquilos con buena música.',
     photos: [
       'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80'
     ],
     location: 'Nuñez, CABA',
     distanceKm: 8,
-    occupation: 'Sommelier & Gestor Cultural',
+    occupation: 'TOC & Bipolaridad',
     interests: ['Música', 'Vinos', 'Gastronomía', 'Arte', 'Lectura'],
     verified: false,
     status: 'active',
@@ -223,14 +223,14 @@ const INITIAL_SEED_USERS: User[] = [
     email: 'elena@ejemplo.com',
     age: 25,
     gender: 'female',
-    bio: 'Bailarina contemporánea e instructora de Pilates 🩰🌿. En busca de buenas energías y risas espontáneas.',
+    bio: 'Navegando episodios de depresión & ansiedad social a través del movimiento y la danza contemporánea 🩰🌿. Empatía ante todo.',
     photos: [
       'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
     ],
     location: 'Colegiales, CABA',
     distanceKm: 4,
-    occupation: 'Instructora de Danza',
+    occupation: 'Depresión & Ansiedad',
     interests: ['Danza', 'Pilates', 'Naturaleza', 'Plantas', 'Cocina Saludable'],
     verified: true,
     status: 'active',
@@ -365,16 +365,37 @@ class LocalDatabaseStore {
       };
       this.setStored(STORAGE_KEY_PASSWORDS, passwords);
     } else {
+      // Ensure seed users have updated neurodivergences if previously seeded with old professions
+      let changed = false;
+      const seedMap = new Map(INITIAL_SEED_USERS.map(s => [s.email.toLowerCase(), s]));
+      
+      users.forEach(u => {
+        const seed = seedMap.get(u.email.toLowerCase());
+        if (seed && (!u.occupation || u.occupation.includes('Diseñadora') || u.occupation.includes('Developer') || u.occupation.includes('Arquitecta') || u.occupation.includes('Fotógrafo') || u.occupation.includes('Medicina') || u.occupation.includes('Sommelier') || u.occupation.includes('Danza') || u.occupation.includes('Operaciones'))) {
+          u.occupation = seed.occupation;
+          u.bio = seed.bio;
+          changed = true;
+        }
+      });
+
       // Ensure admin exists with admin role
       const adminIdx = users.findIndex(u => u.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
       if (adminIdx === -1) {
         users.unshift(INITIAL_ADMIN);
-        this.setStored(STORAGE_KEY_USERS, users);
+        changed = true;
       } else {
         users[adminIdx].role = 'admin';
         users[adminIdx].status = 'active';
+        if (users[adminIdx].occupation !== INITIAL_ADMIN.occupation) {
+          users[adminIdx].occupation = INITIAL_ADMIN.occupation;
+          changed = true;
+        }
+      }
+
+      if (changed) {
         this.setStored(STORAGE_KEY_USERS, users);
       }
+
       const passwords = this.getStored<Record<string, string>>(STORAGE_KEY_PASSWORDS, {});
       passwords[DEFAULT_ADMIN_EMAIL.toLowerCase()] = DEFAULT_ADMIN_PASS;
       this.setStored(STORAGE_KEY_PASSWORDS, passwords);

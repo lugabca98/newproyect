@@ -182,7 +182,7 @@ class ApiService {
       ],
       location: userData.location?.trim() || 'Buenos Aires, Argentina',
       distanceKm: 2,
-      occupation: userData.occupation?.trim() || 'Miembro',
+      occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
       verified: isOwner,
       status: 'active',
