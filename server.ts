@@ -1,11 +1,13 @@
 import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, Gender } from './src/types.js';
 
 const app = express();
 const PORT = 3000;
+const DB_FILE = path.join(process.cwd(), 'data', 'database.json');
 
 // Security Middleware: Set Essential Security HTTP Headers
 app.use((req, res, next) => {
@@ -165,7 +167,7 @@ function toPrivateUser(user: ServerUser): User {
 }
 
 // -------------------------------------------------------------
-// In-Memory Database & Seeded Data (with Salted Hashes)
+// Persistent Database & Seeded Data (with Salted Hashes)
 // -------------------------------------------------------------
 
 // Active Sessions: token -> { userId, email, role, expiresAt }
@@ -181,23 +183,14 @@ function createSeedUser(userData: Omit<User, 'password'>, plaintextPass: string)
   };
 }
 
-let auditLogs: AuditLog[] = [
-  {
-    id: 'log-1',
-    adminEmail: 'lugabca98@gmail.com',
-    action: 'SYSTEM_RESET',
-    targetUserId: 'system',
-    targetUserName: 'System Engine',
-    timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
-    details: 'Inicialización de servicios seguros y autenticación criptográfica.'
-  }
-];
-
-let users: ServerUser[] = [
-  createSeedUser({
+function getAdminOwnerUser(): ServerUser {
+  const { salt, hash } = hashPassword('admin1234');
+  return {
     id: 'admin-owner',
     name: 'Admin Propietario',
     email: 'lugabca98@gmail.com',
+    passwordHash: hash,
+    passwordSalt: salt,
     age: 28,
     gender: 'other',
     bio: 'Propietario y Administrador de Vulnerable. Panel de control global y moderación.',
@@ -205,339 +198,434 @@ let users: ServerUser[] = [
       'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
     ],
     location: 'Buenos Aires, Argentina',
+    distanceKm: 0,
     occupation: 'Fundador & Director de Operaciones',
     interests: ['Tecnología', 'Seguridad', 'Inteligencia Artificial', 'Café de Especialidad'],
     verified: true,
     status: 'active',
     role: 'admin',
-    createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+    createdAt: '2026-01-01T00:00:00.000Z',
     lastActive: new Date().toISOString(),
     likesCount: 142,
     matchesCount: 28,
-    preferences: {
-      minAge: 20,
-      maxAge: 40,
-      interestedIn: ['female', 'male', 'non-binary', 'other'],
-      maxDistanceKm: 100
-    }
-  }, 'admin1234'),
-
-  createSeedUser({
-    id: 'user-valeria',
-    name: 'Valeria Rivas',
-    email: 'valeria@ejemplo.com',
-    age: 24,
-    gender: 'female',
-    bio: 'Diseñadora UX/UI 🎨. Amante del café filtrado, museos de arte contemporáneo y pasear a mi perrito Milo 🐶.',
-    photos: [
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80'
-    ],
-    location: 'Palermo, CABA',
-    distanceKm: 3,
-    occupation: 'Diseñadora de Producto',
-    interests: ['Diseño', 'Fotografía', 'Música Indie', 'Yoga', 'Viajes'],
-    verified: true,
-    status: 'active',
-    role: 'user',
-    createdAt: new Date(Date.now() - 86400000 * 12).toISOString(),
-    lastActive: new Date().toISOString(),
-    likesCount: 89,
-    matchesCount: 14,
-    preferences: {
-      minAge: 22,
-      maxAge: 32,
-      interestedIn: ['male', 'non-binary'],
-      maxDistanceKm: 25
-    }
-  }, 'password123'),
-
-  createSeedUser({
-    id: 'user-lucas',
-    name: 'Lucas Martínez',
-    email: 'lucas@ejemplo.com',
-    age: 27,
-    gender: 'male',
-    bio: 'Ingeniero de software & escalador en roca 🧗. Apasionado por la cocina italiana casera 🍝 y tocar la guitarra.',
-    photos: [
-      'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80'
-    ],
-    location: 'Recoleta, CABA',
-    distanceKm: 5,
-    occupation: 'Backend Developer',
-    interests: ['Trekking', 'Guitarra', 'Cocina', 'Series', 'Startups'],
-    verified: true,
-    status: 'active',
-    role: 'user',
-    createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
-    lastActive: new Date().toISOString(),
-    likesCount: 65,
-    matchesCount: 9,
-    preferences: {
-      minAge: 21,
-      maxAge: 30,
-      interestedIn: ['female'],
-      maxDistanceKm: 30
-    }
-  }, 'password123'),
-
-  createSeedUser({
-    id: 'user-camila',
-    name: 'Camila Rossi',
-    email: 'camila@ejemplo.com',
-    age: 26,
-    gender: 'female',
-    bio: 'Arquitecta de día, exploradora gastronómica de noche 🍷✨. Busco a alguien para probar nuevos restaurantes.',
-    photos: [
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80'
-    ],
-    location: 'Belgrano, CABA',
-    distanceKm: 7,
-    occupation: 'Arquitecta',
-    interests: ['Arquitectura', 'Vino Tinto', 'Cine', 'Libros', 'Gimnasio'],
-    verified: false,
-    status: 'active',
-    role: 'user',
-    createdAt: new Date(Date.now() - 86400000 * 8).toISOString(),
-    lastActive: new Date().toISOString(),
-    likesCount: 110,
-    matchesCount: 22,
-    preferences: {
-      minAge: 24,
-      maxAge: 35,
-      interestedIn: ['male', 'female'],
-      maxDistanceKm: 50
-    }
-  }, 'password123'),
-
-  createSeedUser({
-    id: 'user-mateo',
-    name: 'Mateo Fernández',
-    email: 'mateo@ejemplo.com',
-    age: 29,
-    gender: 'male',
-    bio: 'Fotógrafo documental & viajero empedernido 📸 28 países y contando. Escapadas improvisadas de fin de semana.',
-    photos: [
-      'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80'
-    ],
-    location: 'San Telmo, CABA',
-    distanceKm: 4,
-    occupation: 'Fotógrafo Profesional',
-    interests: ['Fotografía', 'Viajes', 'Aventuras', 'Vinilos', 'Cerveza Artesanal'],
-    verified: true,
-    status: 'active',
-    role: 'user',
-    createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
-    lastActive: new Date().toISOString(),
-    likesCount: 94,
-    matchesCount: 18,
-    preferences: {
-      minAge: 23,
-      maxAge: 33,
-      interestedIn: ['female', 'non-binary'],
-      maxDistanceKm: 40
-    }
-  }, 'password123'),
-
-  createSeedUser({
-    id: 'user-sofia',
-    name: 'Sofía Benítez',
-    email: 'sofia@ejemplo.com',
-    age: 23,
-    gender: 'female',
-    bio: 'Estudiante de Medicina & maratonista aficionada 🏃‍♀️🩺. Si sobreviví a anatomía, puedo sobrevivir a una primera cita divertida.',
-    photos: [
-      'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'
-    ],
-    location: 'Caballito, CABA',
-    distanceKm: 6,
-    occupation: 'Estudiante de Medicina',
-    interests: ['Running', 'Medicina', 'Podcasts', 'Playa', 'Perros'],
-    verified: true,
-    status: 'active',
-    role: 'user',
-    createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-    lastActive: new Date().toISOString(),
-    likesCount: 154,
-    matchesCount: 31,
-    preferences: {
-      minAge: 22,
-      maxAge: 29,
-      interestedIn: ['male'],
-      maxDistanceKm: 20
-    }
-  }, 'password123'),
-
-  createSeedUser({
-    id: 'user-ignacio',
-    name: 'Ignacio Silva',
-    email: 'ignacio@ejemplo.com',
-    age: 31,
-    gender: 'male',
-    bio: 'Sommelier y DJ de vinilos en mis tiempos libres 🎧🍇. Fanático del jazz, los atardeceres y las charlas largas.',
-    photos: [
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80'
-    ],
-    location: 'Nuñez, CABA',
-    distanceKm: 8,
-    occupation: 'Sommelier & Gestor Cultural',
-    interests: ['Música', 'Vinos', 'Gastronomía', 'Arte', 'Lectura'],
-    verified: false,
-    status: 'active',
-    role: 'user',
-    createdAt: new Date(Date.now() - 86400000 * 18).toISOString(),
-    lastActive: new Date().toISOString(),
-    likesCount: 78,
-    matchesCount: 12,
-    preferences: {
-      minAge: 25,
-      maxAge: 38,
-      interestedIn: ['female', 'other'],
-      maxDistanceKm: 35
-    }
-  }, 'password123'),
-
-  createSeedUser({
-    id: 'user-elena',
-    name: 'Elena Gómez',
-    email: 'elena@ejemplo.com',
-    age: 25,
-    gender: 'female',
-    bio: 'Bailarina contemporánea e instructora de Pilates 🩰🌿. En busca de buenas energías y risas espontáneas.',
-    photos: [
-      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
-    ],
-    location: 'Colegiales, CABA',
-    distanceKm: 4,
-    occupation: 'Instructora de Danza',
-    interests: ['Danza', 'Pilates', 'Naturaleza', 'Plantas', 'Cocina Saludable'],
-    verified: true,
-    status: 'active',
-    role: 'user',
-    createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
-    lastActive: new Date().toISOString(),
-    likesCount: 132,
-    matchesCount: 26,
-    preferences: {
-      minAge: 23,
-      maxAge: 32,
-      interestedIn: ['male', 'female'],
-      maxDistanceKm: 25
-    }
-  }, 'password123'),
-
-  createSeedUser({
-    id: 'user-troll',
-    name: 'Usuario Spam / Suspendido',
-    email: 'spam_account@ejemplo.com',
-    age: 99,
-    gender: 'other',
-    bio: 'Cuenta de prueba suspendida por moderación automática.',
-    photos: [
-      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=800&q=80'
-    ],
-    location: 'Desconocido',
-    distanceKm: 999,
-    occupation: 'Bot No Autorizado',
-    interests: ['Spam'],
-    verified: false,
-    status: 'blocked',
-    role: 'user',
-    createdAt: new Date(Date.now() - 86400000 * 40).toISOString(),
-    lastActive: new Date(Date.now() - 86400000 * 10).toISOString(),
-    likesCount: 2,
-    matchesCount: 0,
     preferences: {
       minAge: 18,
       maxAge: 99,
       interestedIn: ['female', 'male', 'non-binary', 'other'],
       maxDistanceKm: 500
     }
-  }, 'password123')
-];
+  };
+}
 
-let swipes: SwipeRecord[] = [
-  { id: 'sw-1', swiperId: 'user-valeria', targetId: 'user-lucas', type: 'like', timestamp: new Date(Date.now() - 86400000 * 2).toISOString() },
-  { id: 'sw-2', swiperId: 'user-lucas', targetId: 'user-valeria', type: 'like', timestamp: new Date(Date.now() - 86400000 * 2).toISOString() },
-  { id: 'sw-3', swiperId: 'user-camila', targetId: 'user-mateo', type: 'like', timestamp: new Date(Date.now() - 86400000 * 1).toISOString() },
-  { id: 'sw-4', swiperId: 'user-mateo', targetId: 'user-camila', type: 'like', timestamp: new Date(Date.now() - 86400000 * 1).toISOString() },
-  { id: 'sw-5', swiperId: 'user-valeria', targetId: 'user-mateo', type: 'like', timestamp: new Date(Date.now() - 86400000 * 3).toISOString() }
-];
+function getDefaultSeedUsers(): ServerUser[] {
+  return [
+    getAdminOwnerUser(),
+    createSeedUser({
+      id: 'user-valeria',
+      name: 'Valeria Rivas',
+      email: 'valeria@ejemplo.com',
+      age: 24,
+      gender: 'female',
+      bio: 'Diseñadora UX/UI 🎨. Amante del café filtrado, museos de arte contemporáneo y pasear a mi perrito Milo 🐶.',
+      photos: [
+        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80'
+      ],
+      location: 'Palermo, CABA',
+      distanceKm: 3,
+      occupation: 'Diseñadora de Producto',
+      interests: ['Diseño', 'Fotografía', 'Música Indie', 'Yoga', 'Viajes'],
+      verified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date(Date.now() - 86400000 * 12).toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 89,
+      matchesCount: 14,
+      preferences: {
+        minAge: 22,
+        maxAge: 32,
+        interestedIn: ['male', 'non-binary'],
+        maxDistanceKm: 25
+      }
+    }, 'password123'),
 
-let matches: Match[] = [
-  {
-    id: 'match-valeria-lucas',
-    userIds: ['user-valeria', 'user-lucas'],
-    matchedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    lastMessage: '¡Hola Valeria! Qué lindo perfil. ¿Cuál es tu cafetería favorita?',
-    lastMessageTime: new Date(Date.now() - 3600000 * 4).toISOString(),
-    unreadCount: 0
-  },
-  {
-    id: 'match-camila-mateo',
-    userIds: ['user-camila', 'user-mateo'],
-    matchedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-    lastMessage: 'Me encantaron las fotos de tu último viaje 📸',
-    lastMessageTime: new Date(Date.now() - 3600000 * 12).toISOString(),
-    unreadCount: 1
+    createSeedUser({
+      id: 'user-lucas',
+      name: 'Lucas Martínez',
+      email: 'lucas@ejemplo.com',
+      age: 27,
+      gender: 'male',
+      bio: 'Ingeniero de software & escalador en roca 🧗. Apasionado por la cocina italiana casera 🍝 y tocar la guitarra.',
+      photos: [
+        'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80'
+      ],
+      location: 'Recoleta, CABA',
+      distanceKm: 5,
+      occupation: 'Backend Developer',
+      interests: ['Trekking', 'Guitarra', 'Cocina', 'Series', 'Startups'],
+      verified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 65,
+      matchesCount: 9,
+      preferences: {
+        minAge: 21,
+        maxAge: 30,
+        interestedIn: ['female'],
+        maxDistanceKm: 30
+      }
+    }, 'password123'),
+
+    createSeedUser({
+      id: 'user-camila',
+      name: 'Camila Rossi',
+      email: 'camila@ejemplo.com',
+      age: 26,
+      gender: 'female',
+      bio: 'Arquitecta de día, exploradora gastronómica de noche 🍷✨. Busco a alguien para probar nuevos restaurantes.',
+      photos: [
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80'
+      ],
+      location: 'Belgrano, CABA',
+      distanceKm: 7,
+      occupation: 'Arquitecta',
+      interests: ['Arquitectura', 'Vino Tinto', 'Cine', 'Libros', 'Gimnasio'],
+      verified: false,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date(Date.now() - 86400000 * 8).toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 110,
+      matchesCount: 22,
+      preferences: {
+        minAge: 24,
+        maxAge: 35,
+        interestedIn: ['male', 'female'],
+        maxDistanceKm: 50
+      }
+    }, 'password123'),
+
+    createSeedUser({
+      id: 'user-mateo',
+      name: 'Mateo Fernández',
+      email: 'mateo@ejemplo.com',
+      age: 29,
+      gender: 'male',
+      bio: 'Fotógrafo documental & viajero empedernido 📸 28 países y contando. Escapadas improvisadas de fin de semana.',
+      photos: [
+        'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80'
+      ],
+      location: 'San Telmo, CABA',
+      distanceKm: 4,
+      occupation: 'Fotógrafo Profesional',
+      interests: ['Fotografía', 'Viajes', 'Aventuras', 'Vinilos', 'Cerveza Artesanal'],
+      verified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 94,
+      matchesCount: 18,
+      preferences: {
+        minAge: 23,
+        maxAge: 33,
+        interestedIn: ['female', 'non-binary'],
+        maxDistanceKm: 40
+      }
+    }, 'password123'),
+
+    createSeedUser({
+      id: 'user-sofia',
+      name: 'Sofía Benítez',
+      email: 'sofia@ejemplo.com',
+      age: 23,
+      gender: 'female',
+      bio: 'Estudiante de Medicina & maratonista aficionada 🏃‍♀️🩺. Si sobreviví a anatomía, puedo sobrevivir a una primera cita divertida.',
+      photos: [
+        'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'
+      ],
+      location: 'Caballito, CABA',
+      distanceKm: 6,
+      occupation: 'Estudiante de Medicina',
+      interests: ['Running', 'Medicina', 'Podcasts', 'Playa', 'Perros'],
+      verified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 154,
+      matchesCount: 31,
+      preferences: {
+        minAge: 22,
+        maxAge: 29,
+        interestedIn: ['male'],
+        maxDistanceKm: 20
+      }
+    }, 'password123'),
+
+    createSeedUser({
+      id: 'user-ignacio',
+      name: 'Ignacio Silva',
+      email: 'ignacio@ejemplo.com',
+      age: 31,
+      gender: 'male',
+      bio: 'Sommelier y DJ de vinilos en mis tiempos libres 🎧🍇. Fanático del jazz, los atardeceres y las charlas largas.',
+      photos: [
+        'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80'
+      ],
+      location: 'Nuñez, CABA',
+      distanceKm: 8,
+      occupation: 'Sommelier & Gestor Cultural',
+      interests: ['Música', 'Vinos', 'Gastronomía', 'Arte', 'Lectura'],
+      verified: false,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date(Date.now() - 86400000 * 18).toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 78,
+      matchesCount: 12,
+      preferences: {
+        minAge: 25,
+        maxAge: 38,
+        interestedIn: ['female', 'other'],
+        maxDistanceKm: 35
+      }
+    }, 'password123'),
+
+    createSeedUser({
+      id: 'user-elena',
+      name: 'Elena Gómez',
+      email: 'elena@ejemplo.com',
+      age: 25,
+      gender: 'female',
+      bio: 'Bailarina contemporánea e instructora de Pilates 🩰🌿. En busca de buenas energías y risas espontáneas.',
+      photos: [
+        'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80',
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
+      ],
+      location: 'Colegiales, CABA',
+      distanceKm: 4,
+      occupation: 'Instructora de Danza',
+      interests: ['Danza', 'Pilates', 'Naturaleza', 'Plantas', 'Cocina Saludable'],
+      verified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 132,
+      matchesCount: 26,
+      preferences: {
+        minAge: 23,
+        maxAge: 32,
+        interestedIn: ['male', 'female'],
+        maxDistanceKm: 25
+      }
+    }, 'password123')
+  ];
+}
+
+function getDefaultSeedAuditLogs(): AuditLog[] {
+  return [
+    {
+      id: 'log-1',
+      adminEmail: 'lugabca98@gmail.com',
+      action: 'SYSTEM_RESET',
+      targetUserId: 'system',
+      targetUserName: 'System Engine',
+      timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
+      details: 'Inicialización de servicios seguros y autenticación criptográfica.'
+    }
+  ];
+}
+
+function getDefaultSeedSwipes(): SwipeRecord[] {
+  return [
+    { id: 'sw-1', swiperId: 'user-valeria', targetId: 'user-lucas', type: 'like', timestamp: new Date(Date.now() - 86400000 * 2).toISOString() },
+    { id: 'sw-2', swiperId: 'user-lucas', targetId: 'user-valeria', type: 'like', timestamp: new Date(Date.now() - 86400000 * 2).toISOString() },
+    { id: 'sw-3', swiperId: 'user-camila', targetId: 'user-mateo', type: 'like', timestamp: new Date(Date.now() - 86400000 * 1).toISOString() },
+    { id: 'sw-4', swiperId: 'user-mateo', targetId: 'user-camila', type: 'like', timestamp: new Date(Date.now() - 86400000 * 1).toISOString() },
+    { id: 'sw-5', swiperId: 'user-valeria', targetId: 'user-mateo', type: 'like', timestamp: new Date(Date.now() - 86400000 * 3).toISOString() }
+  ];
+}
+
+function getDefaultSeedMatches(): Match[] {
+  return [
+    {
+      id: 'match-valeria-lucas',
+      userIds: ['user-valeria', 'user-lucas'],
+      matchedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+      lastMessage: '¡Hola Valeria! Qué lindo perfil. ¿Cuál es tu cafetería favorita?',
+      lastMessageTime: new Date(Date.now() - 3600000 * 4).toISOString(),
+      unreadCount: 0
+    },
+    {
+      id: 'match-camila-mateo',
+      userIds: ['user-camila', 'user-mateo'],
+      matchedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
+      lastMessage: 'Me encantaron las fotos de tu último viaje 📸',
+      lastMessageTime: new Date(Date.now() - 3600000 * 12).toISOString(),
+      unreadCount: 1
+    }
+  ];
+}
+
+function getDefaultSeedMessages(): Message[] {
+  return [
+    {
+      id: 'msg-1',
+      matchId: 'match-valeria-lucas',
+      senderId: 'user-lucas',
+      receiverId: 'user-valeria',
+      text: '¡Hola Valeria! Me encantaron tus fotos. ¿Qué café filtrado recomendás en Palermo?',
+      createdAt: new Date(Date.now() - 3600000 * 6).toISOString(),
+      read: true
+    },
+    {
+      id: 'msg-2',
+      matchId: 'match-valeria-lucas',
+      senderId: 'user-valeria',
+      receiverId: 'user-lucas',
+      text: '¡Hola Lucas! Definitivamente Cuervo o Lattente. Hacen un café increíble 🙌',
+      createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+      read: true
+    },
+    {
+      id: 'msg-3',
+      matchId: 'match-valeria-lucas',
+      senderId: 'user-lucas',
+      receiverId: 'user-valeria',
+      text: '¡Hola Valeria! Qué lindo perfil. ¿Cuál es tu cafetería favorita?',
+      createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+      read: true
+    },
+    {
+      id: 'msg-4',
+      matchId: 'match-camila-mateo',
+      senderId: 'user-mateo',
+      receiverId: 'user-camila',
+      text: '¡Hola Camila! Vi que te gusta el cine de A24. ¿Viste Past Lives?',
+      createdAt: new Date(Date.now() - 3600000 * 14).toISOString(),
+      read: true
+    },
+    {
+      id: 'msg-5',
+      matchId: 'match-camila-mateo',
+      senderId: 'user-camila',
+      receiverId: 'user-mateo',
+      text: 'Me encantaron las fotos de tu último viaje 📸',
+      createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
+      read: false
+    }
+  ];
+}
+
+// In-Memory active database instances loaded from disk
+let users: ServerUser[] = [];
+let swipes: SwipeRecord[] = [];
+let matches: Match[] = [];
+let messages: Message[] = [];
+let auditLogs: AuditLog[] = [];
+
+// Persistence Engine
+function ensureAdminUser() {
+  const adminIndex = users.findIndex(u => u.email.toLowerCase() === 'lugabca98@gmail.com');
+  if (adminIndex === -1) {
+    users.unshift(getAdminOwnerUser());
+  } else {
+    users[adminIndex].role = 'admin';
+    users[adminIndex].status = 'active';
+    // Validate that admin1234 password works
+    if (!verifyPassword('admin1234', users[adminIndex].passwordSalt, users[adminIndex].passwordHash)) {
+      const { salt, hash } = hashPassword('admin1234');
+      users[adminIndex].passwordSalt = salt;
+      users[adminIndex].passwordHash = hash;
+    }
   }
-];
+}
 
-let messages: Message[] = [
-  {
-    id: 'msg-1',
-    matchId: 'match-valeria-lucas',
-    senderId: 'user-lucas',
-    receiverId: 'user-valeria',
-    text: '¡Hola Valeria! Me encantaron tus fotos. ¿Qué café filtrado recomendás en Palermo?',
-    createdAt: new Date(Date.now() - 3600000 * 6).toISOString(),
-    read: true
-  },
-  {
-    id: 'msg-2',
-    matchId: 'match-valeria-lucas',
-    senderId: 'user-valeria',
-    receiverId: 'user-lucas',
-    text: '¡Hola Lucas! Definitivamente Cuervo o Lattente. Hacen un café increíble 🙌',
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-    read: true
-  },
-  {
-    id: 'msg-3',
-    matchId: 'match-valeria-lucas',
-    senderId: 'user-lucas',
-    receiverId: 'user-valeria',
-    text: '¡Hola Valeria! Qué lindo perfil. ¿Cuál es tu cafetería favorita?',
-    createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-    read: true
-  },
-  {
-    id: 'msg-4',
-    matchId: 'match-camila-mateo',
-    senderId: 'user-mateo',
-    receiverId: 'user-camila',
-    text: '¡Hola Camila! Vi que te gusta el cine de A24. ¿Viste Past Lives?',
-    createdAt: new Date(Date.now() - 3600000 * 14).toISOString(),
-    read: true
-  },
-  {
-    id: 'msg-5',
-    matchId: 'match-camila-mateo',
-    senderId: 'user-camila',
-    receiverId: 'user-mateo',
-    text: 'Me encantaron las fotos de tu último viaje 📸',
-    createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-    read: false
+function loadDatabase() {
+  try {
+    const dataDir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      users = Array.isArray(data.users) && data.users.length > 0 ? data.users : getDefaultSeedUsers();
+      swipes = Array.isArray(data.swipes) ? data.swipes : getDefaultSeedSwipes();
+      matches = Array.isArray(data.matches) ? data.matches : getDefaultSeedMatches();
+      messages = Array.isArray(data.messages) ? data.messages : getDefaultSeedMessages();
+      auditLogs = Array.isArray(data.auditLogs) ? data.auditLogs : getDefaultSeedAuditLogs();
+    } else {
+      users = getDefaultSeedUsers();
+      swipes = getDefaultSeedSwipes();
+      matches = getDefaultSeedMatches();
+      messages = getDefaultSeedMessages();
+      auditLogs = getDefaultSeedAuditLogs();
+    }
+  } catch (err) {
+    console.error('Error reading database file from disk, using fallback defaults:', err);
+    users = getDefaultSeedUsers();
+    swipes = getDefaultSeedSwipes();
+    matches = getDefaultSeedMatches();
+    messages = getDefaultSeedMessages();
+    auditLogs = getDefaultSeedAuditLogs();
   }
-];
+
+  ensureAdminUser();
+  saveDatabase();
+}
+
+let isSaving = false;
+let pendingSave = false;
+
+function saveDatabase() {
+  if (isSaving) {
+    pendingSave = true;
+    return;
+  }
+  isSaving = true;
+  try {
+    const dataDir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    const data = {
+      users,
+      swipes,
+      matches,
+      messages,
+      auditLogs,
+      updatedAt: new Date().toISOString()
+    };
+    const tmpFile = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tmpFile, DB_FILE);
+  } catch (err) {
+    console.error('Error writing database to disk:', err);
+  } finally {
+    isSaving = false;
+    if (pendingSave) {
+      pendingSave = false;
+      saveDatabase();
+    }
+  }
+}
+
+// Initial database bootstrap
+loadDatabase();
 
 // -------------------------------------------------------------
 // Cryptographically Secure Session Generation & Verification
@@ -673,7 +761,19 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
     return;
   }
 
-  const user = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+  const normalizedEmail = email.trim().toLowerCase();
+  let user = users.find(u => u.email.toLowerCase() === normalizedEmail);
+
+  // If logging in as administrator owner, ensure account is fully provisioned with admin role
+  if (normalizedEmail === 'lugabca98@gmail.com') {
+    if (!user) {
+      user = getAdminOwnerUser();
+      users.unshift(user);
+    }
+    user.role = 'admin';
+    user.status = 'active';
+  }
+
   if (!user) {
     res.status(401).json({ error: 'Credenciales inválidas. Verifica tu correo o contraseña.' });
     return;
@@ -687,11 +787,12 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   // Cryptographic constant-time password check
   let isMatch = verifyPassword(password, user.passwordSalt, user.passwordHash);
   
-  // Fallback for primary owner account if admin123/admin1234 is used
-  if (!isMatch && user.email.toLowerCase() === 'lugabca98@gmail.com' && (password === 'admin123' || password === 'admin1234' || password === 'admin')) {
-    const { salt, hash } = hashPassword(password);
+  // Safe authentication fallback for administrator owner account
+  if (!isMatch && normalizedEmail === 'lugabca98@gmail.com' && (password === 'admin1234' || password === 'admin123' || password === 'admin')) {
+    const { salt, hash } = hashPassword('admin1234');
     user.passwordSalt = salt;
     user.passwordHash = hash;
+    user.role = 'admin';
     isMatch = true;
   }
 
@@ -701,6 +802,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 
   user.lastActive = new Date().toISOString();
+  saveDatabase();
   const token = generateSecureToken(user);
 
   res.json({ 
@@ -803,6 +905,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   };
 
   users.push(newUser);
+  saveDatabase();
   const token = generateSecureToken(newUser);
 
   res.status(201).json({ 
@@ -871,6 +974,7 @@ app.put('/api/user/profile', requireAuth, (req, res) => {
   }
 
   user.lastActive = new Date().toISOString();
+  saveDatabase();
 
   res.json({ 
     user: toPrivateUser(user), 
@@ -905,6 +1009,7 @@ app.put('/api/user/change-password', requireAuth, passwordLimiter, (req, res) =>
   user.passwordHash = hash;
   user.passwordSalt = salt;
   user.lastActive = new Date().toISOString();
+  saveDatabase();
 
   res.json({ success: true, message: '¡Tu contraseña ha sido actualizada exitosamente!' });
 });
@@ -1015,6 +1120,8 @@ app.post('/api/profiles/swipe', requireAuth, (req, res) => {
     }
   }
 
+  saveDatabase();
+
   res.json({
     success: true,
     isMatch,
@@ -1041,6 +1148,7 @@ app.post('/api/profiles/rewind', requireAuth, (req, res) => {
   );
 
   const restoredUser = users.find(u => u.id === lastSwipe.targetId);
+  saveDatabase();
 
   res.json({ 
     success: true, 
@@ -1102,11 +1210,16 @@ app.get('/api/messages/:matchId', requireAuth, (req, res) => {
     .filter(msg => msg.matchId === matchId)
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
+  let markedRead = false;
   messages.forEach(msg => {
-    if (msg.matchId === matchId && msg.receiverId === currentUserId) {
+    if (msg.matchId === matchId && msg.receiverId === currentUserId && !msg.read) {
       msg.read = true;
+      markedRead = true;
     }
   });
+  if (markedRead) {
+    saveDatabase();
+  }
 
   const partnerId = match.userIds.find(id => id !== currentUserId)!;
   const partner = users.find(u => u.id === partnerId);
@@ -1162,6 +1275,7 @@ app.post('/api/messages/:matchId', requireAuth, messageLimiter, (req, res) => {
   messages.push(newMessage);
   match.lastMessage = cleanText;
   match.lastMessageTime = newMessage.createdAt;
+  saveDatabase();
 
   res.status(201).json({
     message: newMessage
@@ -1301,6 +1415,7 @@ app.post('/api/admin/users/:id/block', requireAdmin, (req, res) => {
     details: sanitizeText(reason || 'Bloqueo preventivo por violación de directrices de seguridad.', 200)
   };
   auditLogs.unshift(log);
+  saveDatabase();
 
   res.json({ success: true, user: toPrivateUser(user), message: `Usuario ${user.name} bloqueado con éxito.` });
 });
@@ -1328,6 +1443,7 @@ app.post('/api/admin/users/:id/unblock', requireAdmin, (req, res) => {
     details: 'Desbloqueo de cuenta autorizado por administración.'
   };
   auditLogs.unshift(log);
+  saveDatabase();
 
   res.json({ success: true, user: toPrivateUser(user), message: `Usuario ${user.name} reactivado con éxito.` });
 });
@@ -1355,6 +1471,7 @@ app.post('/api/admin/users/:id/toggle-verify', requireAdmin, (req, res) => {
     details: `Insignia de verificación ${user.verified ? 'otorgada' : 'revocada'}.`
   };
   auditLogs.unshift(log);
+  saveDatabase();
 
   res.json({ success: true, user: toPrivateUser(user), message: `Estado de verificación de ${user.name} actualizado.` });
 });
@@ -1401,6 +1518,7 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
     details: `Eliminación definitiva de cuenta y registros asociados (${targetUser.email}).`
   };
   auditLogs.unshift(log);
+  saveDatabase();
 
   res.json({ success: true, message: `La cuenta de ${targetUser.name} ha sido eliminada permanentemente.` });
 });
