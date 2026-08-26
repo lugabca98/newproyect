@@ -162,6 +162,7 @@ export function App() {
 
   const handleAuthSuccess = (user: User, isAdmin: boolean) => {
     setCurrentUser(user);
+    setAuthModalOpen(false);
     if (isAdmin) {
       setCurrentTab('admin');
     } else {

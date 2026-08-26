@@ -483,9 +483,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               id="btn-submit-register"
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01]"
+              className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
             >
-              {loading ? 'Creando tu cuenta...' : 'Crear Perfil y Empezar'}
+              <Flame className="w-4 h-4 text-white" />
+              <span>{loading ? 'Creando tu cuenta...' : 'Crear Cuenta y Empezar a Hacer Match'}</span>
             </button>
 
           </form>
