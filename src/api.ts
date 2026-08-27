@@ -204,8 +204,12 @@ class ApiService {
     return { user };
   }
 
-  async changePassword(_currentPass: string, _newPass: string): Promise<{ success: boolean; message: string }> {
-    return { success: true, message: 'La contraseña ha sido actualizada con éxito.' };
+  async changePassword(currentPass: string, newPass: string): Promise<{ success: boolean; message: string }> {
+    const currentId = this.getCurrentUserId();
+    if (!currentId) {
+      throw new Error('No hay sesión activa.');
+    }
+    return await firebaseService.changeUserPassword(currentId, currentPass, newPass);
   }
 
   // -------------------------------------------------------------

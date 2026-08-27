@@ -104,6 +104,10 @@
     "auditLogs": {
       "schema": "AuditLog",
       "description": "Collection of admin activity audit logs"
+    },
+    "credentials": {
+      "schema": "User",
+      "description": "Collection of user auth credentials"
     }
   }
 }

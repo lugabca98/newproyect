@@ -13,12 +13,15 @@ import {
   X,
   Trash2,
   Check,
-  Loader2
+  Loader2,
+  Key,
+  ShieldCheck
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
+import { DEMO_ACCOUNTS } from '../utils/security';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -56,6 +59,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Login form
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Register form
   const [name, setName] = useState('');
@@ -101,6 +105,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const formatAuthError = (err: any): string => {
     const code = err?.code || '';
     const msg = err?.message || '';
+
+    // If message is a custom application error message, display it directly
+    if (msg && !msg.startsWith('Firebase:') && !msg.includes('(auth/')) {
+      return msg;
+    }
     
     if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
       return 'El método de Correo/Contraseña aún no está activo en Firebase Authentication para el proyecto "noble-voltage-37dgj". En Firebase Console > Authentication > Sign-in method, habilita "Email/Password" y presiona Guardar.';
@@ -108,7 +117,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (code === 'auth/email-already-in-use' || msg.includes('email-already-in-use')) {
       return 'Este correo electrónico ya está registrado. Por favor ve a la pestaña "Ingresar".';
     }
-    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found' || msg.includes('invalid-credential')) {
+    if (code === 'auth/wrong-password') {
+      return 'La contraseña ingresada no coincide con este correo electrónico. Por favor verifícala.';
+    }
+    if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || msg.includes('invalid-credential')) {
       return 'Correo o contraseña incorrectos. Verifica tus credenciales.';
     }
     if (code === 'auth/weak-password') {
@@ -534,14 +546,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1">Contraseña</label>
-                <input
-                  id="login-input-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                />
+                <div className="relative">
+                  <input
+                    id="login-input-password"
+                    type={showLoginPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300"
+                    title={showLoginPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                  >
+                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <button
@@ -552,6 +575,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
               </button>
+
+              {/* Quick Demo Accounts Selection */}
+              <div className="pt-3 border-t border-slate-800/80">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+                    <Key className="w-3 h-3 text-rose-400" />
+                    <span>Cuentas con claves asignadas:</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500">Haz clic para autocompletar</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {DEMO_ACCOUNTS.slice(0, 4).map((acc) => (
+                    <button
+                      key={acc.email}
+                      type="button"
+                      onClick={() => {
+                        setEmail(acc.email);
+                        setPassword(acc.primaryPass);
+                        setErrorMsg('');
+                      }}
+                      className={`p-2 rounded-xl text-left border transition text-[11px] flex flex-col justify-between ${
+                        email.toLowerCase() === acc.email.toLowerCase()
+                          ? 'bg-rose-500/10 border-rose-500/50 text-white'
+                          : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="font-bold truncate text-[11px]">{acc.name}</span>
+                        {acc.role === 'admin' && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-extrabold flex items-center gap-0.5">
+                            <ShieldCheck className="w-2.5 h-2.5" /> Admin
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-500 truncate mt-0.5">{acc.email}</span>
+                      <span className="text-[9px] text-rose-400 font-mono mt-1">Clave: {acc.primaryPass}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="relative my-3 flex items-center justify-center">
                 <div className="border-t border-slate-800 w-full" />

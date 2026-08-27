@@ -61,5 +61,10 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read, write: if true;
     }
+
+    // 9. CREDENCIALES DE ACCESO (/credentials/{credentialId})
+    match /credentials/{credentialId} {
+      allow read, write: if true;
+    }
   }
 }

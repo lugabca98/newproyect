@@ -1,11 +1,14 @@
-import { User, Match, Message, SwipeRecord, AuditLog, AdminStats } from './types';
+import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, UserCredential } from './types';
+import { DEFAULT_ADMIN_EMAIL, DEMO_ACCOUNTS, hashPassword } from './utils/security';
 
 const STORAGE_KEY_USERS = 'mv_db_users';
 const STORAGE_KEY_SWIPES = 'mv_db_swipes';
 const STORAGE_KEY_MATCHES = 'mv_db_matches';
 const STORAGE_KEY_MESSAGES = 'mv_db_messages';
 const STORAGE_KEY_LOGS = 'mv_db_logs';
-export const DEFAULT_ADMIN_EMAIL = 'lugabca98@gmail.com';
+const STORAGE_KEY_CREDENTIALS = 'mv_db_credentials';
+
+export { DEFAULT_ADMIN_EMAIL };
 
 export const INITIAL_ADMIN: User = {
   id: 'admin-owner',
@@ -342,6 +345,21 @@ class LocalDatabaseStore {
   }
 
   init(): void {
+    const creds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
+    DEMO_ACCOUNTS.forEach(async (acc) => {
+      const emailLower = acc.email.toLowerCase();
+      if (!creds[emailLower]) {
+        const hash = await hashPassword(acc.primaryPass);
+        creds[emailLower] = {
+          email: emailLower,
+          passwordHash: hash,
+          userId: acc.role === 'admin' ? 'admin-owner' : 'user-' + acc.name.split(' ')[0].toLowerCase(),
+          updatedAt: new Date().toISOString()
+        };
+        this.setStored(STORAGE_KEY_CREDENTIALS, creds);
+      }
+    });
+
     const users = this.getStored<User[]>(STORAGE_KEY_USERS, []);
     if (users.length === 0) {
       this.setStored(STORAGE_KEY_USERS, INITIAL_SEED_USERS);
@@ -423,6 +441,29 @@ class LocalDatabaseStore {
     const logs = this.getAuditLogs();
     logs.unshift(log);
     this.setStored(STORAGE_KEY_LOGS, logs);
+  }
+
+  getCredentials(): Record<string, UserCredential> {
+    return this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
+  }
+
+  getCredential(email: string): UserCredential | null {
+    if (!email) return null;
+    const creds = this.getCredentials();
+    return creds[email.trim().toLowerCase()] || null;
+  }
+
+  saveCredential(email: string, passwordHash: string, userId: string): void {
+    if (!email) return;
+    const creds = this.getCredentials();
+    const cleanEmail = email.trim().toLowerCase();
+    creds[cleanEmail] = {
+      email: cleanEmail,
+      passwordHash,
+      userId,
+      updatedAt: new Date().toISOString()
+    };
+    this.setStored(STORAGE_KEY_CREDENTIALS, creds);
   }
 }
 

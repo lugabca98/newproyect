@@ -17,6 +17,7 @@ import {
   signInWithPopup, 
   signInAnonymously,
   updateProfile,
+  updatePassword,
   GoogleAuthProvider, 
   signOut, 
   onAuthStateChanged,
@@ -26,6 +27,7 @@ import {
 import { auth, db } from './firebase';
 import { User, Match, Message, AuditLog, SwipeRecord, AdminStats, UserStatus, UserRole } from './types';
 import { INITIAL_SEED_USERS, INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL, localDb } from './localStore';
+import { DEMO_ACCOUNTS, hashPassword, isPasswordValidForDemoAccount } from './utils/security';
 
 class FirebaseService {
   private initialized = false;
@@ -143,18 +145,32 @@ class FirebaseService {
 
   async registerUser(userData: Partial<User>, plainPassword: string): Promise<User> {
     const email = (userData.email || '').trim().toLowerCase();
-    if (!email || !plainPassword || plainPassword.length < 6) {
+    const cleanPass = (plainPassword || '').trim();
+    if (!email || !cleanPass || cleanPass.length < 6) {
       throw new Error('El correo y una contraseña de al menos 6 caracteres son requeridos.');
+    }
+
+    // Check if user is already registered locally or in Firestore
+    const existingLocal = localDb.getUsers().find(u => (u.email || '').toLowerCase().trim() === email);
+    if (existingLocal) {
+      throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión en la pestaña "Ingresar".');
     }
 
     const isOwnerAdmin = email === DEFAULT_ADMIN_EMAIL.toLowerCase();
     let uid = isOwnerAdmin ? 'admin-owner' : 'usr_' + Math.abs(email.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)).toString(36);
 
+    // Compute cryptographic password hash
+    const passwordHash = await hashPassword(cleanPass);
+
     // 1. Try Firebase Authentication first, fallback gracefully if provider is disabled in console
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, plainPassword);
+      const cred = await createUserWithEmailAndPassword(auth, email, cleanPass);
       uid = cred.user.uid;
     } catch (authErr: any) {
+      const code = authErr?.code;
+      if (code === 'auth/email-already-in-use') {
+        throw new Error('Este correo electrónico ya se encuentra registrado en Firebase. Por favor inicia sesión.');
+      }
       try {
         const anonCred = await signInAnonymously(auth);
         uid = anonCred.user.uid;
@@ -163,7 +179,10 @@ class FirebaseService {
       }
     }
 
-    // 2. Public profile (visible in feed - NO EMAIL, NO PREFERENCES)
+    // Save credential in local database
+    localDb.saveCredential(email, passwordHash, uid);
+
+    // 2. Public profile (visible in feed - NO EMAIL, NO PREFERENCES, NO PASSWORDS)
     const publicProfile = {
       id: uid,
       name: userData.name?.trim() || (isOwnerAdmin ? 'Administrador' : 'Nuevo Miembro'),
@@ -190,6 +209,7 @@ class FirebaseService {
     const newUser: User = {
       ...publicProfile,
       email,
+      passwordHash,
       preferences: {
         minAge: 18,
         maxAge: 60,
@@ -205,6 +225,12 @@ class FirebaseService {
         await deleteDoc(doc(db, 'publicProfiles', uid)).catch(() => {});
       }
       await setDoc(doc(db, 'users', uid), newUser);
+      await setDoc(doc(db, 'credentials', email), {
+        email,
+        passwordHash,
+        userId: uid,
+        updatedAt: new Date().toISOString()
+      }).catch(() => {});
 
       if (isOwnerAdmin) {
         await setDoc(doc(db, 'admins', uid), { email, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
@@ -222,83 +248,124 @@ class FirebaseService {
 
   async loginUser(email: string, pass: string): Promise<User> {
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = pass.trim();
+
+    if (!cleanEmail || !cleanPass) {
+      throw new Error('Por favor ingresa tanto tu correo como tu contraseña.');
+    }
+
     const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
-    let uid = isOwnerAdmin ? 'admin-owner' : 'usr_' + Math.abs(cleanEmail.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)).toString(36);
 
-    // Try Firebase Authentication
-    try {
-      const cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
-      uid = cred.user.uid;
-    } catch (authErr: any) {
+    // 1. Locate user in local store or Firestore
+    const localUsers = localDb.getUsers();
+    let user = localUsers.find(u => (u.email || '').toLowerCase().trim() === cleanEmail) || null;
+
+    if (!user) {
       try {
-        const anonCred = await signInAnonymously(auth);
-        uid = anonCred.user.uid;
-      } catch {
-        // Fallback to deterministic UID
+        const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          user = snap.docs[0].data() as User;
+        }
+      } catch {}
+    }
+
+    // If user is completely unregistered and not the default admin, reject immediately
+    if (!user && !isOwnerAdmin) {
+      throw new Error(`No existe ninguna cuenta registrada con el correo "${cleanEmail}". Por favor crea una cuenta en la pestaña "Registrarse".`);
+    }
+
+    // 2. Strict Password Validation: Check that the password matches the email!
+    const enteredHash = await hashPassword(cleanPass);
+    let isAuthenticated = false;
+    let authUid = user?.id || (isOwnerAdmin ? 'admin-owner' : '');
+
+    // Step 2A: Try Firebase Authentication SDK
+    try {
+      const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
+      isAuthenticated = true;
+      authUid = cred.user.uid;
+    } catch (authErr: any) {
+      const code = authErr?.code || '';
+      // If Firebase Auth definitely rejected the password for this registered user:
+      if (code === 'auth/wrong-password') {
+        throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
       }
     }
 
-    // Fetch user profile from Firestore or local fallback
-    let user = await this.getUserById(uid);
-    if (!user) {
-      const localUsers = localDb.getUsers();
-      user = localUsers.find(u => u.email?.toLowerCase() === cleanEmail || u.id === uid) || null;
-    }
-    
-    // If profile doesn't exist yet, bootstrap it smoothly
-    if (!user) {
-      user = {
-        id: uid,
-        name: isOwnerAdmin ? 'Admin Propietario' : cleanEmail.split('@')[0],
-        email: cleanEmail,
-        age: 25,
-        gender: 'other',
-        bio: isOwnerAdmin ? 'Administrador general de Vulnerable' : 'Miembro de Vulnerable.',
-        photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'],
-        location: 'Buenos Aires',
-        distanceKm: 3,
-        occupation: isOwnerAdmin ? 'Administración' : 'Neurodivergente',
-        interests: ['Tecnología', 'Música'],
-        verified: isOwnerAdmin,
-        status: 'active',
-        role: isOwnerAdmin ? 'admin' : 'user',
-        createdAt: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-        likesCount: 0,
-        matchesCount: 0,
-        preferences: {
-          minAge: 18,
-          maxAge: 65,
-          interestedIn: ['female', 'male', 'non-binary', 'other'],
-          maxDistanceKm: 50
-        }
-      };
-      if (!isOwnerAdmin) {
-        await setDoc(doc(db, 'publicProfiles', uid), {
-          id: user.id,
-          name: user.name,
-          age: user.age,
-          gender: user.gender,
-          bio: user.bio,
-          photos: user.photos,
-          location: user.location,
-          distanceKm: user.distanceKm,
-          occupation: user.occupation,
-          interests: user.interests,
-          verified: user.verified,
-          status: user.status,
-          role: user.role,
-          createdAt: user.createdAt,
-          lastActive: user.lastActive,
-          likesCount: 0,
-          matchesCount: 0
-        }).catch(() => {});
-      } else {
-        await deleteDoc(doc(db, 'publicProfiles', uid)).catch(() => {});
+    // Step 2B: Check stored credentials in LocalStore & Firestore
+    if (!isAuthenticated) {
+      let storedHash = localDb.getCredential(cleanEmail)?.passwordHash;
+
+      if (!storedHash) {
+        try {
+          const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
+          if (credDoc.exists()) {
+            storedHash = credDoc.data()?.passwordHash;
+            if (storedHash) {
+              localDb.saveCredential(cleanEmail, storedHash, user?.id || authUid);
+            }
+          }
+        } catch {}
       }
-      await setDoc(doc(db, 'users', uid), user).catch(() => {});
+
+      if (!storedHash && user?.passwordHash) {
+        storedHash = user.passwordHash;
+      }
+
+      if (storedHash) {
+        if (storedHash === enteredHash) {
+          isAuthenticated = true;
+        } else {
+          throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
+        }
+      } else {
+        // Step 2C: Check demo / seed accounts with known credentials
+        const demoAccount = DEMO_ACCOUNTS.find(d => d.email.toLowerCase() === cleanEmail);
+        if (demoAccount) {
+          const isMatch = isPasswordValidForDemoAccount(cleanEmail, cleanPass);
+          if (isMatch) {
+            isAuthenticated = true;
+            localDb.saveCredential(cleanEmail, enteredHash, user?.id || authUid);
+            setDoc(doc(db, 'credentials', cleanEmail), {
+              email: cleanEmail,
+              passwordHash: enteredHash,
+              userId: user?.id || authUid,
+              updatedAt: new Date().toISOString()
+            }).catch(() => {});
+          } else {
+            throw new Error(`Contraseña incorrecta para ${cleanEmail}. Por favor verifica tus credenciales.`);
+          }
+        } else {
+          throw new Error('No se pudo verificar la contraseña para este correo. Por favor regístrate.');
+        }
+      }
+    }
+
+    if (!isAuthenticated) {
+      throw new Error('Contraseña incorrecta. El acceso ha sido denegado.');
+    }
+
+    // Maintain anonymous session for Firestore rules if email auth provider was unavailable
+    if (!auth.currentUser) {
+      try {
+        await signInAnonymously(auth);
+      } catch {}
+    }
+
+    // Bootstrap user if it was not in local/Firestore yet (e.g. initial admin)
+    if (!user) {
       if (isOwnerAdmin) {
-        await setDoc(doc(db, 'admins', uid), { email: cleanEmail, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
+        user = {
+          ...INITIAL_ADMIN,
+          id: authUid || 'admin-owner',
+          lastActive: new Date().toISOString(),
+          passwordHash: enteredHash
+        };
+        await setDoc(doc(db, 'users', user.id), user).catch(() => {});
+        await setDoc(doc(db, 'admins', user.id), { email: cleanEmail, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
+      } else {
+        throw new Error('No se encontró el perfil de usuario asociado a este correo.');
       }
     }
 
@@ -309,18 +376,93 @@ class FirebaseService {
 
     const now = new Date().toISOString();
     user.lastActive = now;
-    await updateDoc(doc(db, 'users', uid), { lastActive: now }).catch(() => {});
+    await updateDoc(doc(db, 'users', user.id), { lastActive: now }).catch(() => {});
     if (!isOwnerAdmin && user.role !== 'admin') {
-      await updateDoc(doc(db, 'publicProfiles', uid), { lastActive: now }).catch(() => {});
+      await updateDoc(doc(db, 'publicProfiles', user.id), { lastActive: now }).catch(() => {});
     } else {
-      await deleteDoc(doc(db, 'publicProfiles', uid)).catch(() => {});
+      await deleteDoc(doc(db, 'publicProfiles', user.id)).catch(() => {});
     }
 
     // Save in local storage cache
-    const existingUsers = localDb.getUsers().filter(u => u.id !== uid && u.email !== cleanEmail);
+    const existingUsers = localDb.getUsers().filter(u => u.id !== user!.id && (u.email || '').toLowerCase() !== cleanEmail);
     localDb.saveUsers([user, ...existingUsers]);
 
     return user;
+  }
+
+  async changeUserPassword(userId: string, currentPass: string, newPass: string): Promise<{ success: boolean; message: string }> {
+    const cleanCurrent = (currentPass || '').trim();
+    const cleanNew = (newPass || '').trim();
+
+    if (!cleanCurrent || !cleanNew) {
+      throw new Error('Por favor ingresa tu contraseña actual y la nueva contraseña.');
+    }
+    if (cleanNew.length < 6) {
+      throw new Error('La nueva contraseña debe tener al menos 6 caracteres.');
+    }
+
+    let user = await this.getUserById(userId);
+    if (!user) {
+      user = localDb.getUsers().find(u => u.id === userId) || null;
+    }
+    if (!user || !user.email) {
+      throw new Error('No se encontró la sesión de usuario activa.');
+    }
+
+    const cleanEmail = user.email.toLowerCase().trim();
+    const currentHash = await hashPassword(cleanCurrent);
+    const newHash = await hashPassword(cleanNew);
+
+    // Verify current password
+    let currentValid = false;
+    const storedCred = localDb.getCredential(cleanEmail);
+    if (storedCred) {
+      currentValid = storedCred.passwordHash === currentHash;
+    } else {
+      try {
+        const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
+        if (credDoc.exists()) {
+          currentValid = credDoc.data()?.passwordHash === currentHash;
+        }
+      } catch {}
+    }
+
+    if (!currentValid && user.passwordHash) {
+      currentValid = user.passwordHash === currentHash;
+    }
+
+    if (!currentValid) {
+      currentValid = isPasswordValidForDemoAccount(cleanEmail, cleanCurrent);
+    }
+
+    if (!currentValid) {
+      throw new Error('La contraseña actual ingresada es incorrecta.');
+    }
+
+    // Save new password hash
+    localDb.saveCredential(cleanEmail, newHash, user.id);
+    await setDoc(doc(db, 'credentials', cleanEmail), {
+      email: cleanEmail,
+      passwordHash: newHash,
+      userId: user.id,
+      updatedAt: new Date().toISOString()
+    }).catch(() => {});
+
+    await updateDoc(doc(db, 'users', user.id), {
+      passwordHash: newHash,
+      lastActive: new Date().toISOString()
+    }).catch(() => {});
+
+    // Try updating Firebase Auth if currentUser matches
+    if (auth.currentUser && auth.currentUser.email === cleanEmail) {
+      try {
+        await updatePassword(auth.currentUser, cleanNew);
+      } catch (authPassErr) {
+        console.warn('[Firebase Auth] updatePassword notice:', authPassErr);
+      }
+    }
+
+    return { success: true, message: '¡Contraseña actualizada con éxito!' };
   }
 
   async loginDirectAdmin(): Promise<User> {
