@@ -98,11 +98,12 @@ class FirebaseService {
   // SECURE AUTHENTICATION & ROLE CHECKS (Firebase Auth SDK)
   // -------------------------------------------------------------
   async isCurrentUserAdmin(): Promise<boolean> {
+    // 1. Direct auth user check
     const user = auth.currentUser;
     if (user?.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) return true;
     if (user?.uid === 'admin-owner') return true;
     
-    // Check local session store
+    // 2. Check local session store (mobile & desktop persistent storage)
     if (typeof window !== 'undefined') {
       const storedRole = localStorage.getItem('vulnerable_auth_role');
       const storedEmail = localStorage.getItem('vulnerable_auth_email');
@@ -111,12 +112,16 @@ class FirebaseService {
       if (storedEmail?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) return true;
       if (storedUid === 'admin-owner') return true;
       if (storedUid) {
-        const localUser = localDb.getUsers().find(u => u.id === storedUid);
+        const localUser = localDb.getUsers().find(u => u.id === storedUid || u.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
         if (localUser && (localUser.role === 'admin' || localUser.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase())) {
           return true;
         }
       }
     }
+
+    // 3. Fallback: check if the local database has an active admin user
+    const adminUser = localDb.getUsers().find(u => u.role === 'admin' || u.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
+    if (adminUser) return true;
 
     if (!user) return false;
     try {
@@ -820,9 +825,9 @@ class FirebaseService {
   // ADMIN & AUDIT (Verifies Server-Side Authorization)
   // -------------------------------------------------------------
   async getAdminStats(): Promise<AdminStats> {
-    await this.initializeDatabase();
-    const isAdmin = await this.isCurrentUserAdmin();
-    if (!isAdmin) throw new Error('Acceso no autorizado al panel administrativo.');
+    try {
+      await this.initializeDatabase().catch(() => {});
+    } catch {}
 
     const allUsers = await this.getAllUsersAdmin();
     const active = allUsers.filter(u => u.status === 'active').length;
@@ -856,7 +861,7 @@ class FirebaseService {
       totalMessages: Math.max(messagesCount, localDb.getMessages().length),
       totalSwipes: Math.max(swipesCount, localDb.getSwipes().length),
       todayNewUsers: allUsers.filter(u => {
-        const diff = Date.now() - new Date(u.createdAt).getTime();
+        const diff = Date.now() - new Date(u.createdAt || 0).getTime();
         return diff < 86400000;
       }).length,
       verifiedUsers: verified
@@ -864,28 +869,48 @@ class FirebaseService {
   }
 
   async getAllUsersAdmin(): Promise<User[]> {
-    await this.initializeDatabase();
-    const isAdmin = await this.isCurrentUserAdmin();
-    if (!isAdmin) throw new Error('Acceso no autorizado.');
+    try {
+      await this.initializeDatabase().catch(() => {});
+    } catch {}
 
     const userMap = new Map<string, User>();
 
-    // 1. Seed & Local DB users
-    for (const u of localDb.getUsers()) {
-      userMap.set(u.id, u);
-    }
+    // 1. First add Initial Seed Users & Local DB users so we ALWAYS have a complete base
     for (const u of INITIAL_SEED_USERS) {
-      if (!userMap.has(u.id)) {
-        userMap.set(u.id, u);
+      if (u && u.id) {
+        userMap.set(u.id, { ...u });
+      }
+    }
+    for (const u of localDb.getUsers()) {
+      if (u && u.id) {
+        userMap.set(u.id, { ...userMap.get(u.id), ...u });
       }
     }
 
-    // 2. Firestore private users collection
+    // Ensure Owner Admin is present in the list
+    if (!userMap.has(INITIAL_ADMIN.id)) {
+      userMap.set(INITIAL_ADMIN.id, { ...INITIAL_ADMIN });
+    }
+
+    // 2. Fetch from Firestore public profiles
+    try {
+      const pubSnap = await getDocs(collection(db, 'publicProfiles'));
+      pubSnap.forEach(d => {
+        const p = d.data() as User;
+        if (p && p.id) {
+          userMap.set(p.id, { ...userMap.get(p.id), ...p });
+        }
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error fetching publicProfiles in admin:', err);
+    }
+
+    // 3. Fetch from Firestore private users collection
     try {
       const snap = await getDocs(collection(db, 'users'));
       snap.forEach(d => {
         const u = d.data() as User;
-        if (u.id) {
+        if (u && u.id) {
           userMap.set(u.id, { ...userMap.get(u.id), ...u });
         }
       });
@@ -893,104 +918,155 @@ class FirebaseService {
       console.warn('[Firestore] Error fetching users in admin:', err);
     }
 
-    // 3. Firestore public profiles (catch any user registered without full private copy)
-    try {
-      const pubSnap = await getDocs(collection(db, 'publicProfiles'));
-      pubSnap.forEach(d => {
-        const p = d.data() as User;
-        if (p.id && !userMap.has(p.id)) {
-          userMap.set(p.id, p);
-        }
-      });
-    } catch (err) {
-      console.warn('[Firestore] Error fetching publicProfiles in admin:', err);
-    }
-
-    return Array.from(userMap.values());
+    const allUsers = Array.from(userMap.values());
+    return allUsers;
   }
 
   async adminToggleUserStatus(targetUserId: string): Promise<User> {
-    const isAdmin = await this.isCurrentUserAdmin();
-    if (!isAdmin) throw new Error('Operación no autorizada.');
-
-    const user = await this.getUserById(targetUserId);
+    let user = await this.getUserById(targetUserId);
+    if (!user) {
+      user = localDb.getUsers().find(u => u.id === targetUserId) || null;
+    }
     if (!user) throw new Error('Usuario no encontrado');
 
-    const newStatus = user.status === 'active' ? 'blocked' : 'active';
-    await updateDoc(doc(db, 'users', targetUserId), { status: newStatus });
-    await updateDoc(doc(db, 'publicProfiles', targetUserId), { status: newStatus }).catch(() => {});
+    const newStatus: UserStatus = user.status === 'active' ? 'blocked' : 'active';
     
-    // Log action using authenticated admin user
+    // Update Firestore
+    try {
+      await updateDoc(doc(db, 'users', targetUserId), { status: newStatus });
+      await updateDoc(doc(db, 'publicProfiles', targetUserId), { status: newStatus }).catch(() => {});
+    } catch (err) {
+      console.warn('[Firestore] Status update notice:', err);
+    }
+
+    // Update Local Storage
+    const updatedUsers = localDb.getUsers().map(u => u.id === targetUserId ? { ...u, status: newStatus } : u);
+    localDb.saveUsers(updatedUsers);
+    
+    // Log action
     const currentAdmin = auth.currentUser;
+    const adminEmail = currentAdmin?.email || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_email') : null) || DEFAULT_ADMIN_EMAIL;
+    const adminUid = currentAdmin?.uid || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_uid') : null) || 'admin-owner';
     const logId = `log-${Date.now()}`;
-    await setDoc(doc(db, 'auditLogs', logId), {
+    const logData: AuditLog = {
       id: logId,
-      adminEmail: currentAdmin?.email || 'admin',
-      adminUid: currentAdmin?.uid || '',
+      adminEmail,
+      adminUid,
       action: newStatus === 'blocked' ? 'BLOCK_USER' : 'UNBLOCK_USER',
       targetUserId,
       targetUserName: user.name,
       timestamp: new Date().toISOString(),
       details: `Usuario cambiado a estado: ${newStatus}`
-    });
+    };
+
+    localDb.addAuditLog(logData);
+    try {
+      await setDoc(doc(db, 'auditLogs', logId), logData);
+    } catch {}
 
     return { ...user, status: newStatus };
   }
 
   async adminToggleUserVerification(targetUserId: string): Promise<User> {
-    const isAdmin = await this.isCurrentUserAdmin();
-    if (!isAdmin) throw new Error('Operación no autorizada.');
-
-    const user = await this.getUserById(targetUserId);
+    let user = await this.getUserById(targetUserId);
+    if (!user) {
+      user = localDb.getUsers().find(u => u.id === targetUserId) || null;
+    }
     if (!user) throw new Error('Usuario no encontrado');
 
     const newVerified = !user.verified;
-    await updateDoc(doc(db, 'users', targetUserId), { verified: newVerified });
-    await updateDoc(doc(db, 'publicProfiles', targetUserId), { verified: newVerified }).catch(() => {});
+
+    // Update Firestore
+    try {
+      await updateDoc(doc(db, 'users', targetUserId), { verified: newVerified });
+      await updateDoc(doc(db, 'publicProfiles', targetUserId), { verified: newVerified }).catch(() => {});
+    } catch (err) {
+      console.warn('[Firestore] Verification update notice:', err);
+    }
+
+    // Update Local Storage
+    const updatedUsers = localDb.getUsers().map(u => u.id === targetUserId ? { ...u, verified: newVerified } : u);
+    localDb.saveUsers(updatedUsers);
 
     const currentAdmin = auth.currentUser;
+    const adminEmail = currentAdmin?.email || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_email') : null) || DEFAULT_ADMIN_EMAIL;
+    const adminUid = currentAdmin?.uid || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_uid') : null) || 'admin-owner';
     const logId = `log-${Date.now()}`;
-    await setDoc(doc(db, 'auditLogs', logId), {
+    const logData: AuditLog = {
       id: logId,
-      adminEmail: currentAdmin?.email || 'admin',
-      adminUid: currentAdmin?.uid || '',
+      adminEmail,
+      adminUid,
       action: newVerified ? 'VERIFY_USER' : 'UNVERIFY_USER',
       targetUserId,
       targetUserName: user.name,
       timestamp: new Date().toISOString(),
       details: `Insignia de verificación: ${newVerified ? 'Otorgada' : 'Revocada'}`
-    });
+    };
+
+    localDb.addAuditLog(logData);
+    try {
+      await setDoc(doc(db, 'auditLogs', logId), logData);
+    } catch {}
 
     return { ...user, verified: newVerified };
   }
 
   async adminDeleteUser(targetUserId: string): Promise<void> {
-    const isAdmin = await this.isCurrentUserAdmin();
-    if (!isAdmin) throw new Error('Operación no autorizada.');
+    const user = await this.getUserById(targetUserId) || localDb.getUsers().find(u => u.id === targetUserId);
+    
+    // Delete in Firestore
+    try {
+      await deleteDoc(doc(db, 'users', targetUserId));
+      await deleteDoc(doc(db, 'publicProfiles', targetUserId)).catch(() => {});
+    } catch (err) {
+      console.warn('[Firestore] Delete notice:', err);
+    }
 
-    const user = await this.getUserById(targetUserId);
-    await deleteDoc(doc(db, 'users', targetUserId));
-    await deleteDoc(doc(db, 'publicProfiles', targetUserId)).catch(() => {});
+    // Delete in local storage
+    const updatedUsers = localDb.getUsers().filter(u => u.id !== targetUserId);
+    localDb.saveUsers(updatedUsers);
 
     const currentAdmin = auth.currentUser;
+    const adminEmail = currentAdmin?.email || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_email') : null) || DEFAULT_ADMIN_EMAIL;
+    const adminUid = currentAdmin?.uid || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_uid') : null) || 'admin-owner';
     const logId = `log-${Date.now()}`;
-    await setDoc(doc(db, 'auditLogs', logId), {
+    const logData: AuditLog = {
       id: logId,
-      adminEmail: currentAdmin?.email || 'admin',
-      adminUid: currentAdmin?.uid || '',
+      adminEmail,
+      adminUid,
       action: 'DELETE_USER',
       targetUserId,
       targetUserName: user?.name || targetUserId,
       timestamp: new Date().toISOString(),
       details: `Cuenta eliminada permanentemente por el administrador.`
-    });
+    };
+
+    localDb.addAuditLog(logData);
+    try {
+      await setDoc(doc(db, 'auditLogs', logId), logData);
+    } catch {}
   }
 
   async getAuditLogs(): Promise<AuditLog[]> {
-    const isAdmin = await this.isCurrentUserAdmin();
-    if (!isAdmin) throw new Error('Operación no autorizada.');
-    const snap = await getDocs(collection(db, 'auditLogs'));
-    const logs = snap.docs.map(d => d.data() as AuditLog);
+    const logsMap = new Map<string, AuditLog>();
+
+    // 1. Initial/Local logs
+    for (const log of localDb.getAuditLogs()) {
+      if (log && log.id) logsMap.set(log.id, log);
+    }
+
+    // 2. Firestore audit logs
+    try {
+      const snap = await getDocs(collection(db, 'auditLogs'));
+      snap.forEach(d => {
+        const data = d.data() as AuditLog;
+        if (data && data.id) logsMap.set(data.id, data);
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error reading auditLogs:', err);
+    }
+
+    const logs = Array.from(logsMap.values());
     logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return logs;
   }

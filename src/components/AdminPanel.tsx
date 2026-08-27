@@ -77,18 +77,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const fetchAdminData = async () => {
     setLoading(true);
     try {
-      // Parallel fetch metrics, users, and audit logs with strict server verification
-      const [metricsRes, usersRes, logsRes] = await Promise.all([
+      // Parallel fetch metrics, users, and audit logs with resilient fallbacks
+      const [metricsRes, usersRes, logsRes] = await Promise.allSettled([
         api.getAdminMetrics(),
         api.getAdminUsers({ q: searchQuery, status: statusFilter, sortBy }),
         api.getAdminAuditLogs()
       ]);
 
-      setStats(metricsRes.stats);
-      setUsers(usersRes.users);
-      setAuditLogs(logsRes.logs);
+      if (usersRes.status === 'fulfilled') {
+        setUsers(usersRes.value.users);
+      } else {
+        console.warn('getAdminUsers error, fetching fallback:', usersRes.reason);
+        const fallback = await api.getAllUsersAdmin();
+        setUsers(fallback.users);
+      }
+
+      if (metricsRes.status === 'fulfilled') {
+        setStats(metricsRes.value.stats);
+      }
+
+      if (logsRes.status === 'fulfilled') {
+        setAuditLogs(logsRes.value.logs);
+      }
     } catch (err: any) {
-      showToast(err.message || 'Error al validar autorización administrativa en el servidor.', 'error');
+      console.warn('Error in fetchAdminData:', err);
+      try {
+        const fallback = await api.getAllUsersAdmin();
+        setUsers(fallback.users);
+      } catch {}
+      showToast(err?.message || 'Error al sincronizar datos administrativos.', 'error');
     } finally {
       setLoading(false);
     }
@@ -393,7 +410,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             
             {/* MOBILE CARDS LIST (Visible on screens < md) */}
             <div className="block md:hidden divide-y divide-slate-800/80">
-              {users.map(user => (
+              {loading && (
+                <div className="text-center py-12 px-4 space-y-3">
+                  <div className="w-7 h-7 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-xs text-slate-400">Sincronizando usuarios con la base de datos...</p>
+                </div>
+              )}
+
+              {!loading && users.map(user => (
                 <div key={user.id} className="p-4 space-y-3">
                   <div className="flex items-center gap-3">
                     <div className="relative shrink-0">
@@ -503,15 +527,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               ))}
 
-              {users.length === 0 && (
+              {!loading && users.length === 0 && (
                 <div className="text-center py-12 px-4 space-y-3">
                   <Users className="w-8 h-8 text-slate-600 mx-auto" />
                   <p className="text-xs text-slate-400">No se encontraron usuarios en la lista.</p>
                   <button
-                    onClick={fetchAdminData}
+                    onClick={() => { setSearchQuery(''); setStatusFilter('all'); fetchAdminData(); }}
                     className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-bold shadow"
                   >
-                    Recargar lista de usuarios
+                    Restablecer y recargar
                   </button>
                 </div>
               )}
@@ -531,7 +555,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {users.map(user => (
+                  {loading && (
+                    <tr>
+                      <td colSpan={6} className="text-center py-12 text-slate-400">
+                        <div className="inline-flex items-center gap-2">
+                          <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                          <span className="text-xs">Sincronizando usuarios con la base de datos...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
+                  {!loading && users.map(user => (
                     <tr key={user.id} className="hover:bg-slate-800/40 transition">
                       
                       {/* Avatar & Name */}
@@ -673,7 +708,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </tr>
                   ))}
 
-                  {users.length === 0 && (
+                  {!loading && users.length === 0 && (
                     <tr>
                       <td colSpan={6} className="text-center py-10 text-slate-500">
                         No se encontraron usuarios que coincidan con la búsqueda.

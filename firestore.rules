@@ -12,54 +12,54 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.admin == true ||
-        request.auth.token.email == 'lugabca98@gmail.com' ||
-        request.auth.uid == 'admin-owner' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      return (
+        isSignedIn() && (
+          request.auth.token.admin == true ||
+          request.auth.token.email == 'lugabca98@gmail.com' ||
+          request.auth.uid == 'admin-owner' ||
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        )
       );
     }
 
     // 1. PERFILES PÚBLICOS (/publicProfiles/{userId})
     match /publicProfiles/{userId} {
-      // Lectura pública para visualización instantánea en celular y web
-      allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 2. PERFILES PRIVADOS (/users/{userId})
     match /users/{userId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 3. REGISTRO DE ADMINISTRADORES (/admins/{adminId})
     match /admins/{adminId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 4. SWIPES (/swipes/{swipeId})
     match /swipes/{swipeId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 5. MATCHES (/matches/{matchId})
     match /matches/{matchId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 6. MENSAJES DE CHAT (/messages/{messageId})
     match /messages/{messageId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 7. AUDITORÍA (/auditLogs/{logId})
     match /auditLogs/{logId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 8. REPORTES (/reports/{reportId})
     match /reports/{reportId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }

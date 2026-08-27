@@ -75,6 +75,7 @@ export interface AdminStats {
 export interface AuditLog {
   id: string;
   adminEmail: string;
+  adminUid?: string;
   action: 'BLOCK_USER' | 'UNBLOCK_USER' | 'DELETE_USER' | 'VERIFY_USER' | 'UNVERIFY_USER' | 'SYSTEM_RESET' | 'UPDATE_USER';
   targetUserId: string;
   targetUserName: string;

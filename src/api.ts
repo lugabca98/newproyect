@@ -1,5 +1,6 @@
 import { User, Match, Message, AdminStats, AuditLog } from './types';
 import { firebaseService } from './firebaseService';
+import { INITIAL_ADMIN, localDb } from './localStore';
 
 class ApiService {
   private currentUserId: string | null = null;
@@ -101,39 +102,24 @@ class ApiService {
       const storedEmail = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_email') : null;
       if (storedEmail?.toLowerCase() === 'lugabca98@gmail.com' || currentId === 'admin-owner') {
         user = {
-          id: currentId,
-          name: 'Admin Propietario',
-          email: 'lugabca98@gmail.com',
-          age: 25,
-          gender: 'other',
-          bio: 'Administrador general de Vulnerable',
-          photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'],
-          location: 'Buenos Aires',
-          distanceKm: 3,
-          occupation: 'Administración',
-          interests: ['Tecnología', 'Música'],
-          verified: true,
-          status: 'active',
-          role: 'admin',
-          createdAt: new Date().toISOString(),
-          lastActive: new Date().toISOString(),
-          likesCount: 0,
-          matchesCount: 0,
-          preferences: {
-            interestedIn: ['female', 'male', 'non-binary', 'other'],
-            minAge: 18,
-            maxAge: 99,
-            maxDistanceKm: 100
-          }
+          ...INITIAL_ADMIN,
+          id: currentId
         };
       } else {
-        throw new Error('Usuario no encontrado.');
+        const localUser = localDb.getUsers().find(u => u.id === currentId || (storedEmail && u.email?.toLowerCase() === storedEmail.toLowerCase()));
+        if (localUser) {
+          user = localUser;
+        } else {
+          throw new Error('Usuario no encontrado.');
+        }
       }
     }
 
     const currentUserObj: User = user;
     const isEmailAdmin = (currentUserObj.email || '').toLowerCase() === 'lugabca98@gmail.com';
     const isAdmin = isEmailAdmin || currentUserObj.role === 'admin' || await firebaseService.isCurrentUserAdmin();
+    // Keep local session flags in sync
+    this.setToken(currentUserObj.id, currentUserObj.id, currentUserObj.email, isAdmin ? 'admin' : currentUserObj.role);
     return { user: currentUserObj, isAdmin };
   }
 
@@ -221,11 +207,27 @@ class ApiService {
   async getAdminUsers(params?: { q?: string; status?: string; sortBy?: string }): Promise<{ users: User[] }> {
     let users = await firebaseService.getAllUsersAdmin();
     if (params?.q) {
-      const q = params.q.toLowerCase();
-      users = users.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+      const q = params.q.toLowerCase().trim();
+      users = users.filter(u => 
+        (u.name || '').toLowerCase().includes(q) || 
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.location || '').toLowerCase().includes(q) ||
+        (u.occupation || '').toLowerCase().includes(q)
+      );
     }
     if (params?.status && params.status !== 'all') {
       users = users.filter(u => u.status === params.status);
+    }
+    if (params?.sortBy) {
+      if (params.sortBy === 'newest') {
+        users.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      } else if (params.sortBy === 'oldest') {
+        users.sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+      } else if (params.sortBy === 'likes') {
+        users.sort((a, b) => (b.likesCount || 0) - (a.likesCount || 0));
+      } else if (params.sortBy === 'matches') {
+        users.sort((a, b) => (b.matchesCount || 0) - (a.matchesCount || 0));
+      }
     }
     return { users };
   }
