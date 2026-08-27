@@ -40,6 +40,12 @@ export function App() {
   // Can rewind state
   const [canRewind, setCanRewind] = useState(false);
 
+  const isUserAdmin = (user: User | null): boolean => {
+    if (!user) return false;
+    const email = (user.email || '').toLowerCase().trim();
+    return email === 'lugabca98@gmail.com' || user.id === 'admin-owner';
+  };
+
   // Initial Load: Check session or present Register screen first
   useEffect(() => {
     initAuth();
@@ -55,8 +61,10 @@ export function App() {
         const me = await api.getMe();
         setCurrentUser(me.user);
         setAuthModalOpen(false);
-        if (me.isAdmin) {
+        if (me.isAdmin && isUserAdmin(me.user)) {
           setCurrentTab('admin');
+        } else {
+          setCurrentTab('discover');
         }
       } else {
         // First screen is Register!
@@ -74,6 +82,13 @@ export function App() {
       setAuthChecking(false);
     }
   };
+
+  // Active Security Guard: Immediately eject non-administrators from the admin tab
+  useEffect(() => {
+    if (currentTab === 'admin' && (!currentUser || !isUserAdmin(currentUser))) {
+      setCurrentTab('discover');
+    }
+  }, [currentTab, currentUser]);
 
   // Real-time listener for current user status (Disconnect instantly if blocked by Admin)
   useEffect(() => {
@@ -192,7 +207,7 @@ export function App() {
   const handleAuthSuccess = (user: User, isAdmin: boolean) => {
     setCurrentUser(user);
     setAuthModalOpen(false);
-    if (isAdmin) {
+    if (isAdmin && isUserAdmin(user)) {
       setCurrentTab('admin');
     } else {
       setCurrentTab('discover');
@@ -294,8 +309,8 @@ export function App() {
           />
         )}
 
-        {/* TAB 4: PROTECTED OWNER ADMIN PANEL */}
-        {currentTab === 'admin' && currentUser && (
+        {/* TAB 4: PROTECTED OWNER ADMIN PANEL - Strictly for lugabca98@gmail.com */}
+        {currentTab === 'admin' && currentUser && isUserAdmin(currentUser) && (
           <AdminPanel
             currentAdminUser={currentUser}
             onLogoutAdmin={handleLogout}

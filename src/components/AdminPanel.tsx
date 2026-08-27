@@ -39,6 +39,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onLogoutAdmin,
   onCloseAdmin
 }) => {
+  const isAuthorizedAdmin = (currentAdminUser?.email || '').toLowerCase().trim() === 'lugabca98@gmail.com' || currentAdminUser?.id === 'admin-owner';
+
+  useEffect(() => {
+    if (!isAuthorizedAdmin) {
+      onCloseAdmin();
+    }
+  }, [isAuthorizedAdmin, onCloseAdmin]);
+
+  if (!isAuthorizedAdmin) {
+    return null;
+  }
+
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);

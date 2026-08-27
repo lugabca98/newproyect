@@ -97,46 +97,48 @@ class FirebaseService {
   // -------------------------------------------------------------
   // SECURE AUTHENTICATION & ROLE CHECKS (Firebase Auth SDK)
   // -------------------------------------------------------------
-  async isCurrentUserAdmin(): Promise<boolean> {
-    // 1. Direct auth user check
+  async isCurrentUserAdmin(targetEmailOrUid?: string | null): Promise<boolean> {
+    const cleanAdminEmail = DEFAULT_ADMIN_EMAIL.toLowerCase();
+
+    // 0. Explicit check for provided target user email or UID
+    if (targetEmailOrUid) {
+      const val = targetEmailOrUid.toLowerCase().trim();
+      if (val === cleanAdminEmail || val === 'admin-owner') return true;
+      const specificUser = localDb.getUsers().find(u => u.id === targetEmailOrUid);
+      if (specificUser) {
+        return (specificUser.email || '').toLowerCase().trim() === cleanAdminEmail || specificUser.id === 'admin-owner';
+      }
+      return false;
+    }
+
+    // 1. Direct Firebase Auth currentUser check
     const user = auth.currentUser;
-    if (user?.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) return true;
-    if (user?.uid === 'admin-owner') return true;
+    if (user) {
+      const email = (user.email || '').toLowerCase().trim();
+      if (email === cleanAdminEmail || user.uid === 'admin-owner') return true;
+      try {
+        const token = await getIdTokenResult(user);
+        if (token.claims.admin === true) return true;
+      } catch {}
+      return false;
+    }
     
-    // 2. Check local session store (mobile & desktop persistent storage)
+    // 2. Check local session store for the currently logged in user
     if (typeof window !== 'undefined') {
-      const storedRole = localStorage.getItem('vulnerable_auth_role');
-      const storedEmail = localStorage.getItem('vulnerable_auth_email');
+      const storedEmail = localStorage.getItem('vulnerable_auth_email')?.toLowerCase().trim();
       const storedUid = localStorage.getItem('vulnerable_auth_uid');
-      if (storedRole === 'admin') return true;
-      if (storedEmail?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) return true;
-      if (storedUid === 'admin-owner') return true;
-      if (storedUid) {
-        const localUser = localDb.getUsers().find(u => u.id === storedUid || u.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
-        if (localUser && (localUser.role === 'admin' || localUser.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase())) {
-          return true;
+      if (storedEmail === cleanAdminEmail || storedUid === 'admin-owner') return true;
+
+      // Clean up stale or corrupted admin role if active session is another user
+      if (storedEmail && storedEmail !== cleanAdminEmail) {
+        if (localStorage.getItem('vulnerable_auth_role') === 'admin') {
+          localStorage.setItem('vulnerable_auth_role', 'user');
         }
+        return false;
       }
     }
 
-    // 3. Fallback: check if the local database has an active admin user
-    const adminUser = localDb.getUsers().find(u => u.role === 'admin' || u.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
-    if (adminUser) return true;
-
-    if (!user) return false;
-    try {
-      const token = await getIdTokenResult(user);
-      if (token.claims.admin === true) return true;
-      const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-      if (adminDoc.exists()) return true;
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists() && (userDoc.data()?.role === 'admin' || userDoc.data()?.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase())) {
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
+    return false;
   }
 
   async registerUser(userData: Partial<User>, plainPassword: string): Promise<User> {

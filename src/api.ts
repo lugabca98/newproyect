@@ -1,6 +1,12 @@
 import { User, Match, Message, AdminStats, AuditLog } from './types';
 import { firebaseService } from './firebaseService';
-import { INITIAL_ADMIN, localDb } from './localStore';
+import { INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL, localDb } from './localStore';
+
+const isEmailAdmin = (email?: string | null, uid?: string | null): boolean => {
+  if (uid === 'admin-owner') return true;
+  if (!email) return false;
+  return email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
+};
 
 class ApiService {
   private currentUserId: string | null = null;
@@ -11,10 +17,14 @@ class ApiService {
       try {
         localStorage.setItem('vulnerable_auth_uid', userId);
         localStorage.setItem('vulnerable_auth_token', token || userId);
-        if (email) localStorage.setItem('vulnerable_auth_email', email.toLowerCase());
-        if (role) localStorage.setItem('vulnerable_auth_role', role);
+        const cleanEmail = (email || '').trim().toLowerCase();
+        if (cleanEmail) localStorage.setItem('vulnerable_auth_email', cleanEmail);
+
+        // Strictly determine role based on owner identity
+        const isOwner = isEmailAdmin(cleanEmail, userId);
+        localStorage.setItem('vulnerable_auth_role', isOwner ? 'admin' : 'user');
       } catch {}
-    } else if (!token) {
+    } else {
       this.currentUserId = null;
       try {
         localStorage.removeItem('vulnerable_auth_uid');
@@ -59,16 +69,19 @@ class ApiService {
   async login(email: string, password: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const cleanEmail = email.trim().toLowerCase();
     const user = await firebaseService.loginUser(cleanEmail, password);
-    const isAdmin = user.role === 'admin' || user.email?.toLowerCase() === 'lugabca98@gmail.com' || await firebaseService.isCurrentUserAdmin();
-    this.setToken(user.id, user.id, user.email, user.role);
-    return { user, token: user.id, isAdmin };
+    const isOwner = isEmailAdmin(cleanEmail, user.id);
+    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user' };
+    this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
+    return { user: sanitizedUser, token: sanitizedUser.id, isAdmin: isOwner };
   }
 
   async loginWithGoogle(): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginWithGoogle();
-    const isAdmin = user.role === 'admin' || user.email?.toLowerCase() === 'lugabca98@gmail.com' || await firebaseService.isCurrentUserAdmin();
-    this.setToken(user.id, user.id, user.email, user.role);
-    return { user, token: user.id, isAdmin };
+    const cleanEmail = (user.email || '').trim().toLowerCase();
+    const isOwner = isEmailAdmin(cleanEmail, user.id);
+    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user' };
+    this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
+    return { user: sanitizedUser, token: sanitizedUser.id, isAdmin: isOwner };
   }
 
   async loginDirectAdmin(): Promise<{ user: User; token: string; isAdmin: boolean }> {
@@ -79,8 +92,8 @@ class ApiService {
 
   async loginGuest(guestName?: string, guestOccupation?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginGuest(guestName, guestOccupation);
-    this.setToken(user.id, user.id, user.email, user.role);
-    return { user, token: user.id, isAdmin: false };
+    this.setToken(user.id, user.id, user.email, 'user');
+    return { user: { ...user, role: 'user' }, token: user.id, isAdmin: false };
   }
 
   async register(userData: Partial<User>, password?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
@@ -88,9 +101,11 @@ class ApiService {
       throw new Error('La contraseña es requerida para el registro.');
     }
     const newUser = await firebaseService.registerUser(userData, password);
-    const isAdmin = newUser.role === 'admin' || newUser.email?.toLowerCase() === 'lugabca98@gmail.com' || await firebaseService.isCurrentUserAdmin();
-    this.setToken(newUser.id, newUser.id, newUser.email, newUser.role);
-    return { user: newUser, token: newUser.id, isAdmin };
+    const cleanEmail = (newUser.email || '').trim().toLowerCase();
+    const isOwner = isEmailAdmin(cleanEmail, newUser.id);
+    const sanitizedUser: User = { ...newUser, role: isOwner ? 'admin' : 'user' };
+    this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
+    return { user: sanitizedUser, token: sanitizedUser.id, isAdmin: isOwner };
   }
 
   async getMe(): Promise<{ user: User; isAdmin: boolean }> {
@@ -98,15 +113,16 @@ class ApiService {
     if (!currentId) throw new Error('No hay sesión activa.');
 
     let user: User | null = await firebaseService.getUserById(currentId);
+    const storedEmail = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_email') || '').trim().toLowerCase() : '';
+
     if (!user) {
-      const storedEmail = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_email') : null;
-      if (storedEmail?.toLowerCase() === 'lugabca98@gmail.com' || currentId === 'admin-owner') {
+      if (storedEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || currentId === 'admin-owner') {
         user = {
           ...INITIAL_ADMIN,
           id: currentId
         };
       } else {
-        const localUser = localDb.getUsers().find(u => u.id === currentId || (storedEmail && u.email?.toLowerCase() === storedEmail.toLowerCase()));
+        const localUser = localDb.getUsers().find(u => u.id === currentId || (storedEmail && (u.email || '').toLowerCase() === storedEmail));
         if (localUser) {
           user = localUser;
         } else {
@@ -116,11 +132,17 @@ class ApiService {
     }
 
     const currentUserObj: User = user;
-    const isEmailAdmin = (currentUserObj.email || '').toLowerCase() === 'lugabca98@gmail.com';
-    const isAdmin = isEmailAdmin || currentUserObj.role === 'admin' || await firebaseService.isCurrentUserAdmin();
-    // Keep local session flags in sync
-    this.setToken(currentUserObj.id, currentUserObj.id, currentUserObj.email, isAdmin ? 'admin' : currentUserObj.role);
-    return { user: currentUserObj, isAdmin };
+    const cleanEmail = (currentUserObj.email || storedEmail).trim().toLowerCase();
+    const isOwner = isEmailAdmin(cleanEmail, currentUserObj.id);
+
+    const sanitizedUser: User = {
+      ...currentUserObj,
+      role: isOwner ? 'admin' : 'user'
+    };
+
+    // Keep local session flags strictly in sync
+    this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, isOwner ? 'admin' : 'user');
+    return { user: sanitizedUser, isAdmin: isOwner };
   }
 
   async logout(): Promise<void> {
