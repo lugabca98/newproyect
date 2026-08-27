@@ -7,19 +7,45 @@ class ApiService {
   setToken(token: string | null, userId?: string) {
     if (userId) {
       this.currentUserId = userId;
+      try {
+        localStorage.setItem('vulnerable_auth_uid', userId);
+        localStorage.setItem('vulnerable_auth_token', token || userId);
+      } catch {}
     } else if (!token) {
       this.currentUserId = null;
+      try {
+        localStorage.removeItem('vulnerable_auth_uid');
+        localStorage.removeItem('vulnerable_auth_token');
+      } catch {}
     }
   }
 
   getToken(): string | null {
     const authUser = firebaseService.getCurrentAuthUser();
-    return authUser ? authUser.uid : this.currentUserId;
+    if (authUser?.uid) return authUser.uid;
+    if (this.currentUserId) return this.currentUserId;
+    try {
+      const stored = localStorage.getItem('vulnerable_auth_uid');
+      if (stored) {
+        this.currentUserId = stored;
+        return stored;
+      }
+    } catch {}
+    return null;
   }
 
   getCurrentUserId(): string {
     const authUser = firebaseService.getCurrentAuthUser();
-    return authUser ? authUser.uid : (this.currentUserId || 'guest');
+    if (authUser?.uid) return authUser.uid;
+    if (this.currentUserId) return this.currentUserId;
+    try {
+      const stored = localStorage.getItem('vulnerable_auth_uid');
+      if (stored) {
+        this.currentUserId = stored;
+        return stored;
+      }
+    } catch {}
+    return 'guest';
   }
 
   // -------------------------------------------------------------
@@ -40,6 +66,18 @@ class ApiService {
     return { user, token: user.id, isAdmin };
   }
 
+  async loginDirectAdmin(): Promise<{ user: User; token: string; isAdmin: boolean }> {
+    const user = await firebaseService.loginDirectAdmin();
+    this.setToken(user.id, user.id);
+    return { user, token: user.id, isAdmin: true };
+  }
+
+  async loginGuest(guestName?: string, guestOccupation?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
+    const user = await firebaseService.loginGuest(guestName, guestOccupation);
+    this.setToken(user.id, user.id);
+    return { user, token: user.id, isAdmin: false };
+  }
+
   async register(userData: Partial<User>, password?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     if (!password) {
       throw new Error('La contraseña es requerida para el registro.');
@@ -51,14 +89,14 @@ class ApiService {
   }
 
   async getMe(): Promise<{ user: User; isAdmin: boolean }> {
-    const authUser = firebaseService.getCurrentAuthUser();
-    const currentId = authUser?.uid || this.currentUserId;
+    const currentId = this.getToken();
     if (!currentId) throw new Error('No hay sesión activa.');
 
     const user = await firebaseService.getUserById(currentId);
     if (!user) throw new Error('Usuario no encontrado.');
 
-    const isAdmin = await firebaseService.isCurrentUserAdmin();
+    const isEmailAdmin = user.email?.toLowerCase() === 'lugabca98@gmail.com';
+    const isAdmin = isEmailAdmin || user.role === 'admin' || await firebaseService.isCurrentUserAdmin();
     return { user, isAdmin };
   }
 

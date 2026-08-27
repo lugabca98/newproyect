@@ -98,6 +98,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const formatAuthError = (err: any): string => {
+    const code = err?.code || '';
+    const msg = err?.message || '';
+    
+    if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
+      return 'El método de Correo/Contraseña aún no está activo en Firebase Authentication para el proyecto "noble-voltage-37dgj". En Firebase Console > Authentication > Sign-in method, habilita "Email/Password" y presiona Guardar.';
+    }
+    if (code === 'auth/email-already-in-use' || msg.includes('email-already-in-use')) {
+      return 'Este correo electrónico ya está registrado. Por favor ve a la pestaña "Ingresar".';
+    }
+    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found' || msg.includes('invalid-credential')) {
+      return 'Correo o contraseña incorrectos. Verifica tus credenciales.';
+    }
+    if (code === 'auth/weak-password') {
+      return 'La contraseña debe tener al menos 6 caracteres.';
+    }
+    if (code === 'auth/invalid-email') {
+      return 'El formato de correo ingresado no es válido.';
+    }
+    if (code === 'auth/popup-closed-by-user') {
+      return 'Se cerró la ventana de inicio de sesión con Google.';
+    }
+    if (code === 'auth/unauthorized-domain') {
+      return 'El dominio actual no está autorizado en Firebase Authentication. Agrégalo en Authorized Domains.';
+    }
+    return msg || 'Ocurrió un error inesperado al procesar la solicitud.';
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = email.trim();
@@ -114,7 +142,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onSuccess(res.user, res.isAdmin);
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error al iniciar sesión');
+      setErrorMsg(formatAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -165,7 +193,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onSuccess(res.user, res.isAdmin);
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error al registrar usuario');
+      setErrorMsg(formatAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -484,7 +512,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <Flame className="w-4 h-4 text-white" />
               <span>{loading ? 'Creando tu cuenta...' : 'Crear Cuenta y Empezar a Hacer Match'}</span>
             </button>
-
           </form>
         )}
 
@@ -541,7 +568,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onSuccess(res.user, res.isAdmin);
                     onClose();
                   } catch (err: any) {
-                    setErrorMsg(err.message || 'Error al autenticar con Google');
+                    setErrorMsg(formatAuthError(err));
                   } finally {
                     setLoading(false);
                   }

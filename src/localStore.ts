@@ -37,7 +37,6 @@ export const INITIAL_ADMIN: User = {
 };
 
 export const INITIAL_SEED_USERS: User[] = [
-  INITIAL_ADMIN,
   {
     id: 'user-valeria',
     name: 'Valeria Rivas',

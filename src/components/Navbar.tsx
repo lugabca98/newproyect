@@ -122,17 +122,29 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser ? (
             <div className="flex items-center gap-2">
               <div 
-                onClick={() => setCurrentTab('profile')}
-                className="flex items-center gap-2 cursor-pointer p-1 rounded-full hover:bg-slate-800/60 transition-colors"
+                onClick={() => setCurrentTab(isAdmin ? 'admin' : 'profile')}
+                className="flex items-center gap-2 cursor-pointer p-1 pr-2 rounded-full hover:bg-slate-800/60 transition-colors"
+                title={isAdmin ? "Panel de Administración" : "Mi Perfil"}
               >
-                <img
-                  src={currentUser.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
-                  alt={currentUser.name}
-                  className="w-8 h-8 rounded-full object-cover border-2 border-rose-500/50"
-                />
-                <span className="hidden sm:inline text-xs font-medium text-slate-200 max-w-[90px] truncate">
-                  {currentUser.name.split(' ')[0]}
-                </span>
+                {isAdmin ? (
+                  <div className="w-8 h-8 rounded-full bg-amber-500/20 border-2 border-amber-500/50 flex items-center justify-center text-amber-400">
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                ) : (
+                  <img
+                    src={currentUser.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                    alt={currentUser.name}
+                    className="w-8 h-8 rounded-full object-cover border-2 border-rose-500/50"
+                  />
+                )}
+                <div className="hidden sm:flex flex-col">
+                  <span className="text-xs font-semibold text-slate-200 max-w-[90px] truncate leading-tight">
+                    {currentUser.name.split(' ')[0]}
+                  </span>
+                  {isAdmin && (
+                    <span className="text-[9px] font-bold text-amber-400 leading-none">Admin</span>
+                  )}
+                </div>
               </div>
               
               <button

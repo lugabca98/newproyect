@@ -255,6 +255,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   return (
     <div className="w-full max-w-2xl mx-auto space-y-6 pb-12">
       
+      {/* Admin Privacy Information Notice */}
+      {currentUser.role === 'admin' && (
+        <div className="bg-gradient-to-r from-amber-950/50 via-slate-900 to-amber-950/40 border border-amber-500/40 rounded-3xl p-5 flex items-start gap-3.5 shadow-lg shadow-amber-500/5">
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5 text-amber-400" />
+          </div>
+          <div className="text-xs space-y-1">
+            <h4 className="font-bold text-amber-300 text-sm">Perfil de Administrador Oculto y Privado</h4>
+            <p className="text-slate-300 leading-relaxed">
+              Como administrador, <strong className="text-amber-200">tu perfil no es visible para otros usuarios</strong> en la sección de descubrimiento ni forma parte del pool de citas o matches. Tu cuenta tiene acceso directo al Panel de Control y moderación de la comunidad.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header Profile Stats Card */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
         <div className="flex flex-col sm:flex-row items-center gap-5">

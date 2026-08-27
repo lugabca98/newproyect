@@ -55,6 +55,9 @@ export function App() {
         const me = await api.getMe();
         setCurrentUser(me.user);
         setAuthModalOpen(false);
+        if (me.isAdmin) {
+          setCurrentTab('admin');
+        }
       } else {
         // First screen is Register!
         setCurrentUser(null);
@@ -75,10 +78,14 @@ export function App() {
   // Real-time listener for current user status (Disconnect instantly if blocked by Admin)
   useEffect(() => {
     if (!currentUser?.id) return;
-    const unsub = firebaseService.onAuthChange((fbUser) => {
-      if (!fbUser) {
+    const unsub = firebaseService.onUserDocChange(currentUser.id, (updatedUser) => {
+      if (updatedUser && updatedUser.status === 'blocked') {
+        api.setToken(null);
         setCurrentUser(null);
+        setAuthModalMode('login');
         setAuthModalOpen(true);
+      } else if (updatedUser) {
+        setCurrentUser(prev => prev ? { ...prev, ...updatedUser } : updatedUser);
       }
     });
 
