@@ -43,50 +43,49 @@ class FirebaseService {
         });
       } catch {}
 
-      const publicCol = collection(db, 'publicProfiles');
-      const snapshot = await getDocs(publicCol);
-      
-      if (snapshot.empty) {
-        console.log('[Firestore] Seeding public and user profiles...');
-        for (const user of INITIAL_SEED_USERS) {
-          // Strictly skip admin from public dating pool
-          if (user.role === 'admin' || user.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
-            continue;
+      for (const user of INITIAL_SEED_USERS) {
+        // Strictly skip admin from public dating pool
+        if (user.role === 'admin' || user.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+          continue;
+        }
+
+        try {
+          const docRef = doc(db, 'publicProfiles', user.id);
+          const existingDoc = await getDoc(docRef);
+          if (!existingDoc.exists()) {
+            const publicProfile = {
+              id: user.id,
+              name: user.name,
+              age: user.age,
+              gender: user.gender,
+              bio: user.bio,
+              photos: user.photos,
+              location: user.location,
+              distanceKm: user.distanceKm || 5,
+              occupation: user.occupation,
+              interests: user.interests,
+              verified: user.verified || false,
+              status: user.status || 'active',
+              role: user.role || 'user',
+              createdAt: user.createdAt || new Date().toISOString(),
+              lastActive: new Date().toISOString(),
+              likesCount: user.likesCount || 0,
+              matchesCount: user.matchesCount || 0
+            };
+            await setDoc(docRef, publicProfile);
+            await setDoc(doc(db, 'users', user.id), {
+              ...publicProfile,
+              email: user.email,
+              preferences: user.preferences || {
+                minAge: 18,
+                maxAge: 60,
+                interestedIn: ['female', 'male', 'non-binary', 'other'],
+                maxDistanceKm: 50
+              }
+            });
           }
-
-          // Public profile (NO email, NO private preferences)
-          const publicProfile = {
-            id: user.id,
-            name: user.name,
-            age: user.age,
-            gender: user.gender,
-            bio: user.bio,
-            photos: user.photos,
-            location: user.location,
-            distanceKm: user.distanceKm || 5,
-            occupation: user.occupation,
-            interests: user.interests,
-            verified: user.verified || false,
-            status: user.status || 'active',
-            role: user.role || 'user',
-            createdAt: user.createdAt || new Date().toISOString(),
-            lastActive: new Date().toISOString(),
-            likesCount: user.likesCount || 0,
-            matchesCount: user.matchesCount || 0
-          };
-          await setDoc(doc(db, 'publicProfiles', user.id), publicProfile);
-
-          // Private user document (Owner / Admin only)
-          await setDoc(doc(db, 'users', user.id), {
-            ...publicProfile,
-            email: user.email,
-            preferences: user.preferences || {
-              minAge: 18,
-              maxAge: 60,
-              interestedIn: ['female', 'male', 'non-binary', 'other'],
-              maxDistanceKm: 50
-            }
-          });
+        } catch (seedErr) {
+          console.warn('[Firestore] Seed profile error for:', user.name, seedErr);
         }
       }
       this.initialized = true;
@@ -102,12 +101,28 @@ class FirebaseService {
     const user = auth.currentUser;
     if (user?.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) return true;
     if (user?.uid === 'admin-owner') return true;
+    
+    // Check local session store
+    const storedUid = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_uid') : null;
+    if (storedUid === 'admin-owner') return true;
+    if (storedUid) {
+      const localUser = localDb.getUsers().find(u => u.id === storedUid);
+      if (localUser && (localUser.role === 'admin' || localUser.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase())) {
+        return true;
+      }
+    }
+
     if (!user) return false;
     try {
       const token = await getIdTokenResult(user);
       if (token.claims.admin === true) return true;
       const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-      return adminDoc.exists();
+      if (adminDoc.exists()) return true;
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists() && (userDoc.data()?.role === 'admin' || userDoc.data()?.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase())) {
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -560,12 +575,13 @@ class FirebaseService {
   // -------------------------------------------------------------
   async getFeed(currentUserId: string): Promise<User[]> {
     await this.initializeDatabase();
+    const swipedTargetIds = new Set<string>();
+
     try {
       // 1. Get all swipes recorded by current user
       const swipesCol = collection(db, 'swipes');
       const qSwipes = query(swipesCol, where('swiperId', '==', currentUserId));
       const swipeSnap = await getDocs(qSwipes);
-      const swipedTargetIds = new Set<string>();
       swipeSnap.forEach(d => {
         const sw = d.data() as SwipeRecord;
         if (sw.targetId) swipedTargetIds.add(sw.targetId);
@@ -598,15 +614,23 @@ class FirebaseService {
       console.warn('[Firestore] Error loading feed:', err);
     }
 
-    // Fallback to local store with strict admin filtering
-    const localUsers = localDb.getUsers().filter(u => 
-      u.id !== currentUserId && 
-      u.role !== 'admin' && 
-      u.id !== 'admin-owner' && 
-      u.email?.toLowerCase() !== DEFAULT_ADMIN_EMAIL.toLowerCase() &&
-      u.status === 'active'
-    );
-    return localUsers.map(u => ({ ...u, email: '' }));
+    // Fallback to all seed and local store profiles with strict admin and swiped filtering
+    const combinedCandidates = [...INITIAL_SEED_USERS, ...localDb.getUsers()];
+    const uniqueMap = new Map<string, User>();
+    
+    combinedCandidates.forEach(u => {
+      const isAdmin = u.role === 'admin' || u.id === 'admin-owner' || (u.email && u.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
+      if (
+        u.id !== currentUserId && 
+        !isAdmin && 
+        u.status === 'active' && 
+        !swipedTargetIds.has(u.id)
+      ) {
+        uniqueMap.set(u.id, { ...u, email: '' });
+      }
+    });
+
+    return Array.from(uniqueMap.values());
   }
 
   async recordSwipe(swiperId: string, targetId: string, type: 'like' | 'pass' | 'superlike'): Promise<{
@@ -790,27 +814,42 @@ class FirebaseService {
   // ADMIN & AUDIT (Verifies Server-Side Authorization)
   // -------------------------------------------------------------
   async getAdminStats(): Promise<AdminStats> {
+    await this.initializeDatabase();
     const isAdmin = await this.isCurrentUserAdmin();
     if (!isAdmin) throw new Error('Acceso no autorizado al panel administrativo.');
 
-    const usersSnap = await getDocs(collection(db, 'users'));
-    const matchesSnap = await getDocs(collection(db, 'matches'));
-    const messagesSnap = await getDocs(collection(db, 'messages'));
-    const swipesSnap = await getDocs(collection(db, 'swipes'));
+    const allUsers = await this.getAllUsersAdmin();
+    const active = allUsers.filter(u => u.status === 'active').length;
+    const blocked = allUsers.filter(u => u.status === 'blocked').length;
+    const verified = allUsers.filter(u => u.verified).length;
 
-    const users = usersSnap.docs.map(d => d.data() as User);
-    const active = users.filter(u => u.status === 'active').length;
-    const blocked = users.filter(u => u.status === 'blocked').length;
-    const verified = users.filter(u => u.verified).length;
+    let matchesCount = 0;
+    let messagesCount = 0;
+    let swipesCount = 0;
+
+    try {
+      const matchesSnap = await getDocs(collection(db, 'matches'));
+      matchesCount = matchesSnap.size;
+    } catch {}
+
+    try {
+      const messagesSnap = await getDocs(collection(db, 'messages'));
+      messagesCount = messagesSnap.size;
+    } catch {}
+
+    try {
+      const swipesSnap = await getDocs(collection(db, 'swipes'));
+      swipesCount = swipesSnap.size;
+    } catch {}
 
     return {
-      totalUsers: users.length,
+      totalUsers: allUsers.length,
       activeUsers: active,
       blockedUsers: blocked,
-      totalMatches: matchesSnap.size,
-      totalMessages: messagesSnap.size,
-      totalSwipes: swipesSnap.size,
-      todayNewUsers: users.filter(u => {
+      totalMatches: Math.max(matchesCount, localDb.getMatches().length),
+      totalMessages: Math.max(messagesCount, localDb.getMessages().length),
+      totalSwipes: Math.max(swipesCount, localDb.getSwipes().length),
+      todayNewUsers: allUsers.filter(u => {
         const diff = Date.now() - new Date(u.createdAt).getTime();
         return diff < 86400000;
       }).length,
@@ -819,10 +858,49 @@ class FirebaseService {
   }
 
   async getAllUsersAdmin(): Promise<User[]> {
+    await this.initializeDatabase();
     const isAdmin = await this.isCurrentUserAdmin();
     if (!isAdmin) throw new Error('Acceso no autorizado.');
-    const snap = await getDocs(collection(db, 'users'));
-    return snap.docs.map(d => d.data() as User);
+
+    const userMap = new Map<string, User>();
+
+    // 1. Seed & Local DB users
+    for (const u of localDb.getUsers()) {
+      userMap.set(u.id, u);
+    }
+    for (const u of INITIAL_SEED_USERS) {
+      if (!userMap.has(u.id)) {
+        userMap.set(u.id, u);
+      }
+    }
+
+    // 2. Firestore private users collection
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      snap.forEach(d => {
+        const u = d.data() as User;
+        if (u.id) {
+          userMap.set(u.id, { ...userMap.get(u.id), ...u });
+        }
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error fetching users in admin:', err);
+    }
+
+    // 3. Firestore public profiles (catch any user registered without full private copy)
+    try {
+      const pubSnap = await getDocs(collection(db, 'publicProfiles'));
+      pubSnap.forEach(d => {
+        const p = d.data() as User;
+        if (p.id && !userMap.has(p.id)) {
+          userMap.set(p.id, p);
+        }
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error fetching publicProfiles in admin:', err);
+    }
+
+    return Array.from(userMap.values());
   }
 
   async adminToggleUserStatus(targetUserId: string): Promise<User> {
