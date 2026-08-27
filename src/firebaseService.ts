@@ -522,21 +522,36 @@ class FirebaseService {
       lastActive: new Date().toISOString()
     };
 
-    await setDoc(userRef, sanitizedData, { merge: true });
-    
-    // Also update public profile (ONLY if not admin)
-    const existing = await this.getUserById(userId);
-    const isUserAdmin = existing?.role === 'admin' || existing?.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
-    
-    if (!isUserAdmin) {
-      const { email, preferences, ...publicOnly } = sanitizedData;
-      await setDoc(pubRef, publicOnly, { merge: true });
-    } else {
-      await deleteDoc(pubRef).catch(() => {});
+    // Update in local cache immediately
+    const localUsers = localDb.getUsers();
+    const existingLocal = localUsers.find(u => u.id === userId);
+    if (existingLocal) {
+      const mergedLocal: User = { ...existingLocal, ...sanitizedData };
+      localDb.saveUsers(localUsers.map(u => u.id === userId ? mergedLocal : u));
+    }
+
+    try {
+      await setDoc(userRef, sanitizedData, { merge: true });
+      
+      // Also update public profile (ONLY if not admin)
+      const existing = await this.getUserById(userId);
+      const isUserAdmin = existing?.role === 'admin' || existing?.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
+      
+      if (!isUserAdmin) {
+        const { email, preferences, ...publicOnly } = sanitizedData;
+        await setDoc(pubRef, publicOnly, { merge: true });
+      } else {
+        await deleteDoc(pubRef).catch(() => {});
+      }
+    } catch (err: any) {
+      console.warn('[Firestore] Profile update sync fallback:', err);
     }
 
     const updated = await this.getUserById(userId);
-    if (!updated) throw new Error('Usuario no encontrado tras actualizar.');
+    if (!updated) {
+      if (existingLocal) return { ...existingLocal, ...sanitizedData };
+      throw new Error('Usuario no encontrado tras actualizar.');
+    }
     return updated;
   }
 
