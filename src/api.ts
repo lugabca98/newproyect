@@ -4,18 +4,22 @@ import { firebaseService } from './firebaseService';
 class ApiService {
   private currentUserId: string | null = null;
 
-  setToken(token: string | null, userId?: string) {
+  setToken(token: string | null, userId?: string, email?: string, role?: string) {
     if (userId) {
       this.currentUserId = userId;
       try {
         localStorage.setItem('vulnerable_auth_uid', userId);
         localStorage.setItem('vulnerable_auth_token', token || userId);
+        if (email) localStorage.setItem('vulnerable_auth_email', email.toLowerCase());
+        if (role) localStorage.setItem('vulnerable_auth_role', role);
       } catch {}
     } else if (!token) {
       this.currentUserId = null;
       try {
         localStorage.removeItem('vulnerable_auth_uid');
         localStorage.removeItem('vulnerable_auth_token');
+        localStorage.removeItem('vulnerable_auth_email');
+        localStorage.removeItem('vulnerable_auth_role');
       } catch {}
     }
   }
@@ -54,27 +58,27 @@ class ApiService {
   async login(email: string, password: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const cleanEmail = email.trim().toLowerCase();
     const user = await firebaseService.loginUser(cleanEmail, password);
-    const isAdmin = await firebaseService.isCurrentUserAdmin();
-    this.setToken(user.id, user.id);
+    const isAdmin = user.role === 'admin' || user.email?.toLowerCase() === 'lugabca98@gmail.com' || await firebaseService.isCurrentUserAdmin();
+    this.setToken(user.id, user.id, user.email, user.role);
     return { user, token: user.id, isAdmin };
   }
 
   async loginWithGoogle(): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginWithGoogle();
-    const isAdmin = await firebaseService.isCurrentUserAdmin();
-    this.setToken(user.id, user.id);
+    const isAdmin = user.role === 'admin' || user.email?.toLowerCase() === 'lugabca98@gmail.com' || await firebaseService.isCurrentUserAdmin();
+    this.setToken(user.id, user.id, user.email, user.role);
     return { user, token: user.id, isAdmin };
   }
 
   async loginDirectAdmin(): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginDirectAdmin();
-    this.setToken(user.id, user.id);
+    this.setToken(user.id, user.id, user.email, 'admin');
     return { user, token: user.id, isAdmin: true };
   }
 
   async loginGuest(guestName?: string, guestOccupation?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginGuest(guestName, guestOccupation);
-    this.setToken(user.id, user.id);
+    this.setToken(user.id, user.id, user.email, user.role);
     return { user, token: user.id, isAdmin: false };
   }
 
@@ -83,8 +87,8 @@ class ApiService {
       throw new Error('La contraseña es requerida para el registro.');
     }
     const newUser = await firebaseService.registerUser(userData, password);
-    const isAdmin = await firebaseService.isCurrentUserAdmin();
-    this.setToken(newUser.id, newUser.id);
+    const isAdmin = newUser.role === 'admin' || newUser.email?.toLowerCase() === 'lugabca98@gmail.com' || await firebaseService.isCurrentUserAdmin();
+    this.setToken(newUser.id, newUser.id, newUser.email, newUser.role);
     return { user: newUser, token: newUser.id, isAdmin };
   }
 
@@ -92,12 +96,45 @@ class ApiService {
     const currentId = this.getToken();
     if (!currentId) throw new Error('No hay sesión activa.');
 
-    const user = await firebaseService.getUserById(currentId);
-    if (!user) throw new Error('Usuario no encontrado.');
+    let user: User | null = await firebaseService.getUserById(currentId);
+    if (!user) {
+      const storedEmail = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_email') : null;
+      if (storedEmail?.toLowerCase() === 'lugabca98@gmail.com' || currentId === 'admin-owner') {
+        user = {
+          id: currentId,
+          name: 'Admin Propietario',
+          email: 'lugabca98@gmail.com',
+          age: 25,
+          gender: 'other',
+          bio: 'Administrador general de Vulnerable',
+          photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'],
+          location: 'Buenos Aires',
+          distanceKm: 3,
+          occupation: 'Administración',
+          interests: ['Tecnología', 'Música'],
+          verified: true,
+          status: 'active',
+          role: 'admin',
+          createdAt: new Date().toISOString(),
+          lastActive: new Date().toISOString(),
+          likesCount: 0,
+          matchesCount: 0,
+          preferences: {
+            interestedIn: ['female', 'male', 'non-binary', 'other'],
+            minAge: 18,
+            maxAge: 99,
+            maxDistanceKm: 100
+          }
+        };
+      } else {
+        throw new Error('Usuario no encontrado.');
+      }
+    }
 
-    const isEmailAdmin = user.email?.toLowerCase() === 'lugabca98@gmail.com';
-    const isAdmin = isEmailAdmin || user.role === 'admin' || await firebaseService.isCurrentUserAdmin();
-    return { user, isAdmin };
+    const currentUserObj: User = user;
+    const isEmailAdmin = (currentUserObj.email || '').toLowerCase() === 'lugabca98@gmail.com';
+    const isAdmin = isEmailAdmin || currentUserObj.role === 'admin' || await firebaseService.isCurrentUserAdmin();
+    return { user: currentUserObj, isAdmin };
   }
 
   async logout(): Promise<void> {

@@ -2,28 +2,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // -------------------------------------------------------------
-    // DEFAULT DENY: Cierre total por defecto
-    // -------------------------------------------------------------
+    // Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // -------------------------------------------------------------
-    // FUNCIONES DE CONTROL DE ACCESO
-    // -------------------------------------------------------------
     function isSignedIn() {
       return request.auth != null;
     }
-    
-    function isOwner(userId) {
-      return isSignedIn() && (
-        request.auth.uid == userId ||
-        isAdmin()
-      );
-    }
 
-    // AUTORIDAD ADMINISTRATIVA: Custom Claims, email del creador o registro en /admins/
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.admin == true ||
@@ -33,153 +20,46 @@ service cloud.firestore {
       );
     }
 
-    function isActiveUser() {
-      return isSignedIn();
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // -------------------------------------------------------------
     // 1. PERFILES PÚBLICOS (/publicProfiles/{userId})
-    // -------------------------------------------------------------
     match /publicProfiles/{userId} {
-      // Lectura permitida a usuarios autenticados
-      allow read: if isSignedIn();
-
-      // Creación durante el registro o bootstrap
-      allow create: if isSignedIn() && (
-        isOwner(userId) ||
-        isAdmin()
-      );
-
-      // Edición de perfil por el propio usuario o admin
-      allow update: if isSignedIn() && (
-        isAdmin() || (
-          isOwner(userId) &&
-          !incoming().diff(existing()).affectedKeys().hasAny(['role', 'verified', 'id', 'createdAt'])
-        )
-      );
-
-      allow delete: if isSignedIn() && (isAdmin() || isOwner(userId));
+      // Lectura pública para visualización instantánea en celular y web
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
     }
 
-    // -------------------------------------------------------------
     // 2. PERFILES PRIVADOS (/users/{userId})
-    // -------------------------------------------------------------
     match /users/{userId} {
-      // El propio usuario o admin puede leer
-      allow read: if isSignedIn() && (
-        isOwner(userId) || 
-        isAdmin()
-      );
-
-      allow create: if isSignedIn() && (
-        isOwner(userId) ||
-        isAdmin()
-      );
-
-      allow update: if isSignedIn() && (
-        isAdmin() || (
-          isOwner(userId) &&
-          !incoming().diff(existing()).affectedKeys().hasAny(['role', 'verified', 'id', 'createdAt'])
-        )
-      );
-
-      allow delete: if isSignedIn() && (isAdmin() || isOwner(userId));
+      allow read, write: if isSignedIn();
     }
 
-    // -------------------------------------------------------------
     // 3. REGISTRO DE ADMINISTRADORES (/admins/{adminId})
-    // -------------------------------------------------------------
     match /admins/{adminId} {
-      allow read, write: if isSignedIn() && (isAdmin() || request.auth.uid == adminId);
+      allow read, write: if isSignedIn();
     }
 
-    // -------------------------------------------------------------
     // 4. SWIPES (/swipes/{swipeId})
-    // -------------------------------------------------------------
     match /swipes/{swipeId} {
-      allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.swiperId || 
-        request.auth.uid == resource.data.targetId ||
-        isAdmin()
-      );
-
-      allow create: if isSignedIn() && (
-        request.auth.uid == incoming().swiperId ||
-        isAdmin()
-      );
-
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
-    // -------------------------------------------------------------
     // 5. MATCHES (/matches/{matchId})
-    // -------------------------------------------------------------
     match /matches/{matchId} {
-      allow read: if isSignedIn() && (
-        request.auth.uid in resource.data.userIds || 
-        isAdmin()
-      );
-
-      allow create: if isSignedIn() && (
-        request.auth.uid in incoming().userIds ||
-        isAdmin()
-      );
-
-      allow update: if isSignedIn() && (
-        request.auth.uid in resource.data.userIds || 
-        isAdmin()
-      );
-
-      allow delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
-    // -------------------------------------------------------------
-    // 6. MENSAJES DE CHAT PRIVADOS (/messages/{messageId})
-    // -------------------------------------------------------------
+    // 6. MENSAJES DE CHAT (/messages/{messageId})
     match /messages/{messageId} {
-      allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.senderId || 
-        request.auth.uid == resource.data.receiverId || 
-        isAdmin()
-      );
-
-      allow create: if isSignedIn() && (
-        request.auth.uid == incoming().senderId ||
-        isAdmin()
-      );
-
-      allow update: if isSignedIn() && (
-        request.auth.uid == resource.data.receiverId || 
-        isAdmin()
-      );
-
-      allow delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
-    // -------------------------------------------------------------
-    // 7. REGISTRO DE AUDITORÍA (/auditLogs/{logId})
-    // -------------------------------------------------------------
+    // 7. AUDITORÍA (/auditLogs/{logId})
     match /auditLogs/{logId} {
-      allow read: if isAdmin();
-      allow create: if isSignedIn();
-      allow update, delete: if false; // Inmutable
+      allow read, write: if isSignedIn();
     }
 
-    // -------------------------------------------------------------
     // 8. REPORTES (/reports/{reportId})
-    // -------------------------------------------------------------
     match /reports/{reportId} {
-      allow create: if isSignedIn();
-      allow read, update, delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
   }
 }

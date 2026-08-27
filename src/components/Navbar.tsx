@@ -20,7 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onOpenAuth
 }) => {
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.email?.toLowerCase() === 'lugabca98@gmail.com';
 
   return (
     <header className="sticky top-0 z-40 w-full bg-slate-900/90 backdrop-blur-md border-b border-slate-800">

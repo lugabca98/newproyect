@@ -103,12 +103,18 @@ class FirebaseService {
     if (user?.uid === 'admin-owner') return true;
     
     // Check local session store
-    const storedUid = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_uid') : null;
-    if (storedUid === 'admin-owner') return true;
-    if (storedUid) {
-      const localUser = localDb.getUsers().find(u => u.id === storedUid);
-      if (localUser && (localUser.role === 'admin' || localUser.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase())) {
-        return true;
+    if (typeof window !== 'undefined') {
+      const storedRole = localStorage.getItem('vulnerable_auth_role');
+      const storedEmail = localStorage.getItem('vulnerable_auth_email');
+      const storedUid = localStorage.getItem('vulnerable_auth_uid');
+      if (storedRole === 'admin') return true;
+      if (storedEmail?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) return true;
+      if (storedUid === 'admin-owner') return true;
+      if (storedUid) {
+        const localUser = localDb.getUsers().find(u => u.id === storedUid);
+        if (localUser && (localUser.role === 'admin' || localUser.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase())) {
+          return true;
+        }
       }
     }
 

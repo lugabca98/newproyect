@@ -388,9 +388,137 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           </div>
 
-          {/* Users Table */}
+          {/* Users View: Responsive Cards for Mobile & Table for Desktop */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-            <div className="overflow-x-auto">
+            
+            {/* MOBILE CARDS LIST (Visible on screens < md) */}
+            <div className="block md:hidden divide-y divide-slate-800/80">
+              {users.map(user => (
+                <div key={user.id} className="p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="relative shrink-0">
+                      <img
+                        src={user.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                        alt={user.name}
+                        className="w-12 h-12 rounded-2xl object-cover border border-slate-700 shadow-md"
+                      />
+                      {user.verified && (
+                        <CheckCircle2 className="w-4 h-4 text-sky-400 fill-sky-400 absolute -bottom-1 -right-1" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <h4 className="font-bold text-sm text-white truncate">{user.name}, {user.age}</h4>
+                        {user.status === 'active' ? (
+                          <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle className="w-2.5 h-2.5" />
+                            <span>Activo</span>
+                          </span>
+                        ) : (
+                          <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                            <Ban className="w-2.5 h-2.5" />
+                            <span>Bloqueado</span>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-rose-300 font-medium truncate">{user.occupation || 'Neurodivergente'}</p>
+                      <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                        <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
+                        <span className="truncate">{user.location}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+                    <span className="text-slate-400 font-mono text-[11px] truncate max-w-[170px]">{user.email || 'Perfil público'}</span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-rose-400 font-bold flex items-center gap-1 text-[11px]">
+                        <Flame className="w-3 h-3" />
+                        {user.likesCount || 0}
+                      </span>
+                      <span className="text-blue-400 font-bold flex items-center gap-1 text-[11px]">
+                        <Users className="w-3 h-3" />
+                        {user.matchesCount || 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Mobile Actions */}
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <button
+                      id={`btn-admin-mobile-inspect-${user.id}`}
+                      onClick={() => handleInspectUser(user)}
+                      className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-slate-300" />
+                      <span>Inspeccionar</span>
+                    </button>
+
+                    <button
+                      id={`btn-admin-mobile-verify-${user.id}`}
+                      onClick={() => handleToggleVerify(user.id)}
+                      className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1 transition ${
+                        user.verified
+                          ? 'bg-sky-500/20 text-sky-400 border-sky-500/30'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}
+                      title="Verificar usuario"
+                    >
+                      <BadgeCheck className="w-3.5 h-3.5" />
+                    </button>
+
+                    {user.role !== 'admin' && (
+                      user.status === 'active' ? (
+                        <button
+                          id={`btn-admin-mobile-block-${user.id}`}
+                          onClick={() => setUserToBlock(user)}
+                          className="px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center justify-center"
+                          title="Bloquear usuario"
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          id={`btn-admin-mobile-unblock-${user.id}`}
+                          onClick={() => handleUnblockUser(user.id)}
+                          className="px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center justify-center"
+                          title="Desbloquear usuario"
+                        >
+                          <Unlock className="w-3.5 h-3.5" />
+                        </button>
+                      )
+                    )}
+
+                    {user.role !== 'admin' && (
+                      <button
+                        id={`btn-admin-mobile-delete-${user.id}`}
+                        onClick={() => setUserToDelete(user)}
+                        className="px-3 py-2 rounded-xl bg-red-950/60 text-red-400 border border-red-800/40 text-xs font-semibold flex items-center justify-center"
+                        title="Eliminar usuario"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {users.length === 0 && (
+                <div className="text-center py-12 px-4 space-y-3">
+                  <Users className="w-8 h-8 text-slate-600 mx-auto" />
+                  <p className="text-xs text-slate-400">No se encontraron usuarios en la lista.</p>
+                  <button
+                    onClick={fetchAdminData}
+                    className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-bold shadow"
+                  >
+                    Recargar lista de usuarios
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* DESKTOP TABLE VIEW (Visible on screens >= md) */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-950/80 text-slate-400 uppercase font-bold text-[10px] tracking-wider border-b border-slate-800">
                   <tr>
