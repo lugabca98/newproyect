@@ -696,7 +696,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   type={showCurrentPassword ? 'text' : 'password'}
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Tu clave actual"
+                  placeholder="••••••••"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 pr-8 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-rose-500"
                 />
                 <button
@@ -722,7 +722,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   minLength={6}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Nueva contraseña"
+                  placeholder="••••••••"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 pr-8 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-rose-500"
                 />
                 <button
@@ -748,7 +748,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   minLength={6}
                   value={confirmNewPassword}
                   onChange={(e) => setConfirmNewPassword(e.target.value)}
-                  placeholder="Repite la nueva"
+                  placeholder="••••••••"
                   className={`w-full bg-slate-950 border rounded-xl px-3 py-2.5 pr-8 text-xs text-white placeholder-slate-600 focus:outline-none ${
                     confirmNewPassword && newPassword === confirmNewPassword
                       ? 'border-emerald-500/60 focus:border-emerald-500'

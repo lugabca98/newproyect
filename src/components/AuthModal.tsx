@@ -7,21 +7,18 @@ import {
   Mail, 
   Lock, 
   Eye,
-  EyeOff,
+  EyeOff, 
   MapPin, 
   Briefcase, 
-  X,
-  Trash2,
-  Check,
-  Loader2,
-  Key,
-  ShieldCheck
+  X, 
+  Trash2, 
+  Check, 
+  Loader2 
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
-import { DEMO_ACCOUNTS } from '../utils/security';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -383,7 +380,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     minLength={6}
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="Tu contraseña"
+                    placeholder="••••••••"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-9 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                   />
                   <button
@@ -412,7 +409,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     minLength={6}
                     value={regConfirmPassword}
                     onChange={(e) => setRegConfirmPassword(e.target.value)}
-                    placeholder="Repite la contraseña"
+                    placeholder="••••••••"
                     className={`w-full bg-slate-950 border rounded-xl pl-9 pr-9 py-2 text-xs text-white placeholder-slate-500 focus:outline-none ${
                       regConfirmPassword && regPassword === regConfirmPassword
                         ? 'border-emerald-500/60 focus:border-emerald-500'
@@ -575,46 +572,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
               </button>
-
-              {/* Quick Demo Accounts Selection */}
-              <div className="pt-3 border-t border-slate-800/80">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
-                    <Key className="w-3 h-3 text-rose-400" />
-                    <span>Cuentas con claves asignadas:</span>
-                  </span>
-                  <span className="text-[10px] text-slate-500">Haz clic para autocompletar</span>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {DEMO_ACCOUNTS.slice(0, 4).map((acc) => (
-                    <button
-                      key={acc.email}
-                      type="button"
-                      onClick={() => {
-                        setEmail(acc.email);
-                        setPassword(acc.primaryPass);
-                        setErrorMsg('');
-                      }}
-                      className={`p-2 rounded-xl text-left border transition text-[11px] flex flex-col justify-between ${
-                        email.toLowerCase() === acc.email.toLowerCase()
-                          ? 'bg-rose-500/10 border-rose-500/50 text-white'
-                          : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <span className="font-bold truncate text-[11px]">{acc.name}</span>
-                        {acc.role === 'admin' && (
-                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-extrabold flex items-center gap-0.5">
-                            <ShieldCheck className="w-2.5 h-2.5" /> Admin
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-slate-500 truncate mt-0.5">{acc.email}</span>
-                      <span className="text-[9px] text-rose-400 font-mono mt-1">Clave: {acc.primaryPass}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               <div className="relative my-3 flex items-center justify-center">
                 <div className="border-t border-slate-800 w-full" />
