@@ -67,6 +67,18 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
   }
 ];
 
+export function hashPasswordSync(password: string): string {
+  const normalized = password.trim();
+  let hash = 0;
+  const str = 'vulnerable_auth_salt_2026_' + normalized;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return 'h_' + Math.abs(hash).toString(16);
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const normalized = password.trim();
   if (typeof crypto !== 'undefined' && crypto.subtle) {
@@ -77,15 +89,7 @@ export async function hashPassword(password: string): Promise<string> {
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     } catch {}
   }
-  // Deterministic fallback
-  let hash = 0;
-  const str = 'vulnerable_auth_salt_2026_' + normalized;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return 'h_' + Math.abs(hash).toString(16);
+  return hashPasswordSync(normalized);
 }
 
 export function isPasswordValidForDemoAccount(email: string, plainPass: string): boolean {

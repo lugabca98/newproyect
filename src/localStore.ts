@@ -1,5 +1,5 @@
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, UserCredential } from './types';
-import { DEFAULT_ADMIN_EMAIL, DEMO_ACCOUNTS, hashPassword } from './utils/security';
+import { DEFAULT_ADMIN_EMAIL, DEMO_ACCOUNTS, hashPassword, hashPasswordSync } from './utils/security';
 
 const STORAGE_KEY_USERS = 'mv_db_users';
 const STORAGE_KEY_SWIPES = 'mv_db_swipes';
@@ -346,16 +346,31 @@ class LocalDatabaseStore {
 
   init(): void {
     const creds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
-    DEMO_ACCOUNTS.forEach(async (acc) => {
+    // 1. Synchronously set the true deterministic hash for all demo accounts
+    DEMO_ACCOUNTS.forEach((acc) => {
       const emailLower = acc.email.toLowerCase();
-      const hash = await hashPassword(acc.primaryPass);
+      const syncHash = hashPasswordSync(acc.primaryPass);
       creds[emailLower] = {
         email: emailLower,
-        passwordHash: hash,
+        passwordHash: syncHash,
         userId: acc.role === 'admin' ? 'admin-owner' : (creds[emailLower]?.userId || 'user-' + acc.name.split(' ')[0].toLowerCase()),
         updatedAt: new Date().toISOString()
       };
-      this.setStored(STORAGE_KEY_CREDENTIALS, creds);
+    });
+    this.setStored(STORAGE_KEY_CREDENTIALS, creds);
+
+    // 2. Also compute SHA-256 async and update credentials map
+    DEMO_ACCOUNTS.forEach(async (acc) => {
+      const emailLower = acc.email.toLowerCase();
+      const shaHash = await hashPassword(acc.primaryPass);
+      const currentCreds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
+      currentCreds[emailLower] = {
+        email: emailLower,
+        passwordHash: shaHash,
+        userId: acc.role === 'admin' ? 'admin-owner' : (currentCreds[emailLower]?.userId || 'user-' + acc.name.split(' ')[0].toLowerCase()),
+        updatedAt: new Date().toISOString()
+      };
+      this.setStored(STORAGE_KEY_CREDENTIALS, currentCreds);
     });
 
     const users = this.getStored<User[]>(STORAGE_KEY_USERS, []);
