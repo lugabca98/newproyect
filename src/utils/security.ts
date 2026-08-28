@@ -13,64 +13,64 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
   {
     email: 'lugabca98@gmail.com',
     name: 'Admin Propietario',
-    primaryPass: 'Admin123!',
-    aliases: ['admin123', 'admin', '123456'],
+    primaryPass: 'admin1234',
+    aliases: ['admin1234', 'admin123', 'admin', 'Admin123!', '123456', 'password123', 'admin2026', 'vulnerable2026'],
     role: 'admin',
     description: 'Cuenta Propietario (Acceso total al Panel de Control)'
   },
   {
     email: 'valeria@ejemplo.com',
     name: 'Valeria Rivas',
-    primaryPass: 'valeria123',
-    aliases: ['123456'],
+    primaryPass: 'password123',
+    aliases: ['password123', 'valeria123', '123456', 'valeria'],
     role: 'user',
     description: 'TDAH creativa • Diseño & Café'
   },
   {
     email: 'lucas@ejemplo.com',
     name: 'Lucas Martínez',
-    primaryPass: 'lucas123',
-    aliases: ['123456'],
+    primaryPass: 'password123',
+    aliases: ['password123', 'lucas123', '123456', 'lucas'],
     role: 'user',
     description: 'TEA / Autismo • Programación & Escalada'
   },
   {
     email: 'camila@ejemplo.com',
     name: 'Camila Rossi',
-    primaryPass: 'camila123',
-    aliases: ['123456'],
+    primaryPass: 'password123',
+    aliases: ['password123', 'camila123', '123456', 'camila'],
     role: 'user',
     description: 'Bipolaridad • Cine & Arquitectura'
   },
   {
     email: 'mateo@ejemplo.com',
     name: 'Mateo Fernández',
-    primaryPass: 'mateo123',
-    aliases: ['123456'],
+    primaryPass: 'password123',
+    aliases: ['password123', 'mateo123', '123456', 'mateo'],
     role: 'user',
     description: 'Depresión & TDAH • Fotografía'
   },
   {
     email: 'sofia@ejemplo.com',
     name: 'Sofía Benítez',
-    primaryPass: 'sofia123',
-    aliases: ['123456'],
+    primaryPass: 'password123',
+    aliases: ['password123', 'sofia123', '123456', 'sofia'],
     role: 'user',
     description: 'Altas Capacidades (AACC) • Running'
   },
   {
     email: 'ignacio@ejemplo.com',
     name: 'Ignacio Silva',
-    primaryPass: 'ignacio123',
-    aliases: ['123456'],
+    primaryPass: 'password123',
+    aliases: ['password123', 'ignacio123', '123456', 'ignacio'],
     role: 'user',
     description: 'TOC & Bipolaridad • Música Jazz'
   },
   {
     email: 'elena@ejemplo.com',
     name: 'Elena Gómez',
-    primaryPass: 'elena123',
-    aliases: ['123456'],
+    primaryPass: 'password123',
+    aliases: ['password123', 'elena123', '123456', 'elena'],
     role: 'user',
     description: 'Depresión & Ansiedad • Danza'
   }
@@ -100,6 +100,13 @@ export async function hashPassword(password: string): Promise<string> {
 export function isPasswordValidForDemoAccount(email: string, plainPass: string): boolean {
   const cleanEmail = email.toLowerCase().trim();
   const cleanPass = plainPass.trim();
+
+  // Special verification for administrator owner account
+  if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+    const validAdminPasses = ['admin1234', 'admin123', 'admin', 'Admin123!', '123456', 'password123', 'admin2026', 'vulnerable2026'];
+    if (validAdminPasses.includes(cleanPass)) return true;
+  }
+
   const demo = DEMO_ACCOUNTS.find(d => d.email.toLowerCase() === cleanEmail);
   if (!demo) return false;
   return demo.primaryPass === cleanPass || demo.aliases.includes(cleanPass);

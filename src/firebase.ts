@@ -9,4 +9,5 @@ export const db = firebaseConfig.firestoreDatabaseId
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId) 
   : getFirestore(app);
 
+export { firebaseConfig };
 export default app;
