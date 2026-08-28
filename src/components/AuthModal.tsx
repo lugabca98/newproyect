@@ -68,16 +68,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [age, setAge] = useState(24);
   const [gender, setGender] = useState<Gender>('female');
   const [occupation, setOccupation] = useState('');
-  const [location, setLocation] = useState('Buenos Aires, Argentina');
-  const [bio, setBio] = useState('¡Hola! Me gusta viajar, la música y probar buena comida.');
+  const [location, setLocation] = useState('');
+  const [bio, setBio] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState(PRESET_AVATARS[0]);
   const [customPhotos, setCustomPhotos] = useState<string[]>([]);
-  const [interestInput, setInterestInput] = useState('Música, Café, Viajes, Cine');
+  const [interestInput, setInterestInput] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const resetAllFormInputs = () => {
+    setEmail('');
+    setPassword('');
+    setShowLoginPassword(false);
+    setName('');
+    setRegEmail('');
+    setRegPassword('');
+    setRegConfirmPassword('');
+    setShowRegPassword(false);
+    setShowRegConfirmPassword(false);
+    setAge(24);
+    setGender('female');
+    setOccupation('');
+    setLocation('');
+    setBio('');
+    setSelectedPhoto(PRESET_AVATARS[0]);
+    setCustomPhotos([]);
+    setInterestInput('');
+    setErrorMsg('');
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      resetAllFormInputs();
+    }
+  }, [initialMode, isOpen]);
+
+  const handleClose = () => {
+    resetAllFormInputs();
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -146,6 +178,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg('');
     try {
       const res = await api.loginWithGoogle();
+      resetAllFormInputs();
       onSuccess(res.user, res.isAdmin);
       onClose();
     } catch (err: any) {
@@ -168,6 +201,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       const res = await api.login(cleanEmail, password);
+      resetAllFormInputs();
       onSuccess(res.user, res.isAdmin);
       onClose();
     } catch (err: any) {
@@ -219,6 +253,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }, regPassword.trim());
 
+      resetAllFormInputs();
       onSuccess(res.user, res.isAdmin);
       onClose();
     } catch (err: any) {
@@ -235,7 +270,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Close Button */}
         {canClose && (
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="absolute top-5 right-5 p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition"
           >
             <X className="w-5 h-5" />
@@ -261,7 +296,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-6">
           <button
             type="button"
-            onClick={() => { setMode('register'); setErrorMsg(''); }}
+            onClick={() => { setMode('register'); resetAllFormInputs(); }}
             className={`py-2.5 rounded-xl text-xs font-bold transition ${
               mode === 'register' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -270,7 +305,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => { setMode('login'); setErrorMsg(''); }}
+            onClick={() => { setMode('login'); resetAllFormInputs(); }}
             className={`py-2.5 rounded-xl text-xs font-bold transition ${
               mode === 'login' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -287,7 +322,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* --- REGISTER FORM --- */}
         {mode === 'register' && (
-          <form onSubmit={handleRegister} className="space-y-4">
+          <form onSubmit={handleRegister} autoComplete="off" className="space-y-4">
             
             {/* Photo Selection */}
             <div>
@@ -568,7 +603,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* --- LOGIN FORM --- */}
         {mode === 'login' && (
           <div className="space-y-5">
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1">Correo Electrónico</label>
                 <input
