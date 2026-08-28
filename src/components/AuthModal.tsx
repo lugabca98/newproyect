@@ -525,7 +525,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="text"
                   value={occupation}
                   onChange={(e) => setOccupation(e.target.value)}
-                  placeholder="Ej. Bipolaridad, depresión, TDAH, TEA..."
+                  placeholder="Ej. Bipolaridad, Depresión, Agorafobia..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                 />
               </div>

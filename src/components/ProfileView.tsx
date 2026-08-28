@@ -528,7 +528,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               type="text"
               value={occupation}
               onChange={(e) => setOccupation(e.target.value)}
-              placeholder="Ej. Bipolaridad, depresión, TDAH, TEA, Ansiedad..."
+              placeholder="Ej. Bipolaridad, Depresión, Agorafobia..."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-rose-500"
             />
           </div>
