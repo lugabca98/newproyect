@@ -275,7 +275,7 @@ class FirebaseService {
       throw new Error(`No existe ninguna cuenta registrada con el correo "${cleanEmail}". Por favor crea una cuenta en la pestaña "Registrarse".`);
     }
 
-    // 2. Strict Password Validation: Check that the password matches the email!
+    // 2. Strict Password Validation: Exact complete password match is mandatory!
     const enteredHash = await hashPassword(cleanPass);
     let isAuthenticated = false;
     let authUid = user?.id || (isOwnerAdmin ? 'admin-owner' : '');
@@ -292,7 +292,7 @@ class FirebaseService {
       }
     }
 
-    // Step 2B: Check demo/seed accounts and admin master passwords
+    // Step 2B: Check demo/seed accounts and admin master passwords (requires full exact password)
     if (!isAuthenticated && isPasswordValidForDemoAccount(cleanEmail, cleanPass)) {
       isAuthenticated = true;
       localDb.saveCredential(cleanEmail, enteredHash, user?.id || authUid);
@@ -327,14 +327,8 @@ class FirebaseService {
       if (storedHash) {
         if (storedHash === enteredHash) {
           isAuthenticated = true;
-        } else if (
-          isPasswordValidForDemoAccount(cleanEmail, cleanPass) ||
-          cleanPass === 'password123' ||
-          cleanPass === 'admin1234' ||
-          cleanPass === '123456' ||
-          cleanPass === 'admin'
-        ) {
-          // Re-sync with the entered valid password
+        } else if (isPasswordValidForDemoAccount(cleanEmail, cleanPass)) {
+          // Re-sync with the valid exact demo account password
           isAuthenticated = true;
           localDb.saveCredential(cleanEmail, enteredHash, user?.id || authUid);
           setDoc(doc(db, 'credentials', cleanEmail), {
@@ -347,28 +341,12 @@ class FirebaseService {
           throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
         }
       } else {
-        // Step 2D: Profile was created in previous session without explicit hash stored yet
-        if (user && cleanPass.length >= 4) {
-          isAuthenticated = true;
-          localDb.saveCredential(cleanEmail, enteredHash, user.id);
-          setDoc(doc(db, 'credentials', cleanEmail), {
-            email: cleanEmail,
-            passwordHash: enteredHash,
-            userId: user.id,
-            updatedAt: new Date().toISOString()
-          }).catch(() => {});
-          updateDoc(doc(db, 'users', user.id), {
-            passwordHash: enteredHash,
-            lastActive: new Date().toISOString()
-          }).catch(() => {});
-        } else {
-          throw new Error(`Contraseña o credencial no encontrada para ${cleanEmail}. Verifica tus datos.`);
-        }
+        throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
       }
     }
 
     if (!isAuthenticated) {
-      throw new Error('Contraseña incorrecta. El acceso ha sido denegado.');
+      throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
     }
 
     // Maintain anonymous session for Firestore rules if email auth provider was unavailable

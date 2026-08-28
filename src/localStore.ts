@@ -348,16 +348,14 @@ class LocalDatabaseStore {
     const creds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
     DEMO_ACCOUNTS.forEach(async (acc) => {
       const emailLower = acc.email.toLowerCase();
-      if (!creds[emailLower]) {
-        const hash = await hashPassword(acc.primaryPass);
-        creds[emailLower] = {
-          email: emailLower,
-          passwordHash: hash,
-          userId: acc.role === 'admin' ? 'admin-owner' : 'user-' + acc.name.split(' ')[0].toLowerCase(),
-          updatedAt: new Date().toISOString()
-        };
-        this.setStored(STORAGE_KEY_CREDENTIALS, creds);
-      }
+      const hash = await hashPassword(acc.primaryPass);
+      creds[emailLower] = {
+        email: emailLower,
+        passwordHash: hash,
+        userId: acc.role === 'admin' ? 'admin-owner' : (creds[emailLower]?.userId || 'user-' + acc.name.split(' ')[0].toLowerCase()),
+        updatedAt: new Date().toISOString()
+      };
+      this.setStored(STORAGE_KEY_CREDENTIALS, creds);
     });
 
     const users = this.getStored<User[]>(STORAGE_KEY_USERS, []);

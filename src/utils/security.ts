@@ -4,7 +4,6 @@ export interface DemoAccountConfig {
   email: string;
   name: string;
   primaryPass: string;
-  aliases: string[];
   role: 'admin' | 'user';
   description?: string;
 }
@@ -14,7 +13,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     email: 'lugabca98@gmail.com',
     name: 'Admin Propietario',
     primaryPass: 'admin1234',
-    aliases: ['admin1234', 'admin123', 'admin', 'Admin123!', '123456', 'password123', 'admin2026', 'vulnerable2026'],
     role: 'admin',
     description: 'Cuenta Propietario (Acceso total al Panel de Control)'
   },
@@ -22,7 +20,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     email: 'valeria@ejemplo.com',
     name: 'Valeria Rivas',
     primaryPass: 'password123',
-    aliases: ['password123', 'valeria123', '123456', 'valeria'],
     role: 'user',
     description: 'TDAH creativa • Diseño & Café'
   },
@@ -30,7 +27,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     email: 'lucas@ejemplo.com',
     name: 'Lucas Martínez',
     primaryPass: 'password123',
-    aliases: ['password123', 'lucas123', '123456', 'lucas'],
     role: 'user',
     description: 'TEA / Autismo • Programación & Escalada'
   },
@@ -38,7 +34,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     email: 'camila@ejemplo.com',
     name: 'Camila Rossi',
     primaryPass: 'password123',
-    aliases: ['password123', 'camila123', '123456', 'camila'],
     role: 'user',
     description: 'Bipolaridad • Cine & Arquitectura'
   },
@@ -46,7 +41,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     email: 'mateo@ejemplo.com',
     name: 'Mateo Fernández',
     primaryPass: 'password123',
-    aliases: ['password123', 'mateo123', '123456', 'mateo'],
     role: 'user',
     description: 'Depresión & TDAH • Fotografía'
   },
@@ -54,7 +48,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     email: 'sofia@ejemplo.com',
     name: 'Sofía Benítez',
     primaryPass: 'password123',
-    aliases: ['password123', 'sofia123', '123456', 'sofia'],
     role: 'user',
     description: 'Altas Capacidades (AACC) • Running'
   },
@@ -62,7 +55,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     email: 'ignacio@ejemplo.com',
     name: 'Ignacio Silva',
     primaryPass: 'password123',
-    aliases: ['password123', 'ignacio123', '123456', 'ignacio'],
     role: 'user',
     description: 'TOC & Bipolaridad • Música Jazz'
   },
@@ -70,7 +62,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     email: 'elena@ejemplo.com',
     name: 'Elena Gómez',
     primaryPass: 'password123',
-    aliases: ['password123', 'elena123', '123456', 'elena'],
     role: 'user',
     description: 'Depresión & Ansiedad • Danza'
   }
@@ -101,13 +92,12 @@ export function isPasswordValidForDemoAccount(email: string, plainPass: string):
   const cleanEmail = email.toLowerCase().trim();
   const cleanPass = plainPass.trim();
 
-  // Special verification for administrator owner account
+  // Strict verification for administrator owner account: requires the complete full password with numbers
   if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
-    const validAdminPasses = ['admin1234', 'admin123', 'admin', 'Admin123!', '123456', 'password123', 'admin2026', 'vulnerable2026'];
-    if (validAdminPasses.includes(cleanPass)) return true;
+    return cleanPass === 'admin1234';
   }
 
   const demo = DEMO_ACCOUNTS.find(d => d.email.toLowerCase() === cleanEmail);
   if (!demo) return false;
-  return demo.primaryPass === cleanPass || demo.aliases.includes(cleanPass);
+  return demo.primaryPass === cleanPass;
 }
