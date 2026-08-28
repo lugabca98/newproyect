@@ -556,7 +556,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Intereses (separados por coma)</label>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Intereses</label>
               <input
                 id="reg-input-interests"
                 type="text"
