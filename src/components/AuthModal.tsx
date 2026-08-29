@@ -13,12 +13,22 @@ import {
   X, 
   Trash2, 
   Check, 
-  Loader2 
+  Loader2,
+  MailCheck,
+  Key,
+  ArrowLeft,
+  Send,
+  RefreshCw,
+  CheckCircle2,
+  ShieldCheck,
+  HelpCircle
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
+
+export type AuthMode = 'register' | 'login' | 'verify-email-pending' | 'forgot-password' | 'reset-password-sent';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -44,15 +54,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   initialMode = 'register',
   canClose = true
 }) => {
-  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+  const [mode, setMode] = useState<AuthMode>(initialMode);
 
-  useEffect(() => {
-    if (isOpen) {
-      setMode(initialMode);
-      setErrorMsg('');
-    }
-  }, [initialMode, isOpen]);
-  
   // Login form
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -73,6 +76,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [selectedPhoto, setSelectedPhoto] = useState(PRESET_AVATARS[0]);
   const [customPhotos, setCustomPhotos] = useState<string[]>([]);
   const [interestInput, setInterestInput] = useState('');
+
+  // Password Recovery form
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
+  const [recoverySimulatedLink, setRecoverySimulatedLink] = useState('');
+  const [directResetOpen, setDirectResetOpen] = useState(false);
+  const [directNewPassword, setDirectNewPassword] = useState('');
+  const [directConfirmPassword, setDirectConfirmPassword] = useState('');
+  const [showDirectPass, setShowDirectPass] = useState(false);
+
+  // Verification Pending State
+  const [registeredUser, setRegisteredUser] = useState<User | null>(null);
+  const [registeredIsAdmin, setRegisteredIsAdmin] = useState(false);
+  const [resendVerificationCooldown, setResendVerificationCooldown] = useState(0);
+  const [resendVerificationNotice, setResendVerificationNotice] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -96,7 +114,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSelectedPhoto(PRESET_AVATARS[0]);
     setCustomPhotos([]);
     setInterestInput('');
+    setForgotEmail('');
+    setRecoverySuccessMsg('');
+    setRecoverySimulatedLink('');
+    setDirectResetOpen(false);
+    setDirectNewPassword('');
+    setDirectConfirmPassword('');
     setErrorMsg('');
+    setResendVerificationNotice('');
   };
 
   useEffect(() => {
@@ -105,6 +130,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       resetAllFormInputs();
     }
   }, [initialMode, isOpen]);
+
+  // Cooldown countdown for resending verification / reset email
+  useEffect(() => {
+    if (resendVerificationCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendVerificationCooldown(prev => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendVerificationCooldown]);
 
   const handleClose = () => {
     resetAllFormInputs();
@@ -253,9 +287,96 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }, regPassword.trim());
 
+      setRegisteredUser(res.user);
+      setRegisteredIsAdmin(res.isAdmin);
+      
+      // Prompt email confirmation step immediately
+      setMode('verify-email-pending');
+      setResendVerificationCooldown(30);
+    } catch (err: any) {
+      setErrorMsg(formatAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (resendVerificationCooldown > 0) return;
+    setLoading(true);
+    setResendVerificationNotice('');
+    try {
+      const emailTarget = regEmail.trim() || registeredUser?.email;
+      const res = await api.sendVerificationEmail(emailTarget);
+      setResendVerificationNotice(res.message || 'Correo de verificación reenviado.');
+      setResendVerificationCooldown(45);
+    } catch (err: any) {
+      setResendVerificationNotice(err.message || 'Error al reenviar el correo de verificación.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteVerificationFlow = () => {
+    if (registeredUser) {
+      onSuccess(registeredUser, registeredIsAdmin);
       resetAllFormInputs();
-      onSuccess(res.user, res.isAdmin);
       onClose();
+    } else {
+      setMode('login');
+    }
+  };
+
+  const handleSendForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = forgotEmail.trim();
+    if (!cleanEmail) {
+      setErrorMsg('Por favor ingresa tu correo electrónico.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+    setRecoverySuccessMsg('');
+    setRecoverySimulatedLink('');
+
+    try {
+      const res = await api.sendPasswordReset(cleanEmail);
+      setRecoverySuccessMsg(res.message);
+      if (res.simulatedLink) {
+        setRecoverySimulatedLink(res.simulatedLink);
+      }
+      setMode('reset-password-sent');
+      setResendVerificationCooldown(30);
+    } catch (err: any) {
+      setErrorMsg(formatAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDirectResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directNewPassword.trim() || directNewPassword.length < 6) {
+      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    if (directNewPassword !== directConfirmPassword) {
+      setErrorMsg('Las contraseñas no coinciden.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const res = await api.resetPasswordDirect(forgotEmail.trim(), directNewPassword.trim());
+      setRecoverySuccessMsg(res.message);
+      setDirectResetOpen(false);
+      setEmail(forgotEmail.trim());
+      setPassword(directNewPassword.trim());
+      setTimeout(() => {
+        setMode('login');
+      }, 1500);
     } catch (err: any) {
       setErrorMsg(formatAuthError(err));
     } finally {
@@ -288,39 +409,317 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             VULNERABLE
           </h2>
           <p className="text-xs text-slate-400 mt-1 font-medium">
-            {mode === 'register' ? 'Crear cuenta • Conectá auténticamente' : 'Iniciar sesión • Bienvenido de nuevo'}
+            {mode === 'register' && 'Crear cuenta • Conectá auténticamente'}
+            {mode === 'login' && 'Iniciar sesión • Bienvenido de nuevo'}
+            {mode === 'verify-email-pending' && 'Confirmación requerida • Verifica tu email'}
+            {mode === 'forgot-password' && 'Recuperar acceso • Restablece tu contraseña'}
+            {mode === 'reset-password-sent' && 'Instrucciones enviadas • Revisa tu casilla'}
           </p>
         </div>
 
-        {/* Tab Toggle */}
-        <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-6">
-          <button
-            type="button"
-            onClick={() => { setMode('register'); resetAllFormInputs(); }}
-            className={`py-2.5 rounded-xl text-xs font-bold transition ${
-              mode === 'register' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Registrarse
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('login'); resetAllFormInputs(); }}
-            className={`py-2.5 rounded-xl text-xs font-bold transition ${
-              mode === 'login' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Ingresar
-          </button>
-        </div>
+        {/* Tab Toggle (Only visible in login & register modes) */}
+        {(mode === 'register' || mode === 'login') && (
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-6">
+            <button
+              id="tab-register"
+              type="button"
+              onClick={() => { setMode('register'); setErrorMsg(''); }}
+              className={`py-2.5 rounded-xl text-xs font-bold transition ${
+                mode === 'register' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Registrarse
+            </button>
+            <button
+              id="tab-login"
+              type="button"
+              onClick={() => { setMode('login'); setErrorMsg(''); }}
+              className={`py-2.5 rounded-xl text-xs font-bold transition ${
+                mode === 'login' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Ingresar
+            </button>
+          </div>
+        )}
 
         {errorMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs text-center">
+          <div className="mb-4 p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs text-center animate-in fade-in">
             {errorMsg}
           </div>
         )}
 
-        {/* --- REGISTER FORM --- */}
+        {/* ------------------------------------------------------------- */}
+        {/* --- 1. EMAIL VERIFICATION PENDING SCREEN (ON REGISTER) --- */}
+        {/* ------------------------------------------------------------- */}
+        {mode === 'verify-email-pending' && (
+          <div className="space-y-6 py-2 animate-in fade-in">
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 shadow-lg shadow-rose-500/10 mx-auto">
+                <MailCheck className="w-8 h-8" />
+              </div>
+              
+              <h3 className="text-lg font-bold text-white">
+                ¡Confirmá tu correo electrónico!
+              </h3>
+              
+              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
+                Hemos enviado un enlace de confirmación a:
+              </p>
+
+              <div className="inline-block px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-rose-300 font-mono">
+                {regEmail || registeredUser?.email}
+              </div>
+
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 text-left space-y-2.5 mt-4">
+                <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Pasos para activar tu cuenta:</span>
+                </div>
+                <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside">
+                  <li>Abrí tu casilla de correo electrónico.</li>
+                  <li>Buscá el mensaje de <strong className="text-slate-200">Vulnerable</strong> (revisá también la carpeta de <strong className="text-rose-300">Spam</strong>).</li>
+                  <li>Hacé clic en el enlace para validar tu email y proteger tu identidad.</li>
+                </ol>
+              </div>
+
+              {resendVerificationNotice && (
+                <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs text-center font-medium animate-in fade-in">
+                  {resendVerificationNotice}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <button
+                id="btn-confirm-and-enter"
+                type="button"
+                onClick={handleCompleteVerificationFlow}
+                className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                <span>Ya confirmé mi correo / Entrar a la App</span>
+              </button>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  id="btn-resend-verification"
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={loading || resendVerificationCooldown > 0}
+                  className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  <span>
+                    {resendVerificationCooldown > 0
+                      ? `Reenviar en (${resendVerificationCooldown}s)`
+                      : 'Reenviar confirmación'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setMode('login'); }}
+                  className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
+                >
+                  Ir al Login
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* --- 2. FORGOT PASSWORD (OLVIDÉ MI CONTRASEÑA) --- */}
+        {/* ------------------------------------------------------------- */}
+        {mode === 'forgot-password' && (
+          <div className="space-y-5 animate-in fade-in">
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-md mx-auto">
+                <Key className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">¿Olvidaste tu contraseña?</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Ingresá tu correo electrónico registrado y te enviaremos un enlace seguro para restablecer tu clave.
+              </p>
+            </div>
+
+            <form onSubmit={handleSendForgotPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Correo Electrónico
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="forgot-password-email"
+                    type="email"
+                    required
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="tu@email.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
+                  />
+                </div>
+              </div>
+
+              <button
+                id="btn-send-reset-link"
+                type="submit"
+                disabled={loading || !forgotEmail.trim()}
+                className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Enviando enlace...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    <span>Enviar enlace de recuperación</span>
+                  </>
+                )}
+              </button>
+
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => { setMode('login'); setErrorMsg(''); }}
+                  className="text-xs text-slate-400 hover:text-slate-200 font-semibold transition flex items-center justify-center gap-1.5 mx-auto"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Volver a Iniciar Sesión</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* --- 3. RESET LINK SENT CONFIRMATION SCREEN --- */}
+        {/* ------------------------------------------------------------- */}
+        {mode === 'reset-password-sent' && (
+          <div className="space-y-6 py-2 animate-in fade-in">
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10 mx-auto">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+
+              <h3 className="text-lg font-bold text-white">
+                ¡Enlace de recuperación enviado!
+              </h3>
+
+              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
+                Hemos enviado las instrucciones para restablecer tu clave a:
+              </p>
+
+              <div className="inline-block px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-emerald-300 font-mono">
+                {forgotEmail}
+              </div>
+
+              <p className="text-xs text-slate-400 max-w-sm mx-auto pt-1">
+                Revisá tu bandeja de entrada y la carpeta de correo no deseado (<span className="text-rose-300">Spam</span>).
+              </p>
+
+              {/* Direct Quick Reset Form (for dev preview or direct immediate assistance) */}
+              {directResetOpen ? (
+                <form onSubmit={handleDirectResetSubmit} className="mt-4 p-4 bg-slate-950 rounded-2xl border border-slate-800 text-left space-y-3 animate-in fade-in">
+                  <div className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Establecer nueva contraseña directamente:</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Nueva Clave (mín. 6)</label>
+                    <div className="relative">
+                      <input
+                        type={showDirectPass ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        value={directNewPassword}
+                        onChange={(e) => setDirectNewPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowDirectPass(!showDirectPass)}
+                        className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400"
+                      >
+                        {showDirectPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Confirmar Nueva Clave</label>
+                    <input
+                      type={showDirectPass ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={directConfirmPassword}
+                      onChange={(e) => setDirectConfirmPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading || !directNewPassword || !directConfirmPassword}
+                    className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
+                  >
+                    {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    <span>Guardar y Restablecer Contraseña</span>
+                  </button>
+                </form>
+              ) : (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setDirectResetOpen(true)}
+                    className="text-[11px] text-slate-400 hover:text-slate-200 underline font-medium transition"
+                  >
+                    ¿Deseas ingresar tu nueva clave ahora mismo?
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                id="btn-back-to-login"
+                type="button"
+                onClick={() => { setMode('login'); setErrorMsg(''); }}
+                className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Volver e Iniciar Sesión</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendForgotPassword}
+                disabled={loading || resendVerificationCooldown > 0}
+                className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>
+                  {resendVerificationCooldown > 0
+                    ? `Reenviar en (${resendVerificationCooldown}s)`
+                    : 'Reenviar enlace de recuperación'}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* --- 4. REGISTER FORM --- */}
+        {/* ------------------------------------------------------------- */}
         {mode === 'register' && (
           <form onSubmit={handleRegister} autoComplete="off" className="space-y-4">
             
@@ -519,62 +918,87 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Neurodivergencia</label>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Ubicación</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-500">
+                    <MapPin className="w-3 h-3" />
+                  </div>
+                  <input
+                    id="reg-input-location"
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="Ej. Palermo, CABA"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Ocupación / Condición</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-500">
+                  <Briefcase className="w-3 h-3" />
+                </div>
                 <input
                   id="reg-input-occupation"
                   type="text"
                   value={occupation}
                   onChange={(e) => setOccupation(e.target.value)}
-                  placeholder="Ej. Bipolaridad, Depresión, Agorafobia..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  placeholder="Ej. Artista visual / TDAH & Espectro Autista"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Ubicación</label>
-              <input
-                id="reg-input-location"
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Ciudad, País"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Biografía</label>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Bio auténtica</label>
               <textarea
-                id="reg-textarea-bio"
+                id="reg-input-bio"
                 rows={2}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                placeholder="Escribe algo sobre tus gustos..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 resize-none"
+                placeholder="Contanos sobre vos, tus hiperfocos y lo que buscás..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 resize-none"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Intereses</label>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Intereses (separados por coma)</label>
               <input
                 id="reg-input-interests"
                 type="text"
                 value={interestInput}
                 onChange={(e) => setInterestInput(e.target.value)}
-                placeholder="Cine, Música, Café, Yoga"
+                placeholder="Música, Anime, Lectura, Naturaleza, Videojuegos"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
               />
+            </div>
+
+            {/* Email verification information banner before submitting */}
+            <div className="p-2.5 bg-rose-950/30 border border-rose-500/20 rounded-xl flex items-start gap-2 text-[11px] text-slate-300">
+              <Mail className="w-3.5 h-3.5 text-rose-400 mt-0.5 flex-shrink-0" />
+              <span>Al registrarte te enviaremos un correo para confirmar tu dirección de email y activar tu perfil de forma segura.</span>
             </div>
 
             <button
               id="btn-submit-register"
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+              className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
             >
-              <Flame className="w-4 h-4 text-white" />
-              <span>{loading ? 'Creando tu cuenta...' : 'Crear Cuenta y Empezar a Hacer Match'}</span>
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Creando cuenta y enviando confirmación...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>Crear Cuenta y Confirmar Email</span>
+                </>
+              )}
             </button>
 
             <div className="relative my-3 flex items-center justify-center">
@@ -600,7 +1024,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </form>
         )}
 
-        {/* --- LOGIN FORM --- */}
+        {/* ------------------------------------------------------------- */}
+        {/* --- 5. LOGIN FORM --- */}
+        {/* ------------------------------------------------------------- */}
         {mode === 'login' && (
           <div className="space-y-5">
             <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
@@ -618,7 +1044,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Contraseña</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-slate-400">Contraseña</label>
+                  <button
+                    id="btn-forgot-password-link"
+                    type="button"
+                    onClick={() => {
+                      setForgotEmail(email.trim());
+                      setMode('forgot-password');
+                      setErrorMsg('');
+                    }}
+                    className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 transition hover:underline"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+                
                 <div className="relative">
                   <input
                     id="login-input-password"

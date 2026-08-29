@@ -150,6 +150,18 @@ class ApiService {
     this.setToken(null);
   }
 
+  async sendVerificationEmail(email?: string): Promise<{ success: boolean; message: string }> {
+    return firebaseService.sendVerificationEmail(email);
+  }
+
+  async sendPasswordReset(email: string): Promise<{ success: boolean; message: string; simulatedLink?: string }> {
+    return firebaseService.sendPasswordReset(email);
+  }
+
+  async resetPasswordDirect(email: string, newPass: string): Promise<{ success: boolean; message: string }> {
+    return firebaseService.resetPasswordDirect(email, newPass);
+  }
+
   // -------------------------------------------------------------
   // FEED & SWIPES (Mutual Match Engine)
   // -------------------------------------------------------------

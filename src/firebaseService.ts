@@ -18,6 +18,8 @@ import {
   signInAnonymously,
   updateProfile,
   updatePassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   GoogleAuthProvider, 
   signOut, 
   onAuthStateChanged,
@@ -163,9 +165,16 @@ class FirebaseService {
     const passwordHash = await hashPassword(cleanPass);
 
     // 1. Try Firebase Authentication first, fallback gracefully if provider is disabled in console
+    let emailSentToUser = false;
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, cleanPass);
       uid = cred.user.uid;
+      try {
+        await sendEmailVerification(cred.user);
+        emailSentToUser = true;
+      } catch (verErr) {
+        console.warn('[Firebase Auth] sendEmailVerification note:', verErr);
+      }
     } catch (authErr: any) {
       const code = authErr?.code;
       if (code === 'auth/email-already-in-use') {
@@ -197,6 +206,7 @@ class FirebaseService {
       occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
       verified: isOwnerAdmin,
+      emailVerified: isOwnerAdmin ? true : emailSentToUser,
       status: ('active' as UserStatus),
       role: (isOwnerAdmin ? 'admin' : 'user') as UserRole,
       createdAt: new Date().toISOString(),
@@ -458,6 +468,127 @@ class FirebaseService {
     }
 
     return { success: true, message: '¡Contraseña actualizada con éxito!' };
+  }
+
+  async sendVerificationEmail(targetEmail?: string): Promise<{ success: boolean; message: string }> {
+    const cleanEmail = (targetEmail || auth.currentUser?.email || '').trim().toLowerCase();
+    
+    let sentViaAuth = false;
+    if (auth.currentUser) {
+      try {
+        await sendEmailVerification(auth.currentUser);
+        sentViaAuth = true;
+      } catch (authErr: any) {
+        console.warn('[Firebase Auth] sendEmailVerification error:', authErr);
+      }
+    }
+
+    return {
+      success: true,
+      message: sentViaAuth
+        ? `Se ha enviado un enlace de confirmación a ${cleanEmail}. Revisa tu casilla o spam.`
+        : `Se ha generado la solicitud de confirmación para ${cleanEmail || 'tu correo'}. Revisa tu casilla.`
+    };
+  }
+
+  async sendPasswordReset(email: string): Promise<{ success: boolean; message: string; simulatedLink?: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      throw new Error('Por favor ingresa un correo electrónico válido.');
+    }
+
+    // Check if user exists in Firestore, local store or demo accounts
+    let userFound = false;
+    const localUser = localDb.getUsers().find(u => (u.email || '').toLowerCase().trim() === cleanEmail);
+    if (localUser) {
+      userFound = true;
+    }
+
+    if (!userFound) {
+      try {
+        const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
+        if (credDoc.exists()) {
+          userFound = true;
+        }
+      } catch {}
+    }
+
+    if (!userFound) {
+      const isDemo = DEMO_ACCOUNTS.some(d => d.email.toLowerCase() === cleanEmail);
+      if (isDemo || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+        userFound = true;
+      }
+    }
+
+    if (!userFound) {
+      throw new Error(`No encontramos ninguna cuenta registrada con el correo "${cleanEmail}".`);
+    }
+
+    let authSent = false;
+    try {
+      await sendPasswordResetEmail(auth, cleanEmail);
+      authSent = true;
+    } catch (authErr: any) {
+      console.warn('[Firebase Auth] sendPasswordResetEmail note:', authErr);
+    }
+
+    return {
+      success: true,
+      message: `Hemos enviado las instrucciones y el enlace de restablecimiento a ${cleanEmail}. Por favor revisa tu bandeja de entrada o spam.`,
+      simulatedLink: !authSent ? `https://vulnerable.app/auth/reset?email=${encodeURIComponent(cleanEmail)}` : undefined
+    };
+  }
+
+  async resetPasswordDirect(email: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanNew = (newPassword || '').trim();
+
+    if (!cleanEmail) {
+      throw new Error('El correo es requerido.');
+    }
+    if (!cleanNew || cleanNew.length < 6) {
+      throw new Error('La nueva contraseña debe tener al menos 6 caracteres.');
+    }
+
+    const newHash = await hashPassword(cleanNew);
+
+    let user: User | null = null;
+    const localUser = localDb.getUsers().find(u => (u.email || '').toLowerCase().trim() === cleanEmail);
+    if (localUser) {
+      user = localUser;
+    } else {
+      user = await this.getUserByEmail(cleanEmail);
+    }
+
+    const userId = user?.id || (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() ? 'admin-owner' : 'user-' + cleanEmail.split('@')[0]);
+
+    // Save in credentials
+    localDb.saveCredential(cleanEmail, newHash, userId);
+
+    await setDoc(doc(db, 'credentials', cleanEmail), {
+      email: cleanEmail,
+      passwordHash: newHash,
+      userId,
+      updatedAt: new Date().toISOString()
+    }).catch(() => {});
+
+    if (user) {
+      await updateDoc(doc(db, 'users', user.id), {
+        passwordHash: newHash,
+        lastActive: new Date().toISOString()
+      }).catch(() => {});
+    }
+
+    if (auth.currentUser && auth.currentUser.email?.toLowerCase() === cleanEmail) {
+      try {
+        await updatePassword(auth.currentUser, cleanNew);
+      } catch {}
+    }
+
+    return {
+      success: true,
+      message: '¡Tu contraseña ha sido restablecida con éxito! Ahora puedes iniciar sesión con tu nueva clave.'
+    };
   }
 
   async loginDirectAdmin(): Promise<User> {

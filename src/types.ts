@@ -22,6 +22,7 @@ export interface User {
   occupation: string;
   interests: string[];
   verified: boolean;
+  emailVerified?: boolean;
   status: UserStatus;
   role: UserRole;
   createdAt: string;
