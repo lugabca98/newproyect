@@ -159,7 +159,7 @@ class ApiService {
     this.setToken(null);
   }
 
-  async sendVerificationEmail(email?: string, name?: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string }> {
+  async sendVerificationEmail(email?: string, name?: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string; isRealDelivery?: boolean; provider?: string }> {
     const targetEmail = (email || '').trim().toLowerCase();
     
     // 1. Try server mailer endpoint first (delivers actual email to user's inbox)
@@ -176,6 +176,9 @@ class ApiService {
         return {
           success: true,
           message: data.message || `Hemos enviado un código de 6 dígitos a ${targetEmail}.`,
+          code: data.code,
+          isRealDelivery: data.isRealDelivery,
+          provider: data.provider,
           previewUrl: data.previewUrl
         };
       }
@@ -188,7 +191,8 @@ class ApiService {
     return {
       success: fbRes.success,
       code: fbRes.code,
-      message: fbRes.message
+      message: fbRes.message,
+      isRealDelivery: false
     };
   }
 
@@ -221,7 +225,7 @@ class ApiService {
     return firebaseService.verifyOtpCode(cleanEmail, cleanCode, 'verify_email');
   }
 
-  async sendPasswordReset(email: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string }> {
+  async sendPasswordReset(email: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string; isRealDelivery?: boolean; provider?: string }> {
     const cleanEmail = (email || '').trim().toLowerCase();
 
     // 1. Try server mailer endpoint first
@@ -237,6 +241,9 @@ class ApiService {
         return {
           success: true,
           message: data.message || `Código de recuperación enviado a ${cleanEmail}.`,
+          code: data.code,
+          isRealDelivery: data.isRealDelivery,
+          provider: data.provider,
           previewUrl: data.previewUrl
         };
       } else if (!response.ok && data.error) {
@@ -254,8 +261,19 @@ class ApiService {
     return {
       success: fbRes.success,
       code: fbRes.code,
-      message: fbRes.message
+      message: fbRes.message,
+      isRealDelivery: false
     };
+  }
+
+  async getMailConfigStatus(): Promise<{ isConfigured: boolean; activeProvider: string; providers: Record<string, boolean> }> {
+    try {
+      const res = await fetch('/api/mail/status');
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+    return { isConfigured: false, activeProvider: 'sandbox', providers: {} };
   }
 
   async resetPasswordWithOtp(email: string, code: string, newPass: string): Promise<{ success: boolean; message: string }> {

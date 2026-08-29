@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, Gender } from './src/types.js';
-import { sendOtpEmail } from './server/mailer.js';
+import { sendOtpEmail, getMailConfigStatus } from './server/mailer.js';
 
 const app = express();
 const PORT = 3000;
@@ -987,7 +987,7 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
 
   console.log(`[Mail OTP] Generated 6-digit code for ${cleanEmail} (${cleanType})`);
 
-  // Dispatch real email via SMTP / Resend
+  // Dispatch real email via SMTP / Resend / Brevo / SendGrid
   const mailResult = await sendOtpEmail({
     email: cleanEmail,
     code,
@@ -999,9 +999,16 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
     success: true,
     message: mailResult.message || `Código enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`,
     provider: mailResult.provider,
+    isRealDelivery: mailResult.isRealDelivery,
+    code: !mailResult.isRealDelivery ? code : undefined,
     previewUrl: mailResult.previewUrl || undefined,
     expiresInSeconds: 900
   });
+});
+
+// Check current mail delivery configuration status
+app.get('/api/mail/status', (req, res) => {
+  res.json(getMailConfigStatus());
 });
 
 // Verify 6-digit OTP code from user's email

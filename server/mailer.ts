@@ -11,7 +11,50 @@ export interface MailResult {
   success: boolean;
   message: string;
   provider: string;
+  isRealDelivery: boolean;
+  code?: string;
   previewUrl?: string | false;
+}
+
+export interface MailConfigStatus {
+  isConfigured: boolean;
+  activeProvider: string;
+  providers: {
+    resend: boolean;
+    brevo: boolean;
+    sendgrid: boolean;
+    gmail: boolean;
+    smtp: boolean;
+  };
+}
+
+export function getMailConfigStatus(): MailConfigStatus {
+  const hasResend = Boolean(process.env.RESEND_API_KEY || process.env.RESEND_KEY);
+  const hasBrevo = Boolean(process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY);
+  const hasSendGrid = Boolean(process.env.SENDGRID_API_KEY);
+  const hasGmail = Boolean((process.env.GMAIL_USER || process.env.EMAIL_USER) && (process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS));
+  const hasSmtp = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+
+  let activeProvider = 'sandbox';
+  if (hasResend) activeProvider = 'resend';
+  else if (hasBrevo) activeProvider = 'brevo';
+  else if (hasSendGrid) activeProvider = 'sendgrid';
+  else if (hasGmail) activeProvider = 'gmail';
+  else if (hasSmtp) activeProvider = 'smtp';
+
+  const isConfigured = hasResend || hasBrevo || hasSendGrid || hasGmail || hasSmtp;
+
+  return {
+    isConfigured,
+    activeProvider,
+    providers: {
+      resend: hasResend,
+      brevo: hasBrevo,
+      sendgrid: hasSendGrid,
+      gmail: hasGmail,
+      smtp: hasSmtp
+    }
+  };
 }
 
 // Cached transporter
@@ -29,7 +72,7 @@ async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; 
   if (user && pass) {
     const configKey = `${host || 'smtp.gmail.com'}:${user}`;
     if (cachedTransporter && cachedTransporterType === configKey) {
-      return { transporter: cachedTransporter, provider: 'smtp', isTest: false };
+      return { transporter: cachedTransporter, provider: host ? 'smtp' : 'gmail', isTest: false };
     }
 
     const transportOptions: nodemailer.TransportOptions = host ? {
@@ -44,10 +87,10 @@ async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; 
 
     cachedTransporter = nodemailer.createTransport(transportOptions);
     cachedTransporterType = configKey;
-    return { transporter: cachedTransporter, provider: host || 'gmail', isTest: false };
+    return { transporter: cachedTransporter, provider: host ? 'smtp' : 'gmail', isTest: false };
   }
 
-  // 2. Automatic Ethereal SMTP test account for instant out-of-the-box email delivery & testing
+  // 2. Automatic Ethereal SMTP test account for instant sandbox email delivery & testing
   if (cachedTransporter && cachedTransporterType === 'ethereal') {
     return { transporter: cachedTransporter, provider: 'ethereal', isTest: true };
   }
@@ -67,8 +110,7 @@ async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; 
     console.log('[Mailer] Initialized Ethereal test mailer for user:', testAccount.user);
     return { transporter: cachedTransporter, provider: 'ethereal', isTest: true };
   } catch (err) {
-    console.warn('[Mailer] Could not create Ethereal test account, creating fallback transporter:', err);
-    // Fallback simple SMTP
+    console.warn('[Mailer] Fallback simple transporter created:', err);
     cachedTransporter = nodemailer.createTransport({
       host: 'localhost',
       port: 1025,
@@ -93,7 +135,8 @@ export async function sendOtpEmail({ email, code, type, name }: SendOtpMailParam
     ? 'Gracias por unirte a nuestra comunidad. Para activar tu cuenta y proteger tu perfil, ingresa este código en la aplicación:'
     : 'Hemos recibido una solicitud para restablecer la contraseña de tu cuenta. Ingresa este código en la aplicación para crear tu nueva clave:';
 
-  const fromAddress = process.env.EMAIL_FROM || process.env.SMTP_USER || '"Vulnerable App" <noreply@vulnerable.app>';
+  const fromAddress = process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.GMAIL_USER || '"Vulnerable App" <onboarding@resend.dev>';
+  const fromName = 'Vulnerable App';
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -162,7 +205,7 @@ Este código es válido durante 15 minutos.
 Si no solicitaste este código, puedes ignorar este mensaje.
   `.trim();
 
-  // Try Resend API first if key exists
+  // 1. Try Resend API first if key exists (https://resend.com)
   const resendApiKey = process.env.RESEND_API_KEY || process.env.RESEND_KEY;
   if (resendApiKey) {
     try {
@@ -173,7 +216,7 @@ Si no solicitaste este código, puedes ignorar este mensaje.
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: fromAddress,
+          from: fromAddress.includes('<') ? fromAddress : `Vulnerable <${fromAddress}>`,
           to: email,
           subject,
           html: htmlContent,
@@ -185,19 +228,92 @@ Si no solicitaste este código, puedes ignorar este mensaje.
         console.log(`[Resend] Email successfully sent to ${email}`);
         return {
           success: true,
-          message: `Código enviado con éxito a ${email}.`,
-          provider: 'resend'
+          message: `Código enviado con éxito a tu correo (${email}). Revisa tu bandeja de entrada o Spam.`,
+          provider: 'resend',
+          isRealDelivery: true
         };
       } else {
         const errText = await resendRes.text();
-        console.warn('[Resend] API error, falling back to SMTP transport:', errText);
+        console.warn('[Resend] API response:', errText);
       }
     } catch (resendErr) {
       console.warn('[Resend] Request failed:', resendErr);
     }
   }
 
-  // Use Nodemailer SMTP / Gmail / Ethereal transport
+  // 2. Try Brevo / Sendinblue REST API (https://brevo.com)
+  const brevoApiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+  if (brevoApiKey) {
+    try {
+      const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: fromName, email: process.env.EMAIL_FROM || 'noreply@vulnerable.app' },
+          to: [{ email, name: name || 'Usuario de Vulnerable' }],
+          subject,
+          htmlContent,
+          textContent
+        })
+      });
+
+      if (brevoRes.ok) {
+        console.log(`[Brevo] Email successfully delivered to ${email}`);
+        return {
+          success: true,
+          message: `Código enviado con éxito a tu correo (${email}) vía Brevo. Revisa tu bandeja y Spam.`,
+          provider: 'brevo',
+          isRealDelivery: true
+        };
+      } else {
+        const errData = await brevoRes.text();
+        console.warn('[Brevo] API response:', errData);
+      }
+    } catch (brevoErr) {
+      console.warn('[Brevo] Request failed:', brevoErr);
+    }
+  }
+
+  // 3. Try SendGrid REST API (https://sendgrid.com)
+  const sendgridApiKey = process.env.SENDGRID_API_KEY;
+  if (sendgridApiKey) {
+    try {
+      const sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sendgridApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email }] }],
+          from: { email: process.env.EMAIL_FROM || 'noreply@vulnerable.app', name: fromName },
+          subject,
+          content: [
+            { type: 'text/plain', value: textContent },
+            { type: 'text/html', value: htmlContent }
+          ]
+        })
+      });
+
+      if (sgRes.ok) {
+        console.log(`[SendGrid] Email sent to ${email}`);
+        return {
+          success: true,
+          message: `Código enviado con éxito a ${email} vía SendGrid.`,
+          provider: 'sendgrid',
+          isRealDelivery: true
+        };
+      }
+    } catch (sgErr) {
+      console.warn('[SendGrid] Request failed:', sgErr);
+    }
+  }
+
+  // 4. Use Nodemailer SMTP / Gmail / Ethereal transport
   try {
     const { transporter, provider, isTest } = await getTransporter();
     
@@ -215,20 +331,28 @@ Si no solicitaste este código, puedes ignorar este mensaje.
       console.log(`[Mailer] Ethereal Preview URL for ${email}: ${previewUrl}`);
     }
 
-    console.log(`[Mailer] Message delivered via ${provider} to ${email} (MessageId: ${info.messageId})`);
+    console.log(`[Mailer] Message dispatched via ${provider} to ${email} (MessageId: ${info.messageId})`);
+
+    const isReal = !isTest && (provider === 'gmail' || provider === 'smtp');
 
     return {
       success: true,
-      message: `Código enviado a ${email}. Revisa tu bandeja de entrada y la carpeta de correo no deseado (Spam).`,
+      message: isReal
+        ? `Código enviado a ${email}. Revisa tu bandeja de entrada y la carpeta de correo no deseado (Spam).`
+        : `Código de seguridad generado para ${email}.`,
       provider,
+      isRealDelivery: isReal,
+      code: !isReal ? code : undefined,
       previewUrl
     };
   } catch (mailErr: any) {
     console.error(`[Mailer] Failed to send email to ${email}:`, mailErr);
     return {
       success: false,
-      message: `No se pudo enviar el correo: ${mailErr.message || 'Error de conexión con el servidor de correo'}.`,
-      provider: 'error'
+      message: `No se pudo enviar el correo: ${mailErr.message || 'Error de conexión'}.`,
+      provider: 'error',
+      isRealDelivery: false,
+      code
     };
   }
 }
