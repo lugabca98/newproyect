@@ -97,3 +97,11 @@ export interface AuthSession {
   token: string;
   isAdmin: boolean;
 }
+
+export interface OtpRecord {
+  email: string;
+  code: string;
+  type: 'verify_email' | 'password_reset';
+  createdAt: string;
+  expiresAt: string;
+}

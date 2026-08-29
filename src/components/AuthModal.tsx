@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Sparkles, 
   Flame, 
@@ -6,7 +6,7 @@ import {
   User as UserIcon, 
   Mail, 
   Lock, 
-  Eye,
+  Eye, 
   EyeOff, 
   MapPin, 
   Briefcase, 
@@ -21,7 +21,9 @@ import {
   RefreshCw,
   CheckCircle2,
   ShieldCheck,
-  HelpCircle
+  HelpCircle,
+  Copy,
+  CheckCheck
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
@@ -46,6 +48,86 @@ const PRESET_AVATARS = [
   'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80',
   'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=600&q=80'
 ];
+
+// Helper Component for 6-Digit OTP Boxes
+interface OtpBoxesProps {
+  value: string;
+  onChange: (val: string) => void;
+  idPrefix?: string;
+  disabled?: boolean;
+}
+
+const OtpBoxes: React.FC<OtpBoxesProps> = ({ value, onChange, idPrefix = 'otp', disabled = false }) => {
+  const digits = (value || '').padEnd(6, ' ').slice(0, 6).split('');
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const handleDigitChange = (index: number, char: string) => {
+    const numeric = char.replace(/\D/g, '');
+    if (!numeric) {
+      const newDigits = [...digits];
+      newDigits[index] = '';
+      onChange(newDigits.join('').trim());
+      return;
+    }
+    if (numeric.length > 1) {
+      const full = numeric.slice(0, 6);
+      onChange(full);
+      const nextIdx = Math.min(full.length, 5);
+      inputRefs.current[nextIdx]?.focus();
+      return;
+    }
+    const newDigits = [...digits];
+    newDigits[index] = numeric[0];
+    const joined = newDigits.join('').trim();
+    onChange(joined);
+    if (index < 5 && numeric[0]) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !digits[index].trim() && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (text) {
+      onChange(text);
+      const targetIdx = Math.min(text.length, 5);
+      inputRefs.current[targetIdx]?.focus();
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-2 sm:gap-2.5 my-3" onPaste={handlePaste}>
+      {[0, 1, 2, 3, 4, 5].map((idx) => {
+        const val = digits[idx]?.trim() || '';
+        return (
+          <input
+            key={idx}
+            ref={(el) => { inputRefs.current[idx] = el; }}
+            id={`${idPrefix}-digit-${idx}`}
+            type="text"
+            inputMode="numeric"
+            maxLength={1}
+            value={val}
+            disabled={disabled}
+            onChange={(e) => handleDigitChange(idx, e.target.value)}
+            onKeyDown={(e) => handleKeyDown(idx, e)}
+            className={`w-10 h-12 sm:w-12 sm:h-14 text-center text-lg sm:text-xl font-bold font-mono rounded-xl border transition ${
+              val
+                ? 'border-rose-500 bg-rose-950/40 text-rose-200 shadow-sm shadow-rose-500/20'
+                : 'border-slate-800 bg-slate-950 text-white focus:border-rose-400 focus:bg-slate-900'
+            } focus:outline-none`}
+          />
+        );
+      })}
+    </div>
+  );
+};
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
@@ -81,16 +163,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [forgotEmail, setForgotEmail] = useState('');
   const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
   const [recoverySimulatedLink, setRecoverySimulatedLink] = useState('');
-  const [directResetOpen, setDirectResetOpen] = useState(false);
+  const [directResetOpen, setDirectResetOpen] = useState(true);
   const [directNewPassword, setDirectNewPassword] = useState('');
   const [directConfirmPassword, setDirectConfirmPassword] = useState('');
   const [showDirectPass, setShowDirectPass] = useState(false);
+  const [showDirectConfirmPass, setShowDirectConfirmPass] = useState(false);
+  const [resetOtpInput, setResetOtpInput] = useState('');
+  const [generatedResetOtp, setGeneratedResetOtp] = useState('');
+  const [copiedResetOtp, setCopiedResetOtp] = useState(false);
 
-  // Verification Pending State
+  // Verification Pending State (Registration OTP)
   const [registeredUser, setRegisteredUser] = useState<User | null>(null);
   const [registeredIsAdmin, setRegisteredIsAdmin] = useState(false);
   const [resendVerificationCooldown, setResendVerificationCooldown] = useState(0);
   const [resendVerificationNotice, setResendVerificationNotice] = useState('');
+  const [regOtpInput, setRegOtpInput] = useState('');
+  const [generatedRegOtp, setGeneratedRegOtp] = useState('');
+  const [copiedRegOtp, setCopiedRegOtp] = useState(false);
+  const [otpVerifySuccess, setOtpVerifySuccess] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -117,9 +207,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setForgotEmail('');
     setRecoverySuccessMsg('');
     setRecoverySimulatedLink('');
-    setDirectResetOpen(false);
+    setDirectResetOpen(true);
     setDirectNewPassword('');
     setDirectConfirmPassword('');
+    setShowDirectPass(false);
+    setShowDirectConfirmPass(false);
+    setResetOtpInput('');
+    setGeneratedResetOtp('');
+    setCopiedResetOtp(false);
+    setRegOtpInput('');
+    setGeneratedRegOtp('');
+    setCopiedRegOtp(false);
+    setOtpVerifySuccess(false);
     setErrorMsg('');
     setResendVerificationNotice('');
   };
@@ -290,6 +389,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setRegisteredUser(res.user);
       setRegisteredIsAdmin(res.isAdmin);
       
+      // Get the generated 6-digit OTP
+      const latestOtp = api.getLatestOtp(regEmail.trim(), 'verify_email');
+      const otpCode = latestOtp?.code || '';
+      setGeneratedRegOtp(otpCode);
+      setRegOtpInput('');
+
       // Prompt email confirmation step immediately
       setMode('verify-email-pending');
       setResendVerificationCooldown(30);
@@ -300,17 +405,59 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const handleVerifyRegisterOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanOtp = regOtpInput.trim().replace(/\s+/g, '');
+    const cleanEmail = (regEmail || registeredUser?.email || '').trim();
+
+    if (!cleanEmail) {
+      setErrorMsg('No se detectó un correo electrónico.');
+      return;
+    }
+
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      setErrorMsg('Por favor ingresa el código completo de 6 dígitos.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const res = await api.verifyEmailOtp(cleanEmail, cleanOtp);
+      setOtpVerifySuccess(true);
+      setResendVerificationNotice(res.message);
+
+      setTimeout(() => {
+        if (registeredUser) {
+          onSuccess({ ...registeredUser, emailVerified: true }, registeredIsAdmin);
+          resetAllFormInputs();
+          onClose();
+        } else {
+          setMode('login');
+        }
+      }, 1000);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'El código ingresado es incorrecto.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleResendVerification = async () => {
     if (resendVerificationCooldown > 0) return;
     setLoading(true);
     setResendVerificationNotice('');
+    setErrorMsg('');
     try {
-      const emailTarget = regEmail.trim() || registeredUser?.email;
+      const emailTarget = (regEmail || registeredUser?.email || '').trim();
       const res = await api.sendVerificationEmail(emailTarget);
-      setResendVerificationNotice(res.message || 'Correo de verificación reenviado.');
-      setResendVerificationCooldown(45);
+      if (res.code) {
+        setGeneratedRegOtp(res.code);
+      }
+      setResendVerificationNotice(`Nuevo código generado: ${res.code}`);
+      setResendVerificationCooldown(30);
     } catch (err: any) {
-      setResendVerificationNotice(err.message || 'Error al reenviar el correo de verificación.');
+      setResendVerificationNotice(err.message || 'Error al reenviar el código de verificación.');
     } finally {
       setLoading(false);
     }
@@ -342,6 +489,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await api.sendPasswordReset(cleanEmail);
       setRecoverySuccessMsg(res.message);
+      if (res.code) {
+        setGeneratedResetOtp(res.code);
+        setResetOtpInput(res.code);
+      }
       if (res.simulatedLink) {
         setRecoverySimulatedLink(res.simulatedLink);
       }
@@ -354,8 +505,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleDirectResetSubmit = async (e: React.FormEvent) => {
+  const handleResetWithOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanOtp = resetOtpInput.trim().replace(/\s+/g, '');
+    const cleanEmail = forgotEmail.trim();
+
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      setErrorMsg('Por favor ingresa el código de 6 dígitos.');
+      return;
+    }
+
     if (!directNewPassword.trim() || directNewPassword.length < 6) {
       setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
       return;
@@ -369,10 +528,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg('');
 
     try {
-      const res = await api.resetPasswordDirect(forgotEmail.trim(), directNewPassword.trim());
+      const res = await api.resetPasswordWithOtp(cleanEmail, cleanOtp, directNewPassword.trim());
       setRecoverySuccessMsg(res.message);
-      setDirectResetOpen(false);
-      setEmail(forgotEmail.trim());
+      setEmail(cleanEmail);
       setPassword(directNewPassword.trim());
       setTimeout(() => {
         setMode('login');
@@ -453,79 +611,133 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* --- 1. EMAIL VERIFICATION PENDING SCREEN (ON REGISTER) --- */}
         {/* ------------------------------------------------------------- */}
         {mode === 'verify-email-pending' && (
-          <div className="space-y-6 py-2 animate-in fade-in">
-            <div className="text-center space-y-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 shadow-lg shadow-rose-500/10 mx-auto">
-                <MailCheck className="w-8 h-8" />
+          <div className="space-y-5 py-1 animate-in fade-in">
+            <div className="text-center space-y-2.5">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 shadow-lg shadow-rose-500/10 mx-auto">
+                <ShieldCheck className="w-7 h-7" />
               </div>
               
-              <h3 className="text-lg font-bold text-white">
-                ¡Confirmá tu correo electrónico!
+              <h3 className="text-base sm:text-lg font-bold text-white">
+                Validá tu cuenta con tu código de 6 dígitos
               </h3>
               
               <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
-                Hemos enviado un enlace de confirmación a:
+                Para garantizar la autenticidad y seguridad de tu perfil en <strong className="text-white">Vulnerable</strong>:
               </p>
 
-              <div className="inline-block px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-rose-300 font-mono">
+              <div className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-rose-300 font-mono">
                 {regEmail || registeredUser?.email}
               </div>
+            </div>
 
-              <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 text-left space-y-2.5 mt-4">
-                <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Pasos para activar tu cuenta:</span>
+            {/* Instant On-Screen Security Code Badge */}
+            {generatedRegOtp && (
+              <div className="p-3.5 bg-gradient-to-r from-rose-950/60 via-slate-900 to-pink-950/60 border border-rose-500/30 rounded-2xl text-center space-y-2 shadow-inner">
+                <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-rose-300 uppercase tracking-wider">
+                  <Key className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Tu Código de Seguridad:</span>
                 </div>
-                <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside">
-                  <li>Abrí tu casilla de correo electrónico.</li>
-                  <li>Buscá el mensaje de <strong className="text-slate-200">Vulnerable</strong> (revisá también la carpeta de <strong className="text-rose-300">Spam</strong>).</li>
-                  <li>Hacé clic en el enlace para validar tu email y proteger tu identidad.</li>
-                </ol>
+                
+                <div className="flex items-center justify-center gap-2">
+                  <div className="px-4 py-1.5 bg-slate-950 border border-rose-500/40 rounded-xl font-mono text-2xl font-extrabold tracking-widest text-rose-200 shadow">
+                    {generatedRegOtp}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegOtpInput(generatedRegOtp);
+                      setCopiedRegOtp(true);
+                      setTimeout(() => setCopiedRegOtp(false), 2000);
+                    }}
+                    className="px-2.5 py-2 bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 rounded-xl text-[11px] font-semibold transition flex items-center gap-1"
+                    title="Auto-completar código en las casillas"
+                  >
+                    {copiedRegOtp ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedRegOtp ? 'Copiado' : 'Auto-completar'}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Ingresá estos 6 dígitos a continuación para activar tu cuenta de inmediato.
+                </p>
+              </div>
+            )}
+
+            {/* 6-Digit OTP Box inputs */}
+            <form onSubmit={handleVerifyRegisterOtp} className="space-y-4">
+              <div>
+                <label className="block text-center text-xs font-semibold text-slate-300 mb-1">
+                  Ingresá el código de 6 dígitos:
+                </label>
+                <OtpBoxes
+                  value={regOtpInput}
+                  onChange={(val) => {
+                    setRegOtpInput(val);
+                    setErrorMsg('');
+                  }}
+                  idPrefix="reg-otp"
+                  disabled={loading || otpVerifySuccess}
+                />
               </div>
 
-              {resendVerificationNotice && (
-                <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs text-center font-medium animate-in fade-in">
+              {otpVerifySuccess && (
+                <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-xs text-center font-bold flex items-center justify-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>¡Código validado! Activando tu cuenta...</span>
+                </div>
+              )}
+
+              {resendVerificationNotice && !otpVerifySuccess && (
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-rose-300 text-xs text-center font-medium animate-in fade-in">
                   {resendVerificationNotice}
                 </div>
               )}
-            </div>
 
-            <div className="space-y-3 pt-2">
-              <button
-                id="btn-confirm-and-enter"
-                type="button"
-                onClick={handleCompleteVerificationFlow}
-                className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
-              >
-                <Check className="w-4 h-4" />
-                <span>Ya confirmé mi correo / Entrar a la App</span>
-              </button>
-
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="space-y-2.5 pt-1">
                 <button
-                  id="btn-resend-verification"
-                  type="button"
-                  onClick={handleResendVerification}
-                  disabled={loading || resendVerificationCooldown > 0}
-                  className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  id="btn-verify-otp-submit"
+                  type="submit"
+                  disabled={loading || otpVerifySuccess || regOtpInput.replace(/\s+/g, '').length !== 6}
+                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                  <span>
-                    {resendVerificationCooldown > 0
-                      ? `Reenviar en (${resendVerificationCooldown}s)`
-                      : 'Reenviar confirmación'}
-                  </span>
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Validando código...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Validar Código y Activar Cuenta</span>
+                    </>
+                  )}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => { setMode('login'); }}
-                  className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
-                >
-                  Ir al Login
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    id="btn-resend-verification"
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={loading || resendVerificationCooldown > 0}
+                    className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    <span>
+                      {resendVerificationCooldown > 0
+                        ? `Nuevo código en (${resendVerificationCooldown}s)`
+                        : 'Generar nuevo código'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCompleteVerificationFlow}
+                    className="px-3.5 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
+                  >
+                    Omitir y Entrar
+                  </button>
+                </div>
               </div>
-            </div>
+            </form>
           </div>
         )}
 
@@ -538,9 +750,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-md mx-auto">
                 <Key className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-bold text-white">¿Olvidaste tu contraseña?</h3>
+              <h3 className="text-lg font-bold text-white">Recuperar Contraseña</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Ingresá tu correo electrónico registrado y te enviaremos un enlace seguro para restablecer tu clave.
+                Ingresá tu correo electrónico registrado para generar un código de seguridad de 6 dígitos y restablecer tu clave de inmediato.
               </p>
             </div>
 
@@ -574,12 +786,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Enviando enlace...</span>
+                    <span>Generando código...</span>
                   </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4" />
-                    <span>Enviar enlace de recuperación</span>
+                    <Key className="w-4 h-4" />
+                    <span>Generar Código de 6 Dígitos</span>
                   </>
                 )}
               </button>
@@ -599,121 +811,170 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* --- 3. RESET LINK SENT CONFIRMATION SCREEN --- */}
+        {/* --- 3. RESET PASSWORD SCREEN (WITH 6-DIGIT OTP & NEW PASS) --- */}
         {/* ------------------------------------------------------------- */}
         {mode === 'reset-password-sent' && (
-          <div className="space-y-6 py-2 animate-in fade-in">
-            <div className="text-center space-y-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10 mx-auto">
-                <CheckCircle2 className="w-8 h-8" />
+          <div className="space-y-5 py-1 animate-in fade-in">
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10 mx-auto">
+                <CheckCircle2 className="w-6 h-6" />
               </div>
 
-              <h3 className="text-lg font-bold text-white">
-                ¡Enlace de recuperación enviado!
+              <h3 className="text-base sm:text-lg font-bold text-white">
+                Restablecer Contraseña
               </h3>
 
-              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
-                Hemos enviado las instrucciones para restablecer tu clave a:
-              </p>
-
-              <div className="inline-block px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-emerald-300 font-mono">
+              <div className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-emerald-300 font-mono">
                 {forgotEmail}
               </div>
+            </div>
 
-              <p className="text-xs text-slate-400 max-w-sm mx-auto pt-1">
-                Revisá tu bandeja de entrada y la carpeta de correo no deseado (<span className="text-rose-300">Spam</span>).
-              </p>
-
-              {/* Direct Quick Reset Form (for dev preview or direct immediate assistance) */}
-              {directResetOpen ? (
-                <form onSubmit={handleDirectResetSubmit} className="mt-4 p-4 bg-slate-950 rounded-2xl border border-slate-800 text-left space-y-3 animate-in fade-in">
-                  <div className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Establecer nueva contraseña directamente:</span>
+            {/* OTP Code Display Badge */}
+            {generatedResetOtp && (
+              <div className="p-3.5 bg-gradient-to-r from-emerald-950/50 via-slate-900 to-teal-950/50 border border-emerald-500/30 rounded-2xl text-center space-y-2 shadow-inner">
+                <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">
+                  <Key className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Código de Restablecimiento:</span>
+                </div>
+                
+                <div className="flex items-center justify-center gap-2">
+                  <div className="px-4 py-1.5 bg-slate-950 border border-emerald-500/40 rounded-xl font-mono text-2xl font-extrabold tracking-widest text-emerald-200 shadow">
+                    {generatedResetOtp}
                   </div>
-
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Nueva Clave (mín. 6)</label>
-                    <div className="relative">
-                      <input
-                        type={showDirectPass ? 'text' : 'password'}
-                        required
-                        minLength={6}
-                        value={directNewPassword}
-                        onChange={(e) => setDirectNewPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowDirectPass(!showDirectPass)}
-                        className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400"
-                      >
-                        {showDirectPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Confirmar Nueva Clave</label>
-                    <input
-                      type={showDirectPass ? 'text' : 'password'}
-                      required
-                      minLength={6}
-                      value={directConfirmPassword}
-                      onChange={(e) => setDirectConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading || !directNewPassword || !directConfirmPassword}
-                    className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
-                  >
-                    {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                    <span>Guardar y Restablecer Contraseña</span>
-                  </button>
-                </form>
-              ) : (
-                <div className="pt-2">
                   <button
                     type="button"
-                    onClick={() => setDirectResetOpen(true)}
-                    className="text-[11px] text-slate-400 hover:text-slate-200 underline font-medium transition"
+                    onClick={() => {
+                      setResetOtpInput(generatedResetOtp);
+                      setCopiedResetOtp(true);
+                      setTimeout(() => setCopiedResetOtp(false), 2000);
+                    }}
+                    className="px-2.5 py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-xl text-[11px] font-semibold transition flex items-center gap-1"
+                    title="Auto-completar código"
                   >
-                    ¿Deseas ingresar tu nueva clave ahora mismo?
+                    {copiedResetOtp ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedResetOtp ? 'Copiado' : 'Auto-completar'}</span>
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            <div className="space-y-2 pt-2">
-              <button
-                id="btn-back-to-login"
-                type="button"
-                onClick={() => { setMode('login'); setErrorMsg(''); }}
-                className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Volver e Iniciar Sesión</span>
-              </button>
+            {recoverySuccessMsg && (
+              <div className="p-2.5 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs text-center font-medium animate-in fade-in">
+                {recoverySuccessMsg}
+              </div>
+            )}
 
-              <button
-                type="button"
-                onClick={handleSendForgotPassword}
-                disabled={loading || resendVerificationCooldown > 0}
-                className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                <span>
-                  {resendVerificationCooldown > 0
-                    ? `Reenviar en (${resendVerificationCooldown}s)`
-                    : 'Reenviar enlace de recuperación'}
-                </span>
-              </button>
-            </div>
+            {/* OTP + New Password Form */}
+            <form onSubmit={handleResetWithOtpSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-center text-xs font-semibold text-slate-300 mb-1">
+                  Ingresá el código de 6 dígitos:
+                </label>
+                <OtpBoxes
+                  value={resetOtpInput}
+                  onChange={(val) => {
+                    setResetOtpInput(val);
+                    setErrorMsg('');
+                  }}
+                  idPrefix="reset-otp"
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Nueva Contraseña (mín. 6 caracteres)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showDirectPass ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={directNewPassword}
+                    onChange={(e) => setDirectNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDirectPass(!showDirectPass)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200"
+                  >
+                    {showDirectPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Confirmar Nueva Contraseña
+                </label>
+                <div className="relative">
+                  <input
+                    type={showDirectConfirmPass ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={directConfirmPassword}
+                    onChange={(e) => setDirectConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDirectConfirmPass(!showDirectConfirmPass)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200"
+                  >
+                    {showDirectConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  id="btn-submit-reset-otp"
+                  type="submit"
+                  disabled={loading || resetOtpInput.replace(/\s+/g, '').length !== 6 || !directNewPassword || !directConfirmPassword}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-emerald-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Actualizando contraseña...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Validar Código y Cambiar Contraseña</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSendForgotPassword}
+                    disabled={loading || resendVerificationCooldown > 0}
+                    className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    <span>
+                      {resendVerificationCooldown > 0
+                        ? `Nuevo código en (${resendVerificationCooldown}s)`
+                        : 'Generar nuevo código'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setMode('login'); setErrorMsg(''); }}
+                    className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Ir al Login</span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         )}
 

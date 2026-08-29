@@ -1,4 +1,4 @@
-import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, UserCredential } from './types';
+import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, UserCredential, OtpRecord } from './types';
 import { DEFAULT_ADMIN_EMAIL, DEMO_ACCOUNTS, hashPassword, hashPasswordSync } from './utils/security';
 
 const STORAGE_KEY_USERS = 'mv_db_users';
@@ -7,6 +7,7 @@ const STORAGE_KEY_MATCHES = 'mv_db_matches';
 const STORAGE_KEY_MESSAGES = 'mv_db_messages';
 const STORAGE_KEY_LOGS = 'mv_db_logs';
 const STORAGE_KEY_CREDENTIALS = 'mv_db_credentials';
+const STORAGE_KEY_OTPS = 'mv_db_otps';
 
 export { DEFAULT_ADMIN_EMAIL };
 
@@ -477,6 +478,66 @@ class LocalDatabaseStore {
       users[idx].passwordHash = passwordHash;
       this.saveUsers(users);
     }
+  }
+
+  // OTP 6-Digit Verification & Password Reset
+  getOtps(): OtpRecord[] {
+    return this.getStored<OtpRecord[]>(STORAGE_KEY_OTPS, []);
+  }
+
+  saveOtp(record: OtpRecord): void {
+    const otps = this.getOtps().filter(o => 
+      !(o.email.toLowerCase() === record.email.toLowerCase() && o.type === record.type)
+    );
+    otps.push(record);
+    this.setStored(STORAGE_KEY_OTPS, otps);
+  }
+
+  generateOtp(email: string, type: 'verify_email' | 'password_reset'): string {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    // Generate secure 6-digit random number (100000 - 999999)
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString(); // 15 mins validity
+
+    const record: OtpRecord = {
+      email: cleanEmail,
+      code,
+      type,
+      createdAt: now.toISOString(),
+      expiresAt
+    };
+
+    this.saveOtp(record);
+    return code;
+  }
+
+  getLatestOtp(email: string, type: 'verify_email' | 'password_reset'): OtpRecord | null {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const otps = this.getOtps();
+    const found = otps.filter(o => o.email.toLowerCase() === cleanEmail && o.type === type);
+    if (!found.length) return null;
+    return found[found.length - 1];
+  }
+
+  verifyOtp(email: string, code: string, type: 'verify_email' | 'password_reset'): { valid: boolean; reason?: string } {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanCode = (code || '').trim().replace(/\s+/g, '');
+    const latest = this.getLatestOtp(cleanEmail, type);
+
+    if (!latest) {
+      return { valid: false, reason: 'No se encontró un código solicitado para este correo.' };
+    }
+
+    if (new Date().toISOString() > latest.expiresAt) {
+      return { valid: false, reason: 'El código ha expirado. Por favor solicita uno nuevo.' };
+    }
+
+    if (latest.code !== cleanCode) {
+      return { valid: false, reason: 'El código de 6 dígitos ingresado es incorrecto.' };
+    }
+
+    return { valid: true };
   }
 }
 

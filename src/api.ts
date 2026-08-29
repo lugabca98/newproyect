@@ -150,16 +150,28 @@ class ApiService {
     this.setToken(null);
   }
 
-  async sendVerificationEmail(email?: string): Promise<{ success: boolean; message: string }> {
+  async sendVerificationEmail(email?: string): Promise<{ success: boolean; code: string; message: string }> {
     return firebaseService.sendVerificationEmail(email);
   }
 
-  async sendPasswordReset(email: string): Promise<{ success: boolean; message: string; simulatedLink?: string }> {
+  async verifyEmailOtp(email: string, code: string): Promise<{ success: boolean; message: string }> {
+    return firebaseService.verifyOtpCode(email, code, 'verify_email');
+  }
+
+  async sendPasswordReset(email: string): Promise<{ success: boolean; code: string; message: string; simulatedLink?: string }> {
     return firebaseService.sendPasswordReset(email);
+  }
+
+  async resetPasswordWithOtp(email: string, code: string, newPass: string): Promise<{ success: boolean; message: string }> {
+    return firebaseService.resetPasswordWithOtp(email, code, newPass);
   }
 
   async resetPasswordDirect(email: string, newPass: string): Promise<{ success: boolean; message: string }> {
     return firebaseService.resetPasswordDirect(email, newPass);
+  }
+
+  getLatestOtp(email: string, type: 'verify_email' | 'password_reset') {
+    return localDb.getLatestOtp(email, type);
   }
 
   // -------------------------------------------------------------

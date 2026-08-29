@@ -249,6 +249,11 @@ class FirebaseService {
       console.warn('[Firestore] Register sync note:', dbErr);
     }
 
+    // Generate 6-digit activation OTP
+    try {
+      await this.generateOtp(email, 'verify_email');
+    } catch {}
+
     // Save in local storage cache
     const existingUsers = localDb.getUsers().filter(u => u.id !== uid && u.email !== email);
     localDb.saveUsers([newUser, ...existingUsers]);
@@ -470,8 +475,9 @@ class FirebaseService {
     return { success: true, message: '¡Contraseña actualizada con éxito!' };
   }
 
-  async sendVerificationEmail(targetEmail?: string): Promise<{ success: boolean; message: string }> {
+  async sendVerificationEmail(targetEmail?: string): Promise<{ success: boolean; code: string; message: string }> {
     const cleanEmail = (targetEmail || auth.currentUser?.email || '').trim().toLowerCase();
+    const code = await this.generateOtp(cleanEmail, 'verify_email');
     
     let sentViaAuth = false;
     if (auth.currentUser) {
@@ -485,13 +491,92 @@ class FirebaseService {
 
     return {
       success: true,
+      code,
       message: sentViaAuth
-        ? `Se ha enviado un enlace de confirmación a ${cleanEmail}. Revisa tu casilla o spam.`
-        : `Se ha generado la solicitud de confirmación para ${cleanEmail || 'tu correo'}. Revisa tu casilla.`
+        ? `Se envió un enlace a ${cleanEmail} y tu código de activación de 6 dígitos es: ${code}`
+        : `Tu código de activación de 6 dígitos es: ${code}`
     };
   }
 
-  async sendPasswordReset(email: string): Promise<{ success: boolean; message: string; simulatedLink?: string }> {
+  async generateOtp(email: string, type: 'verify_email' | 'password_reset'): Promise<string> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const code = localDb.generateOtp(cleanEmail, type);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+
+    try {
+      await setDoc(doc(db, 'otps', `${cleanEmail}_${type}`), {
+        email: cleanEmail,
+        code,
+        type,
+        createdAt: now.toISOString(),
+        expiresAt
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error saving OTP doc:', err);
+    }
+
+    return code;
+  }
+
+  async verifyOtpCode(email: string, code: string, type: 'verify_email' | 'password_reset'): Promise<{ success: boolean; message: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanCode = (code || '').trim().replace(/\s+/g, '');
+
+    if (!cleanEmail) {
+      throw new Error('El correo es requerido.');
+    }
+    if (!cleanCode || cleanCode.length !== 6) {
+      throw new Error('Por favor ingresa el código completo de 6 dígitos.');
+    }
+
+    // 1. Check local verification
+    let validResult = localDb.verifyOtp(cleanEmail, cleanCode, type);
+
+    // 2. If not found in local, check Firestore
+    if (!validResult.valid) {
+      try {
+        const otpSnap = await getDoc(doc(db, 'otps', `${cleanEmail}_${type}`));
+        if (otpSnap.exists()) {
+          const data = otpSnap.data();
+          if (data && data.code === cleanCode && new Date().toISOString() <= data.expiresAt) {
+            validResult = { valid: true };
+          }
+        }
+      } catch {}
+    }
+
+    if (!validResult.valid) {
+      throw new Error(validResult.reason || 'El código de 6 dígitos es incorrecto o ha expirado.');
+    }
+
+    // If verifying email, update user status to emailVerified = true
+    if (type === 'verify_email') {
+      const user = await this.getUserByEmail(cleanEmail);
+      if (user) {
+        user.emailVerified = true;
+        const users = localDb.getUsers();
+        const idx = users.findIndex(u => u.id === user.id);
+        if (idx !== -1) {
+          users[idx].emailVerified = true;
+          localDb.saveUsers(users);
+        }
+        await updateDoc(doc(db, 'users', user.id), {
+          emailVerified: true,
+          lastActive: new Date().toISOString()
+        }).catch(() => {});
+      }
+    }
+
+    return {
+      success: true,
+      message: type === 'verify_email' 
+        ? '¡Cuenta activada y correo verificado con éxito!' 
+        : '¡Código de seguridad validado con éxito!'
+    };
+  }
+
+  async sendPasswordReset(email: string): Promise<{ success: boolean; code: string; message: string; simulatedLink?: string }> {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail) {
       throw new Error('Por favor ingresa un correo electrónico válido.');
@@ -524,6 +609,8 @@ class FirebaseService {
       throw new Error(`No encontramos ninguna cuenta registrada con el correo "${cleanEmail}".`);
     }
 
+    const code = await this.generateOtp(cleanEmail, 'password_reset');
+
     let authSent = false;
     try {
       await sendPasswordResetEmail(auth, cleanEmail);
@@ -534,9 +621,18 @@ class FirebaseService {
 
     return {
       success: true,
-      message: `Hemos enviado las instrucciones y el enlace de restablecimiento a ${cleanEmail}. Por favor revisa tu bandeja de entrada o spam.`,
+      code,
+      message: `Tu código de 6 dígitos para restablecer tu contraseña es: ${code}`,
       simulatedLink: !authSent ? `https://vulnerable.app/auth/reset?email=${encodeURIComponent(cleanEmail)}` : undefined
     };
+  }
+
+  async resetPasswordWithOtp(email: string, code: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    // 1. Verify 6-digit OTP
+    await this.verifyOtpCode(email, code, 'password_reset');
+
+    // 2. Update password
+    return this.resetPasswordDirect(email, newPassword);
   }
 
   async resetPasswordDirect(email: string, newPassword: string): Promise<{ success: boolean; message: string }> {
