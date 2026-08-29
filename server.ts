@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, Gender } from './src/types.js';
+import { sendOtpEmail } from './server/mailer.js';
 
 const app = express();
 const PORT = 3000;
@@ -536,6 +537,9 @@ let matches: Match[] = [];
 let messages: Message[] = [];
 let auditLogs: AuditLog[] = [];
 
+// OTP Store for email verification and password recovery
+const otpStore = new Map<string, { code: string; type: string; email: string; expiresAt: number; name?: string }>();
+
 // Persistence Engine
 function ensureAdminUser() {
   const adminIndex = users.findIndex(u => u.email.toLowerCase() === 'lugabca98@gmail.com');
@@ -915,10 +919,217 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   saveDatabase();
   const token = generateSecureToken(newUser);
 
+  // Generate and send initial 6-digit email verification OTP in the background
+  const initialOtp = String(Math.floor(100000 + Math.random() * 900000));
+  otpStore.set(`${normalizedEmail}_verify_email`, {
+    code: initialOtp,
+    type: 'verify_email',
+    email: normalizedEmail,
+    name: newUser.name,
+    expiresAt: Date.now() + 15 * 60 * 1000
+  });
+
+  // Fire and forget email send to avoid delaying register response
+  sendOtpEmail({
+    email: normalizedEmail,
+    code: initialOtp,
+    type: 'verify_email',
+    name: newUser.name
+  }).catch(err => {
+    console.warn('[Register Email] Error sending verification email:', err);
+  });
+
   res.status(201).json({ 
     user: toPrivateUser(newUser), 
     token, 
-    isAdmin: false 
+    isAdmin: false,
+    emailSent: true,
+    message: 'Cuenta creada. Hemos enviado un código de verificación a tu correo electrónico.'
+  });
+});
+
+// -------------------------------------------------------------
+// REAL EMAIL DELIVERY & OTP VERIFICATION ENDPOINTS
+// -------------------------------------------------------------
+
+// Send / Resend OTP Email (for email verification or password reset)
+app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
+  const { email, type, name } = req.body;
+
+  if (!email || typeof email !== 'string' || !isValidEmail(email)) {
+    res.status(400).json({ error: 'Por favor ingresá un correo electrónico válido.' });
+    return;
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanType: 'verify_email' | 'password_reset' = type === 'password_reset' ? 'password_reset' : 'verify_email';
+
+  // For password reset, verify user exists first
+  if (cleanType === 'password_reset') {
+    const userExists = users.some(u => u.email.toLowerCase() === cleanEmail);
+    if (!userExists && cleanEmail !== 'lugabca98@gmail.com') {
+      res.status(404).json({ error: `No se encontró ninguna cuenta registrada con el correo "${cleanEmail}".` });
+      return;
+    }
+  }
+
+  // Generate 6-digit OTP code
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes TTL
+
+  otpStore.set(`${cleanEmail}_${cleanType}`, {
+    code,
+    type: cleanType,
+    email: cleanEmail,
+    name: sanitizeText(name || '', 50),
+    expiresAt
+  });
+
+  console.log(`[Mail OTP] Generated 6-digit code for ${cleanEmail} (${cleanType})`);
+
+  // Dispatch real email via SMTP / Resend
+  const mailResult = await sendOtpEmail({
+    email: cleanEmail,
+    code,
+    type: cleanType,
+    name
+  });
+
+  res.json({
+    success: true,
+    message: mailResult.message || `Código enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`,
+    provider: mailResult.provider,
+    previewUrl: mailResult.previewUrl || undefined,
+    expiresInSeconds: 900
+  });
+});
+
+// Verify 6-digit OTP code from user's email
+app.post('/api/mail/verify-otp', authLimiter, (req, res) => {
+  const { email, code, type } = req.body;
+
+  if (!email || typeof email !== 'string' || !isValidEmail(email)) {
+    res.status(400).json({ error: 'Correo electrónico no válido.' });
+    return;
+  }
+
+  if (!code || typeof code !== 'string') {
+    res.status(400).json({ error: 'Por favor ingresá el código de 6 dígitos.' });
+    return;
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanCode = code.trim().replace(/\s+/g, '');
+  const cleanType: 'verify_email' | 'password_reset' = type === 'password_reset' ? 'password_reset' : 'verify_email';
+
+  if (cleanCode.length !== 6) {
+    res.status(400).json({ error: 'El código debe tener exactamente 6 dígitos.' });
+    return;
+  }
+
+  const key = `${cleanEmail}_${cleanType}`;
+  const record = otpStore.get(key);
+
+  if (!record) {
+    res.status(400).json({ error: 'No hay un código activo para este correo. Por favor solicitá un nuevo código.' });
+    return;
+  }
+
+  if (Date.now() > record.expiresAt) {
+    otpStore.delete(key);
+    res.status(400).json({ error: 'El código ha expirado (validez de 15 minutos). Por favor solicitá uno nuevo.' });
+    return;
+  }
+
+  if (record.code !== cleanCode) {
+    res.status(400).json({ error: 'El código ingresado es incorrecto. Verifica el correo que recibiste.' });
+    return;
+  }
+
+  // If verifying email, update user in database
+  if (cleanType === 'verify_email') {
+    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (user) {
+      user.verified = true;
+      (user as any).emailVerified = true;
+      user.lastActive = new Date().toISOString();
+      saveDatabase();
+    }
+  }
+
+  // Keep OTP for password_reset until actual password update completes, but delete for email verification
+  if (cleanType === 'verify_email') {
+    otpStore.delete(key);
+  }
+
+  res.json({
+    success: true,
+    message: cleanType === 'verify_email'
+      ? '¡Correo electrónico verificado con éxito! Tu cuenta ha sido activada.'
+      : '¡Código validado correctamente! Ahora podés ingresar tu nueva contraseña.'
+  });
+});
+
+// Reset Password with Verified OTP Code
+app.post('/api/mail/reset-password', passwordLimiter, (req, res) => {
+  const { email, code, newPassword } = req.body;
+
+  if (!email || typeof email !== 'string' || !isValidEmail(email)) {
+    res.status(400).json({ error: 'Correo electrónico no válido.' });
+    return;
+  }
+
+  if (!code || typeof code !== 'string') {
+    res.status(400).json({ error: 'Por favor ingresá el código de 6 dígitos recibido por correo.' });
+    return;
+  }
+
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6 || newPassword.length > 100) {
+    res.status(400).json({ error: 'La nueva contraseña debe tener entre 6 y 100 caracteres.' });
+    return;
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanCode = code.trim().replace(/\s+/g, '');
+  const key = `${cleanEmail}_password_reset`;
+  const record = otpStore.get(key);
+
+  if (!record || Date.now() > record.expiresAt || record.code !== cleanCode) {
+    res.status(400).json({ error: 'El código de seguridad es inválido o ha expirado. Por favor solicitá un nuevo código por correo.' });
+    return;
+  }
+
+  // Update password in database
+  let user = users.find(u => u.email.toLowerCase() === cleanEmail);
+  if (!user && cleanEmail === 'lugabca98@gmail.com') {
+    user = getAdminOwnerUser();
+    users.unshift(user);
+  }
+
+  if (!user) {
+    res.status(404).json({ error: 'No se encontró el usuario asociado a este correo.' });
+    return;
+  }
+
+  const { salt, hash } = hashPassword(newPassword);
+  user.passwordSalt = salt;
+  user.passwordHash = hash;
+  user.lastActive = new Date().toISOString();
+  saveDatabase();
+
+  // Invalidate OTP after successful reset
+  otpStore.delete(key);
+
+  // Invalidate past sessions
+  for (const [token, session] of sessions.entries()) {
+    if (session.userId === user.id) {
+      sessions.delete(token);
+    }
+  }
+
+  res.json({
+    success: true,
+    message: '¡Tu contraseña ha sido restablecida exitosamente! Ya podés iniciar sesión con tu nueva clave.'
   });
 });
 

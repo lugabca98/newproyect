@@ -388,12 +388,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setRegisteredUser(res.user);
       setRegisteredIsAdmin(res.isAdmin);
-      
-      // Get the generated 6-digit OTP
-      const latestOtp = api.getLatestOtp(regEmail.trim(), 'verify_email');
-      const otpCode = latestOtp?.code || '';
-      setGeneratedRegOtp(otpCode);
       setRegOtpInput('');
+      setResendVerificationNotice(res.message || `Hemos enviado un correo a ${regEmail.trim()} con tu código de 6 dígitos.`);
 
       // Prompt email confirmation step immediately
       setMode('verify-email-pending');
@@ -416,7 +412,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     if (!cleanOtp || cleanOtp.length !== 6) {
-      setErrorMsg('Por favor ingresa el código completo de 6 dígitos.');
+      setErrorMsg('Por favor ingresá el código completo de 6 dígitos que recibiste por correo.');
       return;
     }
 
@@ -437,7 +433,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }, 1000);
     } catch (err: any) {
-      setErrorMsg(err.message || 'El código ingresado es incorrecto.');
+      setErrorMsg(err.message || 'El código ingresado es incorrecto o ha expirado.');
     } finally {
       setLoading(false);
     }
@@ -450,11 +446,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg('');
     try {
       const emailTarget = (regEmail || registeredUser?.email || '').trim();
-      const res = await api.sendVerificationEmail(emailTarget);
-      if (res.code) {
-        setGeneratedRegOtp(res.code);
-      }
-      setResendVerificationNotice(`Nuevo código generado: ${res.code}`);
+      const res = await api.sendVerificationEmail(emailTarget, name);
+      setResendVerificationNotice(res.message || `Nuevo código de 6 dígitos enviado a ${emailTarget}.`);
       setResendVerificationCooldown(30);
     } catch (err: any) {
       setResendVerificationNotice(err.message || 'Error al reenviar el código de verificación.');
@@ -477,7 +470,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     const cleanEmail = forgotEmail.trim();
     if (!cleanEmail) {
-      setErrorMsg('Por favor ingresa tu correo electrónico.');
+      setErrorMsg('Por favor ingresá tu correo electrónico.');
       return;
     }
 
@@ -488,14 +481,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       const res = await api.sendPasswordReset(cleanEmail);
-      setRecoverySuccessMsg(res.message);
-      if (res.code) {
-        setGeneratedResetOtp(res.code);
-        setResetOtpInput(res.code);
-      }
-      if (res.simulatedLink) {
-        setRecoverySimulatedLink(res.simulatedLink);
-      }
+      setRecoverySuccessMsg(res.message || `Hemos enviado un código de recuperación a ${cleanEmail}.`);
+      setResetOtpInput('');
       setMode('reset-password-sent');
       setResendVerificationCooldown(30);
     } catch (err: any) {
@@ -614,59 +601,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="space-y-5 py-1 animate-in fade-in">
             <div className="text-center space-y-2.5">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 shadow-lg shadow-rose-500/10 mx-auto">
-                <ShieldCheck className="w-7 h-7" />
+                <Mail className="w-7 h-7" />
               </div>
               
               <h3 className="text-base sm:text-lg font-bold text-white">
-                Validá tu cuenta con tu código de 6 dígitos
+                Revisá tu Correo Electrónico
               </h3>
               
               <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
-                Para garantizar la autenticidad y seguridad de tu perfil en <strong className="text-white">Vulnerable</strong>:
+                Hemos enviado un código de seguridad de 6 dígitos a:
               </p>
 
-              <div className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-rose-300 font-mono">
+              <div className="inline-block px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-rose-300 font-mono">
                 {regEmail || registeredUser?.email}
               </div>
-            </div>
 
-            {/* Instant On-Screen Security Code Badge */}
-            {generatedRegOtp && (
-              <div className="p-3.5 bg-gradient-to-r from-rose-950/60 via-slate-900 to-pink-950/60 border border-rose-500/30 rounded-2xl text-center space-y-2 shadow-inner">
-                <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-rose-300 uppercase tracking-wider">
-                  <Key className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Tu Código de Seguridad:</span>
-                </div>
-                
-                <div className="flex items-center justify-center gap-2">
-                  <div className="px-4 py-1.5 bg-slate-950 border border-rose-500/40 rounded-xl font-mono text-2xl font-extrabold tracking-widest text-rose-200 shadow">
-                    {generatedRegOtp}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRegOtpInput(generatedRegOtp);
-                      setCopiedRegOtp(true);
-                      setTimeout(() => setCopiedRegOtp(false), 2000);
-                    }}
-                    className="px-2.5 py-2 bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 rounded-xl text-[11px] font-semibold transition flex items-center gap-1"
-                    title="Auto-completar código en las casillas"
-                  >
-                    {copiedRegOtp ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedRegOtp ? 'Copiado' : 'Auto-completar'}</span>
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-400">
-                  Ingresá estos 6 dígitos a continuación para activar tu cuenta de inmediato.
+              <div className="p-3 bg-slate-950/70 border border-slate-800/80 rounded-2xl text-[11px] text-slate-400 max-w-md mx-auto space-y-1">
+                <p className="flex items-center justify-center gap-1 text-slate-300 font-medium">
+                  <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Buscá el correo de <strong>Vulnerable</strong> en tu bandeja</span>
+                </p>
+                <p className="text-slate-400">
+                  Si no lo ves en tu bandeja principal, por favor verificá tu carpeta de <strong>Spam / Correo no deseado</strong> o Promociones.
                 </p>
               </div>
-            )}
+            </div>
 
             {/* 6-Digit OTP Box inputs */}
             <form onSubmit={handleVerifyRegisterOtp} className="space-y-4">
               <div>
-                <label className="block text-center text-xs font-semibold text-slate-300 mb-1">
-                  Ingresá el código de 6 dígitos:
+                <label className="block text-center text-xs font-semibold text-slate-300 mb-2">
+                  Ingresá el código de 6 dígitos recibido en tu mail:
                 </label>
                 <OtpBoxes
                   value={regOtpInput}
@@ -723,8 +688,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                     <span>
                       {resendVerificationCooldown > 0
-                        ? `Nuevo código en (${resendVerificationCooldown}s)`
-                        : 'Generar nuevo código'}
+                        ? `Reenviar correo en (${resendVerificationCooldown}s)`
+                        : 'Reenviar código al correo'}
                     </span>
                   </button>
 
@@ -733,7 +698,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onClick={handleCompleteVerificationFlow}
                     className="px-3.5 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
                   >
-                    Omitir y Entrar
+                    Omitir por ahora
                   </button>
                 </div>
               </div>
@@ -748,11 +713,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="space-y-5 animate-in fade-in">
             <div className="text-center space-y-2">
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-md mx-auto">
-                <Key className="w-6 h-6" />
+                <Mail className="w-6 h-6" />
               </div>
               <h3 className="text-lg font-bold text-white">Recuperar Contraseña</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Ingresá tu correo electrónico registrado para generar un código de seguridad de 6 dígitos y restablecer tu clave de inmediato.
+                Ingresá tu correo electrónico registrado. Te enviaremos un código de seguridad de 6 dígitos a tu casilla de correo para restablecer tu clave.
               </p>
             </div>
 
@@ -786,12 +751,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Generando código...</span>
+                    <span>Enviando código al correo...</span>
                   </>
                 ) : (
                   <>
-                    <Key className="w-4 h-4" />
-                    <span>Generar Código de 6 Dígitos</span>
+                    <Mail className="w-4 h-4" />
+                    <span>Enviar Código a mi Correo</span>
                   </>
                 )}
               </button>
@@ -817,46 +782,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="space-y-5 py-1 animate-in fade-in">
             <div className="text-center space-y-2">
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10 mx-auto">
-                <CheckCircle2 className="w-6 h-6" />
+                <Mail className="w-6 h-6" />
               </div>
 
               <h3 className="text-base sm:text-lg font-bold text-white">
-                Restablecer Contraseña
+                Revisá tu Correo para Restablecer
               </h3>
 
-              <div className="inline-block px-3 py-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-emerald-300 font-mono">
+              <p className="text-xs text-slate-300">
+                Hemos enviado tu código de seguridad de 6 dígitos a:
+              </p>
+
+              <div className="inline-block px-3.5 py-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-emerald-300 font-mono">
                 {forgotEmail}
               </div>
-            </div>
 
-            {/* OTP Code Display Badge */}
-            {generatedResetOtp && (
-              <div className="p-3.5 bg-gradient-to-r from-emerald-950/50 via-slate-900 to-teal-950/50 border border-emerald-500/30 rounded-2xl text-center space-y-2 shadow-inner">
-                <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">
-                  <Key className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Código de Restablecimiento:</span>
-                </div>
-                
-                <div className="flex items-center justify-center gap-2">
-                  <div className="px-4 py-1.5 bg-slate-950 border border-emerald-500/40 rounded-xl font-mono text-2xl font-extrabold tracking-widest text-emerald-200 shadow">
-                    {generatedResetOtp}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResetOtpInput(generatedResetOtp);
-                      setCopiedResetOtp(true);
-                      setTimeout(() => setCopiedResetOtp(false), 2000);
-                    }}
-                    className="px-2.5 py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-xl text-[11px] font-semibold transition flex items-center gap-1"
-                    title="Auto-completar código"
-                  >
-                    {copiedResetOtp ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedResetOtp ? 'Copiado' : 'Auto-completar'}</span>
-                  </button>
-                </div>
-              </div>
-            )}
+              <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                Revisá tu bandeja de entrada o la carpeta de Spam, copiá el código y crea tu nueva contraseña a continuación.
+              </p>
+            </div>
 
             {recoverySuccessMsg && (
               <div className="p-2.5 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs text-center font-medium animate-in fade-in">
@@ -867,8 +811,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {/* OTP + New Password Form */}
             <form onSubmit={handleResetWithOtpSubmit} className="space-y-3.5">
               <div>
-                <label className="block text-center text-xs font-semibold text-slate-300 mb-1">
-                  Ingresá el código de 6 dígitos:
+                <label className="block text-center text-xs font-semibold text-slate-300 mb-2">
+                  Ingresá el código de 6 dígitos recibido por mail:
                 </label>
                 <OtpBoxes
                   value={resetOtpInput}

@@ -96,7 +96,7 @@ class ApiService {
     return { user: { ...user, role: 'user' }, token: user.id, isAdmin: false };
   }
 
-  async register(userData: Partial<User>, password?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
+  async register(userData: Partial<User>, password?: string): Promise<{ user: User; token: string; isAdmin: boolean; message?: string }> {
     if (!password) {
       throw new Error('La contraseña es requerida para el registro.');
     }
@@ -105,7 +105,16 @@ class ApiService {
     const isOwner = isEmailAdmin(cleanEmail, newUser.id);
     const sanitizedUser: User = { ...newUser, role: isOwner ? 'admin' : 'user' };
     this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
-    return { user: sanitizedUser, token: sanitizedUser.id, isAdmin: isOwner };
+
+    // Trigger verification email to the user's email inbox
+    this.sendVerificationEmail(cleanEmail, newUser.name).catch(() => {});
+
+    return { 
+      user: sanitizedUser, 
+      token: sanitizedUser.id, 
+      isAdmin: isOwner,
+      message: `Cuenta creada. Hemos enviado un código de 6 dígitos a ${cleanEmail}.` 
+    };
   }
 
   async getMe(): Promise<{ user: User; isAdmin: boolean }> {
@@ -150,20 +159,131 @@ class ApiService {
     this.setToken(null);
   }
 
-  async sendVerificationEmail(email?: string): Promise<{ success: boolean; code: string; message: string }> {
-    return firebaseService.sendVerificationEmail(email);
+  async sendVerificationEmail(email?: string, name?: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string }> {
+    const targetEmail = (email || '').trim().toLowerCase();
+    
+    // 1. Try server mailer endpoint first (delivers actual email to user's inbox)
+    try {
+      const response = await fetch('/api/mail/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, type: 'verify_email', name })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        // Also keep client Firebase service in sync
+        firebaseService.sendVerificationEmail(targetEmail).catch(() => {});
+        return {
+          success: true,
+          message: data.message || `Hemos enviado un código de 6 dígitos a ${targetEmail}.`,
+          previewUrl: data.previewUrl
+        };
+      }
+    } catch (err) {
+      console.warn('[Api] Server mail send fallback to Firebase:', err);
+    }
+
+    // 2. Fallback to Firebase client service
+    const fbRes = await firebaseService.sendVerificationEmail(targetEmail);
+    return {
+      success: fbRes.success,
+      code: fbRes.code,
+      message: fbRes.message
+    };
   }
 
   async verifyEmailOtp(email: string, code: string): Promise<{ success: boolean; message: string }> {
-    return firebaseService.verifyOtpCode(email, code, 'verify_email');
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanCode = (code || '').trim().replace(/\s+/g, '');
+
+    // 1. Try server verification first
+    try {
+      const response = await fetch('/api/mail/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, code: cleanCode, type: 'verify_email' })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        // Keep Firebase/local state in sync
+        await firebaseService.verifyOtpCode(cleanEmail, cleanCode, 'verify_email').catch(() => {});
+        return { success: true, message: data.message };
+      } else if (!response.ok && data.error && !data.error.includes('No hay un código activo')) {
+        throw new Error(data.error);
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
+    }
+
+    // 2. Fallback to Firebase verification
+    return firebaseService.verifyOtpCode(cleanEmail, cleanCode, 'verify_email');
   }
 
-  async sendPasswordReset(email: string): Promise<{ success: boolean; code: string; message: string; simulatedLink?: string }> {
-    return firebaseService.sendPasswordReset(email);
+  async sendPasswordReset(email: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+
+    // 1. Try server mailer endpoint first
+    try {
+      const response = await fetch('/api/mail/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, type: 'password_reset' })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        firebaseService.sendPasswordReset(cleanEmail).catch(() => {});
+        return {
+          success: true,
+          message: data.message || `Código de recuperación enviado a ${cleanEmail}.`,
+          previewUrl: data.previewUrl
+        };
+      } else if (!response.ok && data.error) {
+        throw new Error(data.error);
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
+      console.warn('[Api] Server mail send-otp error, using fallback:', err);
+    }
+
+    // 2. Fallback to Firebase service
+    const fbRes = await firebaseService.sendPasswordReset(cleanEmail);
+    return {
+      success: fbRes.success,
+      code: fbRes.code,
+      message: fbRes.message
+    };
   }
 
   async resetPasswordWithOtp(email: string, code: string, newPass: string): Promise<{ success: boolean; message: string }> {
-    return firebaseService.resetPasswordWithOtp(email, code, newPass);
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanCode = (code || '').trim().replace(/\s+/g, '');
+
+    // 1. Try server password reset
+    try {
+      const response = await fetch('/api/mail/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, code: cleanCode, newPassword: newPass })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        await firebaseService.resetPasswordWithOtp(cleanEmail, cleanCode, newPass).catch(() => {});
+        return { success: true, message: data.message };
+      } else if (!response.ok && data.error) {
+        throw new Error(data.error);
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
+    }
+
+    // 2. Fallback to Firebase
+    return firebaseService.resetPasswordWithOtp(cleanEmail, cleanCode, newPass);
   }
 
   async resetPasswordDirect(email: string, newPass: string): Promise<{ success: boolean; message: string }> {

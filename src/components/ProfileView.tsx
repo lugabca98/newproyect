@@ -267,15 +267,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setSendingVerificationEmail(true);
     setVerificationFeedback('');
     try {
-      const res = await api.sendVerificationEmail(currentUser.email);
-      if (res.code) {
-        setGeneratedProfileOtp(res.code);
-        setProfileOtpCode(res.code);
-      }
+      const res = await api.sendVerificationEmail(currentUser.email, currentUser.name);
       setShowOtpEntry(true);
-      setVerificationFeedback(res.message || 'Código de seguridad generado correctamente.');
+      setVerificationFeedback(res.message || `Código enviado a ${currentUser.email}. Revisá tu bandeja de entrada o Spam.`);
     } catch (err: any) {
-      setVerificationFeedback(err.message || 'Error al generar código de verificación.');
+      setVerificationFeedback(err.message || 'Error al enviar código de verificación al correo.');
     } finally {
       setSendingVerificationEmail(false);
     }
@@ -285,7 +281,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     e.preventDefault();
     const cleanCode = profileOtpCode.trim();
     if (!cleanCode || cleanCode.length !== 6) {
-      setVerificationFeedback('Por favor ingresa un código de 6 dígitos válido.');
+      setVerificationFeedback('Por favor ingresá los 6 dígitos que recibiste en tu correo.');
       return;
     }
     setVerifyingProfileOtp(true);
@@ -296,7 +292,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       onUpdateUser({ ...currentUser, emailVerified: true });
       setShowOtpEntry(false);
     } catch (err: any) {
-      setVerificationFeedback(err.message || 'Código de verificación incorrecto.');
+      setVerificationFeedback(err.message || 'Código de verificación incorrecto o expirado.');
     } finally {
       setVerifyingProfileOtp(false);
     }
@@ -771,26 +767,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   className="py-1.5 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl text-[11px] font-semibold text-slate-200 transition flex items-center gap-1.5 shrink-0"
                 >
                   <RefreshCw className={`w-3 h-3 text-rose-400 ${sendingVerificationEmail ? 'animate-spin' : ''}`} />
-                  <span>{sendingVerificationEmail ? 'Generando...' : 'Obtener código'}</span>
+                  <span>{sendingVerificationEmail ? 'Enviando email...' : 'Enviar código al correo'}</span>
                 </button>
               </div>
             )}
           </div>
 
           {/* OTP Entry Form if not verified */}
-          {!currentUser.emailVerified && currentUser.role !== 'admin' && (showOtpEntry || generatedProfileOtp) && (
+          {!currentUser.emailVerified && currentUser.role !== 'admin' && showOtpEntry && (
             <form onSubmit={handleVerifyProfileOtp} className="pt-2 border-t border-slate-850 flex flex-col sm:flex-row items-center gap-2.5">
-              {generatedProfileOtp && (
-                <div className="px-3 py-1.5 bg-rose-950/50 border border-rose-500/30 rounded-xl text-xs font-mono font-bold text-rose-300">
-                  Código: {generatedProfileOtp}
-                </div>
-              )}
               <input
                 type="text"
                 maxLength={6}
                 value={profileOtpCode}
                 onChange={(e) => setProfileOtpCode(e.target.value.replace(/\D/g, ''))}
-                placeholder="Ingresar 6 dígitos"
+                placeholder="Ingresar 6 dígitos de tu correo"
                 className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 font-mono tracking-wider text-center focus:outline-none focus:border-rose-500"
               />
               <button
