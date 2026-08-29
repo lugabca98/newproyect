@@ -346,32 +346,25 @@ class LocalDatabaseStore {
 
   init(): void {
     const creds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
-    // 1. Synchronously set the true deterministic hash for all demo accounts
+    let credsModified = false;
+
+    // Seed default credentials for demo accounts ONLY if not already saved (preserves user-changed passwords)
     DEMO_ACCOUNTS.forEach((acc) => {
       const emailLower = acc.email.toLowerCase();
-      const syncHash = hashPasswordSync(acc.primaryPass);
-      creds[emailLower] = {
-        email: emailLower,
-        passwordHash: syncHash,
-        userId: acc.role === 'admin' ? 'admin-owner' : (creds[emailLower]?.userId || 'user-' + acc.name.split(' ')[0].toLowerCase()),
-        updatedAt: new Date().toISOString()
-      };
+      if (!creds[emailLower]) {
+        const syncHash = hashPasswordSync(acc.primaryPass);
+        creds[emailLower] = {
+          email: emailLower,
+          passwordHash: syncHash,
+          userId: acc.role === 'admin' ? 'admin-owner' : ('user-' + acc.name.split(' ')[0].toLowerCase()),
+          updatedAt: new Date().toISOString()
+        };
+        credsModified = true;
+      }
     });
-    this.setStored(STORAGE_KEY_CREDENTIALS, creds);
-
-    // 2. Also compute SHA-256 async and update credentials map
-    DEMO_ACCOUNTS.forEach(async (acc) => {
-      const emailLower = acc.email.toLowerCase();
-      const shaHash = await hashPassword(acc.primaryPass);
-      const currentCreds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
-      currentCreds[emailLower] = {
-        email: emailLower,
-        passwordHash: shaHash,
-        userId: acc.role === 'admin' ? 'admin-owner' : (currentCreds[emailLower]?.userId || 'user-' + acc.name.split(' ')[0].toLowerCase()),
-        updatedAt: new Date().toISOString()
-      };
-      this.setStored(STORAGE_KEY_CREDENTIALS, currentCreds);
-    });
+    if (credsModified) {
+      this.setStored(STORAGE_KEY_CREDENTIALS, creds);
+    }
 
     const users = this.getStored<User[]>(STORAGE_KEY_USERS, []);
     if (users.length === 0) {
@@ -477,6 +470,13 @@ class LocalDatabaseStore {
       updatedAt: new Date().toISOString()
     };
     this.setStored(STORAGE_KEY_CREDENTIALS, creds);
+
+    const users = this.getUsers();
+    const idx = users.findIndex(u => (u.email || '').trim().toLowerCase() === cleanEmail || u.id === userId);
+    if (idx !== -1) {
+      users[idx].passwordHash = passwordHash;
+      this.saveUsers(users);
+    }
   }
 }
 

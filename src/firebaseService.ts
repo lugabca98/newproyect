@@ -275,15 +275,7 @@ class FirebaseService {
       throw new Error(`No existe ninguna cuenta registrada con el correo "${cleanEmail}". Por favor crea una cuenta en la pestaña "Registrarse".`);
     }
 
-    // 2. Strict Password Validation: Exact complete password match is mandatory for ALL accounts!
-    const isDemoAcc = isPasswordValidForDemoAccount(cleanEmail, cleanPass);
-    const isDemoEmail = DEMO_ACCOUNTS.some(d => d.email.toLowerCase() === cleanEmail);
-
-    // If it is a predefined demo/admin account and the entered password does not match the complete password, reject immediately!
-    if (isDemoEmail && !isDemoAcc) {
-      throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
-    }
-
+    // 2. Strict Password Validation: Exact password match against stored hash is mandatory!
     const enteredHash = await hashPassword(cleanPass);
     let isAuthenticated = false;
     let authUid = user?.id || (isOwnerAdmin ? 'admin-owner' : '');
@@ -294,46 +286,47 @@ class FirebaseService {
       isAuthenticated = true;
       authUid = cred.user.uid;
     } catch (authErr: any) {
-      const code = authErr?.code || '';
-      if ((code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials') && !isDemoAcc) {
-        // Continue to check local/stored credentials before rejecting, but only for registered non-demo accounts
-      }
+      // If Firebase Auth is not available or email/pass disabled, proceed with secure hash verification
     }
 
-    // Step 2B: Demo & Admin accounts verified strictly with full password
-    if (!isAuthenticated && isDemoAcc) {
-      isAuthenticated = true;
-      localDb.saveCredential(cleanEmail, enteredHash, user?.id || authUid);
-      setDoc(doc(db, 'credentials', cleanEmail), {
-        email: cleanEmail,
-        passwordHash: enteredHash,
-        userId: user?.id || authUid,
-        updatedAt: new Date().toISOString()
-      }).catch(() => {});
-    }
+    // Step 2B: Strict verification against stored credential (local storage & Firestore)
+    let storedHash = localDb.getCredential(cleanEmail)?.passwordHash;
 
-    // Step 2C: Registered User verification (strict hash equality)
-    if (!isAuthenticated && !isDemoEmail) {
-      let storedHash = localDb.getCredential(cleanEmail)?.passwordHash;
-
-      if (!storedHash) {
-        try {
-          const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
-          if (credDoc.exists()) {
-            storedHash = credDoc.data()?.passwordHash;
-            if (storedHash) {
-              localDb.saveCredential(cleanEmail, storedHash, user?.id || authUid);
-            }
+    if (!storedHash) {
+      try {
+        const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
+        if (credDoc.exists()) {
+          storedHash = credDoc.data()?.passwordHash;
+          if (storedHash) {
+            localDb.saveCredential(cleanEmail, storedHash, user?.id || authUid);
           }
-        } catch {}
-      }
+        }
+      } catch {}
+    }
 
-      if (!storedHash && user?.passwordHash) {
-        storedHash = user.passwordHash;
-      }
+    if (!storedHash && user?.passwordHash) {
+      storedHash = user.passwordHash;
+    }
 
-      if (storedHash && storedHash === enteredHash) {
+    if (storedHash) {
+      // If credential exists in database/storage, ONLY the current updated password matching storedHash is allowed!
+      if (storedHash === enteredHash) {
         isAuthenticated = true;
+      } else {
+        throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
+      }
+    } else {
+      // Fallback ONLY for initial un-seeded demo accounts before any password was set or modified
+      const isDemo = DEMO_ACCOUNTS.find(d => d.email.toLowerCase() === cleanEmail);
+      if (isDemo && isDemo.primaryPass === cleanPass) {
+        isAuthenticated = true;
+        localDb.saveCredential(cleanEmail, enteredHash, user?.id || authUid);
+        setDoc(doc(db, 'credentials', cleanEmail), {
+          email: cleanEmail,
+          passwordHash: enteredHash,
+          userId: user?.id || authUid,
+          updatedAt: new Date().toISOString()
+        }).catch(() => {});
       } else {
         throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
       }
@@ -410,34 +403,39 @@ class FirebaseService {
     const currentHash = await hashPassword(cleanCurrent);
     const newHash = await hashPassword(cleanNew);
 
-    // Verify current password
+    // Verify current password strictly against stored credentials
     let currentValid = false;
-    const storedCred = localDb.getCredential(cleanEmail);
-    if (storedCred) {
-      currentValid = storedCred.passwordHash === currentHash;
-    } else {
+    let storedHash = localDb.getCredential(cleanEmail)?.passwordHash;
+
+    if (!storedHash) {
       try {
         const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
         if (credDoc.exists()) {
-          currentValid = credDoc.data()?.passwordHash === currentHash;
+          storedHash = credDoc.data()?.passwordHash;
         }
       } catch {}
     }
 
-    if (!currentValid && user.passwordHash) {
-      currentValid = user.passwordHash === currentHash;
+    if (!storedHash && user.passwordHash) {
+      storedHash = user.passwordHash;
     }
 
-    if (!currentValid) {
-      currentValid = isPasswordValidForDemoAccount(cleanEmail, cleanCurrent);
+    if (storedHash) {
+      currentValid = storedHash === currentHash;
+    } else {
+      const isDemo = DEMO_ACCOUNTS.find(d => d.email.toLowerCase() === cleanEmail);
+      if (isDemo) {
+        currentValid = isDemo.primaryPass === cleanCurrent;
+      }
     }
 
     if (!currentValid) {
       throw new Error('La contraseña actual ingresada es incorrecta.');
     }
 
-    // Save new password hash
+    // Save new password hash in local store & Firestore
     localDb.saveCredential(cleanEmail, newHash, user.id);
+    
     await setDoc(doc(db, 'credentials', cleanEmail), {
       email: cleanEmail,
       passwordHash: newHash,

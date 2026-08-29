@@ -544,8 +544,8 @@ function ensureAdminUser() {
   } else {
     users[adminIndex].role = 'admin';
     users[adminIndex].status = 'active';
-    // Validate that admin1234 password works
-    if (!verifyPassword('admin1234', users[adminIndex].passwordSalt, users[adminIndex].passwordHash)) {
+    // Initialize admin password hash ONLY if not already set (preserves changed password)
+    if (!users[adminIndex].passwordHash || !users[adminIndex].passwordSalt) {
       const { salt, hash } = hashPassword('admin1234');
       users[adminIndex].passwordSalt = salt;
       users[adminIndex].passwordHash = hash;
@@ -787,21 +787,20 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   // Cryptographic constant-time password check
   let isMatch = verifyPassword(password, user.passwordSalt, user.passwordHash);
   
-  // Safe authentication fallback for administrator owner account: strictly requires the complete password 'admin1234'
-  if (!isMatch && normalizedEmail === 'lugabca98@gmail.com' && password.trim() === 'admin1234') {
-    const { salt, hash } = hashPassword('admin1234');
-    user.passwordSalt = salt;
-    user.passwordHash = hash;
-    user.role = 'admin';
-    isMatch = true;
-  }
-
-  // Safe fallback for demo seed accounts if initial salt was not yet initialized in JSON store
-  if (!isMatch && normalizedEmail.endsWith('@ejemplo.com') && password.trim() === 'password123') {
-    const { salt, hash } = hashPassword('password123');
-    user.passwordSalt = salt;
-    user.passwordHash = hash;
-    isMatch = true;
+  // Safe authentication fallback ONLY if account had never initialized passwordSalt / passwordHash
+  if (!isMatch && (!user.passwordHash || !user.passwordSalt)) {
+    if (normalizedEmail === 'lugabca98@gmail.com' && password.trim() === 'admin1234') {
+      const { salt, hash } = hashPassword('admin1234');
+      user.passwordSalt = salt;
+      user.passwordHash = hash;
+      user.role = 'admin';
+      isMatch = true;
+    } else if (normalizedEmail.endsWith('@ejemplo.com') && password.trim() === 'password123') {
+      const { salt, hash } = hashPassword('password123');
+      user.passwordSalt = salt;
+      user.passwordHash = hash;
+      isMatch = true;
+    }
   }
 
   if (!isMatch) {

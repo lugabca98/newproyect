@@ -786,7 +786,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <button
               id="btn-update-password"
               type="submit"
-              disabled={changingPassword || !newPassword || !confirmNewPassword}
+              disabled={changingPassword || !currentPassword.trim() || !newPassword.trim() || !confirmNewPassword.trim()}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition border border-slate-700 hover:border-slate-600"
             >
               <Key className="w-3.5 h-3.5 text-rose-400" />
