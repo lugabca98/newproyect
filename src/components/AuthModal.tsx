@@ -31,7 +31,7 @@ import { firebaseService } from '../firebaseService';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
 
-export type AuthMode = 'register' | 'login' | 'verify-email-pending' | 'forgot-password' | 'reset-password-sent' | 'google-direct';
+export type AuthMode = 'register' | 'login' | 'verify-email-pending' | 'forgot-password' | 'reset-password-sent';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -163,15 +163,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Password Recovery form
   const [forgotEmail, setForgotEmail] = useState('');
   const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
-  const [recoverySimulatedLink, setRecoverySimulatedLink] = useState('');
-  const [directResetOpen, setDirectResetOpen] = useState(true);
-  const [directNewPassword, setDirectNewPassword] = useState('');
-  const [directConfirmPassword, setDirectConfirmPassword] = useState('');
-  const [showDirectPass, setShowDirectPass] = useState(false);
-  const [showDirectConfirmPass, setShowDirectConfirmPass] = useState(false);
-  const [resetOtpInput, setResetOtpInput] = useState('');
-  const [generatedResetOtp, setGeneratedResetOtp] = useState('');
-  const [copiedResetOtp, setCopiedResetOtp] = useState(false);
 
   // Verification Pending State (Registration OTP)
   const [registeredUser, setRegisteredUser] = useState<User | null>(null);
@@ -181,14 +172,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [regOtpInput, setRegOtpInput] = useState('');
   const [generatedRegOtp, setGeneratedRegOtp] = useState('');
   const [isRealDeliveryReg, setIsRealDeliveryReg] = useState(false);
-  const [isRealDeliveryReset, setIsRealDeliveryReset] = useState(false);
   const [copiedRegOtp, setCopiedRegOtp] = useState(false);
   const [otpVerifySuccess, setOtpVerifySuccess] = useState(false);
-
-  // Google Direct Connect Fallback (Mobile / Domain resilient)
-  const [googleDirectEmail, setGoogleDirectEmail] = useState('');
-  const [googleDirectName, setGoogleDirectName] = useState('');
-  const [googleDirectPhoto, setGoogleDirectPhoto] = useState(PRESET_AVATARS[0]);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -214,22 +199,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setInterestInput('');
     setForgotEmail('');
     setRecoverySuccessMsg('');
-    setRecoverySimulatedLink('');
-    setDirectResetOpen(true);
-    setDirectNewPassword('');
-    setDirectConfirmPassword('');
-    setShowDirectPass(false);
-    setShowDirectConfirmPass(false);
-    setResetOtpInput('');
-    setGeneratedResetOtp('');
-    setCopiedResetOtp(false);
     setRegOtpInput('');
     setGeneratedRegOtp('');
     setCopiedRegOtp(false);
     setOtpVerifySuccess(false);
-    setGoogleDirectEmail('');
-    setGoogleDirectName('');
-    setGoogleDirectPhoto(PRESET_AVATARS[0]);
     setErrorMsg('');
     setResendVerificationNotice('');
   };
@@ -308,69 +281,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (code === 'auth/invalid-email') {
       return 'El formato de correo ingresado no es válido.';
     }
-    if (code === 'auth/popup-closed-by-user') {
-      return 'Se cerró la ventana de inicio de sesión con Google.';
-    }
-    if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
-      const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
-      return `El dominio "${currentHost}" no está en la lista de dominios autorizados de tu proyecto de Firebase.`;
-    }
     return msg || 'Ocurrió un error inesperado al procesar la solicitud.';
-  };
-
-  const handleGoogleLoginAction = async (customPayload?: { email: string; name?: string; photoURL?: string }) => {
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      const res = await api.loginWithGoogle(customPayload);
-      resetAllFormInputs();
-      onSuccess(res.user, res.isAdmin);
-      onClose();
-    } catch (err: any) {
-      const code = err?.code || '';
-      const msg = err?.message || '';
-
-      if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain') || code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
-        // Automatically switch to smooth direct Google flow without forcing user to deal with Firebase Console domain restrictions on mobile
-        const fallbackEmail = email.trim() || regEmail.trim() || 'lugabca98@gmail.com';
-        const fallbackName = name.trim() || fallbackEmail.split('@')[0] || 'Usuario Google';
-        setGoogleDirectEmail(fallbackEmail);
-        setGoogleDirectName(fallbackName);
-        setGoogleDirectPhoto(selectedPhoto || PRESET_AVATARS[0]);
-        setMode('google-direct');
-        setErrorMsg('');
-      } else {
-        setErrorMsg(formatAuthError(err));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDirectGoogleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanEmail = googleDirectEmail.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setErrorMsg('Por favor ingresa un correo electrónico de Google válido.');
-      return;
-    }
-
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      const res = await api.loginWithGoogle({
-        email: cleanEmail,
-        name: googleDirectName.trim() || cleanEmail.split('@')[0] || 'Usuario Google',
-        photoURL: googleDirectPhoto || selectedPhoto || PRESET_AVATARS[0]
-      });
-      resetAllFormInputs();
-      onSuccess(res.user, res.isAdmin);
-      onClose();
-    } catch (err: any) {
-      setErrorMsg(formatAuthError(err));
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -563,8 +474,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleSendForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendForgotPassword = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const cleanEmail = forgotEmail.trim();
     if (!cleanEmail) {
       setErrorMsg('Por favor ingresá tu correo electrónico.');
@@ -574,55 +485,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     setErrorMsg('');
     setRecoverySuccessMsg('');
-    setRecoverySimulatedLink('');
 
     try {
       const res = await api.sendPasswordReset(cleanEmail);
-      if (res.code) {
-        setGeneratedResetOtp(res.code);
-      }
-      setIsRealDeliveryReset(Boolean(res.isRealDelivery));
-      setRecoverySuccessMsg(res.message || `Hemos enviado un código de recuperación a ${cleanEmail}.`);
-      setResetOtpInput('');
+      setRecoverySuccessMsg(res.message || `Hemos enviado un enlace de restablecimiento a ${cleanEmail}.`);
       setMode('reset-password-sent');
-      setResendVerificationCooldown(30);
-    } catch (err: any) {
-      setErrorMsg(formatAuthError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResetWithOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanOtp = resetOtpInput.trim().replace(/\s+/g, '');
-    const cleanEmail = forgotEmail.trim();
-
-    if (!cleanOtp || cleanOtp.length !== 6) {
-      setErrorMsg('Por favor ingresa el código de 6 dígitos.');
-      return;
-    }
-
-    if (!directNewPassword.trim() || directNewPassword.length < 6) {
-      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
-      return;
-    }
-    if (directNewPassword !== directConfirmPassword) {
-      setErrorMsg('Las contraseñas no coinciden.');
-      return;
-    }
-
-    setLoading(true);
-    setErrorMsg('');
-
-    try {
-      const res = await api.resetPasswordWithOtp(cleanEmail, cleanOtp, directNewPassword.trim());
-      setRecoverySuccessMsg(res.message);
-      setEmail(cleanEmail);
-      setPassword(directNewPassword.trim());
-      setTimeout(() => {
-        setMode('login');
-      }, 1500);
+      setResendVerificationCooldown(45);
     } catch (err: any) {
       setErrorMsg(formatAuthError(err));
     } finally {
@@ -660,7 +528,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'verify-email-pending' && 'Confirmación requerida • Verifica tu email'}
             {mode === 'forgot-password' && 'Recuperar acceso • Restablece tu contraseña'}
             {mode === 'reset-password-sent' && 'Instrucciones enviadas • Revisa tu casilla'}
-            {mode === 'google-direct' && 'Acceso Google • Conexión verificada y segura'}
           </p>
         </div>
 
@@ -691,36 +558,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {errorMsg && (
-          <div className="mb-4 p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs animate-in fade-in space-y-2">
-            <p className="text-center font-medium leading-relaxed">{errorMsg}</p>
-            {errorMsg.includes('dominios autorizados') && typeof window !== 'undefined' && (
-              <div className="pt-1 border-t border-rose-500/20 flex flex-col gap-2">
-                <div className="flex items-center justify-between bg-slate-950/80 px-2.5 py-1.5 rounded-xl border border-rose-500/30">
-                  <span className="font-mono text-[11px] text-rose-300 break-all select-all">
-                    {window.location.hostname}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(window.location.hostname);
-                      setCopiedResetOtp(true);
-                      setTimeout(() => setCopiedResetOtp(false), 2000);
-                    }}
-                    className="ml-2 px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 rounded-lg text-[10px] font-bold shrink-0 transition"
-                  >
-                    {copiedResetOtp ? '¡Copiado!' : 'Copiar'}
-                  </button>
-                </div>
-                <a
-                  href="https://console.firebase.google.com/project/vulnerable-app-e942a/authentication/settings"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] text-center text-rose-300 hover:text-white underline font-semibold"
-                >
-                  Abrir Dominios Autorizados en Firebase Console →
-                </a>
-              </div>
-            )}
+          <div className="mb-4 p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs text-center font-medium leading-relaxed animate-in fade-in">
+            {errorMsg}
           </div>
         )}
 
@@ -857,11 +696,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
               <h3 className="text-lg font-bold text-white">Recuperar Contraseña</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Ingresá tu correo electrónico registrado. Te enviaremos un código de seguridad de 6 dígitos a tu casilla de correo para restablecer tu clave.
+                Ingresá tu correo electrónico registrado. Te enviaremos un enlace seguro a tu casilla para que puedas modificarla directamente.
               </p>
             </div>
 
-            <form onSubmit={handleSendForgotPassword} className="space-y-4">
+            <form onSubmit={handleSendForgotPassword} autoComplete="off" className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   Correo Electrónico
@@ -874,6 +713,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     id="forgot-password-email"
                     type="email"
                     required
+                    autoComplete="off"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     placeholder="tu@email.com"
@@ -891,12 +731,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Enviando código al correo...</span>
+                    <span>Enviando enlace al correo...</span>
                   </>
                 ) : (
                   <>
                     <Mail className="w-4 h-4" />
-                    <span>Enviar Código a mi Correo</span>
+                    <span>Enviar Enlace al Correo</span>
                   </>
                 )}
               </button>
@@ -916,69 +756,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* --- 3. RESET PASSWORD SCREEN (WITH 6-DIGIT OTP & NEW PASS) --- */}
+        {/* --- 3. RESET PASSWORD LINK SENT CONFIRMATION --- */}
         {/* ------------------------------------------------------------- */}
         {mode === 'reset-password-sent' && (
-          <div className="space-y-5 py-1 animate-in fade-in">
+          <div className="space-y-5 py-2 animate-in fade-in">
             <div className="text-center space-y-2">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10 mx-auto">
-                <Mail className="w-6 h-6" />
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10 mx-auto">
+                <CheckCircle2 className="w-7 h-7" />
               </div>
 
               <h3 className="text-base sm:text-lg font-bold text-white">
-                Revisá tu Correo para Restablecer
+                ¡Enlace Enviado a tu Correo!
               </h3>
 
               <p className="text-xs text-slate-300">
-                Hemos enviado tu código de seguridad de 6 dígitos a:
+                Hemos enviado un enlace seguro para restablecer tu contraseña a:
               </p>
 
-              <div className="inline-block px-3.5 py-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-emerald-300 font-mono">
+              <div className="inline-block px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-emerald-300 font-mono">
                 {forgotEmail}
               </div>
 
-              {isRealDeliveryReset ? (
-                <div className="p-3 bg-emerald-950/60 border border-emerald-500/30 rounded-2xl text-[11px] text-emerald-200 max-w-md mx-auto space-y-1 text-left">
-                  <p className="flex items-center gap-1.5 text-emerald-300 font-semibold">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>Correo despachado con éxito</span>
-                  </p>
-                  <p className="text-slate-300 text-[10px]">
-                    Revisa tu bandeja de entrada o la carpeta de <strong>Spam / Correo no deseado</strong> para copiar tu código de 6 dígitos.
-                  </p>
-                </div>
-              ) : generatedResetOtp ? (
-                <div className="p-3 bg-slate-950/90 border border-emerald-500/30 rounded-2xl max-w-md mx-auto space-y-2 text-left">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
-                      <Key className="w-3.5 h-3.5 text-emerald-400" />
-                      Código de Restablecimiento:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setResetOtpInput(generatedResetOtp);
-                        setCopiedResetOtp(true);
-                        setTimeout(() => setCopiedResetOtp(false), 2000);
-                      }}
-                      className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-200 rounded-lg text-[10px] font-semibold transition flex items-center gap-1"
-                    >
-                      {copiedResetOtp ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedResetOtp ? 'Copiado' : 'Autocompletar'}</span>
-                    </button>
+              <div className="p-4 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl text-left space-y-2 max-w-md mx-auto">
+                <div className="flex items-start gap-2.5">
+                  <Mail className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="text-xs text-slate-300 space-y-1">
+                    <p className="font-semibold text-emerald-200">
+                      Revisá tu bandeja de entrada
+                    </p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Abrí el mensaje de restablecimiento y hacé clic en el enlace adjunto para ingresar tu nueva contraseña. Si no lo ves en unos minutos, revisá la carpeta de <strong>Spam / Correo no deseado</strong>.
+                    </p>
                   </div>
-                  <div className="flex items-center justify-center p-2 bg-slate-900 border border-slate-800 rounded-xl font-mono text-xl font-black text-emerald-200 tracking-widest">
-                    {generatedResetOtp}
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    💡 <em>Para recibir correos directamente en tu casilla de Gmail, configurá tu <code className="text-emerald-300">GMAIL_APP_PASSWORD</code> o <code className="text-emerald-300">RESEND_API_KEY</code> en la configuración.</em>
-                  </p>
                 </div>
-              ) : (
-                <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                  Revisá tu bandeja de entrada o la carpeta de Spam, copiá el código y crea tu nueva contraseña a continuación.
-                </p>
-              )}
+              </div>
             </div>
 
             {recoverySuccessMsg && (
@@ -987,244 +798,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
 
-            {/* OTP + New Password Form */}
-            <form onSubmit={handleResetWithOtpSubmit} className="space-y-3.5">
-              <div>
-                <label className="block text-center text-xs font-semibold text-slate-300 mb-2">
-                  Ingresá el código de 6 dígitos recibido por mail:
-                </label>
-                <OtpBoxes
-                  value={resetOtpInput}
-                  onChange={(val) => {
-                    setResetOtpInput(val);
-                    setErrorMsg('');
-                  }}
-                  idPrefix="reset-otp"
-                  disabled={loading}
-                />
-              </div>
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handleSendForgotPassword()}
+                disabled={loading || resendVerificationCooldown > 0}
+                className="w-full py-3 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-200 hover:text-white rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-2"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>
+                  {resendVerificationCooldown > 0
+                    ? `Reenviar nuevo enlace en (${resendVerificationCooldown}s)`
+                    : 'Reenviar enlace al correo'}
+                </span>
+              </button>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nueva Contraseña (mín. 6 caracteres)
-                </label>
-                <div className="relative">
-                  <input
-                    type={showDirectPass ? 'text' : 'password'}
-                    required
-                    minLength={6}
-                    value={directNewPassword}
-                    onChange={(e) => setDirectNewPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowDirectPass(!showDirectPass)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200"
-                  >
-                    {showDirectPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Confirmar Nueva Contraseña
-                </label>
-                <div className="relative">
-                  <input
-                    type={showDirectConfirmPass ? 'text' : 'password'}
-                    required
-                    minLength={6}
-                    value={directConfirmPassword}
-                    onChange={(e) => setDirectConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowDirectConfirmPass(!showDirectConfirmPass)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200"
-                  >
-                    {showDirectConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-2">
-                <button
-                  id="btn-submit-reset-otp"
-                  type="submit"
-                  disabled={loading || resetOtpInput.replace(/\s+/g, '').length !== 6 || !directNewPassword || !directConfirmPassword}
-                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-emerald-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Actualizando contraseña...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Validar Código y Cambiar Contraseña</span>
-                    </>
-                  )}
-                </button>
-
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSendForgotPassword}
-                    disabled={loading || resendVerificationCooldown > 0}
-                    className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                    <span>
-                      {resendVerificationCooldown > 0
-                        ? `Nuevo código en (${resendVerificationCooldown}s)`
-                        : 'Generar nuevo código'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => { setMode('login'); setErrorMsg(''); }}
-                    className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Ir al Login</span>
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* ------------------------------------------------------------- */}
-        {/* --- 3.5 GOOGLE DIRECT CONNECT (FOR MOBILE / BYPASS DOMAIN RESTRICTIONS) --- */}
-        {/* ------------------------------------------------------------- */}
-        {mode === 'google-direct' && (
-          <div className="space-y-4 animate-in fade-in">
-            <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center mx-auto shadow-inner">
-                <svg className="w-6 h-6" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-              </div>
-              <h3 className="text-sm font-bold text-white">Ingreso Directo con Google</h3>
-              <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                Conexión verificada compatible con celulares y navegadores móviles. Confirmá tus datos para acceder directamente.
-              </p>
+              <button
+                type="button"
+                onClick={() => { setMode('login'); setErrorMsg(''); }}
+                className="w-full py-2.5 bg-transparent hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Volver a Iniciar Sesión</span>
+              </button>
             </div>
-
-            <form onSubmit={handleDirectGoogleSubmit} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Tu Correo de Google / Gmail
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="email"
-                    required
-                    value={googleDirectEmail}
-                    onChange={(e) => setGoogleDirectEmail(e.target.value)}
-                    placeholder="tu@gmail.com"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nombre visible en tu perfil
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                    <UserIcon className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    value={googleDirectName}
-                    onChange={(e) => setGoogleDirectName(e.target.value)}
-                    placeholder="Ej. Lucas Garcia"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                  />
-                </div>
-              </div>
-
-              {/* Photo Choice */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
-                  Foto de Perfil
-                </label>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-                  {PRESET_AVATARS.map((url, i) => (
-                    <img
-                      key={`google-avatar-${i}`}
-                      src={url}
-                      alt={`Avatar ${i + 1}`}
-                      onClick={() => setGoogleDirectPhoto(url)}
-                      className={`w-9 h-9 rounded-full object-cover cursor-pointer transition border-2 shrink-0 ${
-                        googleDirectPhoto === url ? 'border-rose-500 scale-105 shadow' : 'border-slate-800 opacity-60 hover:opacity-100'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={loading || !googleDirectEmail}
-                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Conectando con Google...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Acceder y Autenticar con Google</span>
-                    </>
-                  )}
-                </button>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Attempt popup
-                      handleGoogleLoginAction();
-                    }}
-                    disabled={loading}
-                    className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
-                  >
-                    Probar ventana emergente
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => { setMode('login'); setErrorMsg(''); }}
-                    className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Volver</span>
-                  </button>
-                </div>
-              </div>
-            </form>
           </div>
         )}
+
+
 
         {/* ------------------------------------------------------------- */}
         {/* --- 4. REGISTER FORM --- */}
@@ -1509,43 +1110,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </>
               )}
             </button>
-
-            <div className="relative my-3 flex items-center justify-center">
-              <div className="border-t border-slate-800 w-full" />
-              <span className="bg-slate-900 px-3 text-[11px] text-slate-500 uppercase font-bold tracking-wider absolute">O</span>
-            </div>
-
-            <button
-              id="btn-google-register"
-              type="button"
-              onClick={() => handleGoogleLoginAction()}
-              disabled={loading}
-              className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl font-semibold text-xs transition flex items-center justify-center gap-2 shadow"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-              <span>Registrarse con Google</span>
-            </button>
-
-            <div className="text-center pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setGoogleDirectEmail(regEmail.trim() || 'lugabca98@gmail.com');
-                  setGoogleDirectName(name.trim() || 'Usuario Google');
-                  setGoogleDirectPhoto(selectedPhoto || PRESET_AVATARS[0]);
-                  setMode('google-direct');
-                  setErrorMsg('');
-                }}
-                className="text-[11px] text-slate-400 hover:text-rose-300 transition hover:underline"
-              >
-                📱 ¿En tu celular o sin ventanas emergentes? <strong className="text-rose-400">Ingreso Directo Google</strong>
-              </button>
-            </div>
           </form>
         )}
 
@@ -1575,7 +1139,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     id="btn-forgot-password-link"
                     type="button"
                     onClick={() => {
-                      setForgotEmail(email.trim());
+                      setForgotEmail('');
                       setMode('forgot-password');
                       setErrorMsg('');
                     }}
@@ -1614,43 +1178,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
               </button>
-
-              <div className="relative my-3 flex items-center justify-center">
-                <div className="border-t border-slate-800 w-full" />
-                <span className="bg-slate-900 px-3 text-[11px] text-slate-500 uppercase font-bold tracking-wider absolute">O</span>
-              </div>
-
-              <button
-                id="btn-google-login"
-                type="button"
-                onClick={() => handleGoogleLoginAction()}
-                disabled={loading}
-                className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl font-semibold text-xs transition flex items-center justify-center gap-2 shadow"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-                <span>Continuar con Google</span>
-              </button>
-
-              <div className="text-center pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGoogleDirectEmail(email.trim() || 'lugabca98@gmail.com');
-                    setGoogleDirectName(name.trim() || 'Usuario Google');
-                    setGoogleDirectPhoto(selectedPhoto || PRESET_AVATARS[0]);
-                    setMode('google-direct');
-                    setErrorMsg('');
-                  }}
-                  className="text-[11px] text-slate-400 hover:text-rose-300 transition hover:underline"
-                >
-                  📱 ¿En tu celular o sin ventanas emergentes? <strong className="text-rose-400">Ingreso Directo Google</strong>
-                </button>
-              </div>
             </form>
           </div>
         )}

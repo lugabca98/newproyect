@@ -228,44 +228,12 @@ class ApiService {
     return firebaseService.checkEmailVerification();
   }
 
-  async sendPasswordReset(email: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string; isRealDelivery?: boolean; provider?: string }> {
+  async sendPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
     const cleanEmail = (email || '').trim().toLowerCase();
-
-    // 1. Try server mailer endpoint first
-    try {
-      const response = await fetch('/api/mail/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, type: 'password_reset' })
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
-        firebaseService.sendPasswordReset(cleanEmail).catch(() => {});
-        return {
-          success: true,
-          message: data.message || `Código de recuperación enviado a ${cleanEmail}.`,
-          code: data.code,
-          isRealDelivery: data.isRealDelivery,
-          provider: data.provider,
-          previewUrl: data.previewUrl
-        };
-      } else if (!response.ok && data.error) {
-        throw new Error(data.error);
-      }
-    } catch (err: any) {
-      if (err.message && !err.message.includes('fetch')) {
-        throw err;
-      }
-      console.warn('[Api] Server mail send-otp error, using fallback:', err);
-    }
-
-    // 2. Fallback to Firebase service
     const fbRes = await firebaseService.sendPasswordReset(cleanEmail);
     return {
       success: fbRes.success,
-      code: fbRes.code,
-      message: fbRes.message,
-      isRealDelivery: false
+      message: fbRes.message
     };
   }
 

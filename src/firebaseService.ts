@@ -608,54 +608,29 @@ class FirebaseService {
     };
   }
 
-  async sendPasswordReset(email: string): Promise<{ success: boolean; code: string; message: string; simulatedLink?: string }> {
+  async sendPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail) {
       throw new Error('Por favor ingresa un correo electrónico válido.');
     }
 
-    // Check if user exists in Firestore, local store or demo accounts
-    let userFound = false;
-    const localUser = localDb.getUsers().find(u => (u.email || '').toLowerCase().trim() === cleanEmail);
-    if (localUser) {
-      userFound = true;
-    }
-
-    if (!userFound) {
-      try {
-        const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
-        if (credDoc.exists()) {
-          userFound = true;
-        }
-      } catch {}
-    }
-
-    if (!userFound) {
-      const isDemo = DEMO_ACCOUNTS.some(d => d.email.toLowerCase() === cleanEmail);
-      if (isDemo || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
-        userFound = true;
-      }
-    }
-
-    if (!userFound) {
-      throw new Error(`No encontramos ninguna cuenta registrada con el correo "${cleanEmail}".`);
-    }
-
-    const code = await this.generateOtp(cleanEmail, 'password_reset');
-
-    let authSent = false;
     try {
       await sendPasswordResetEmail(auth, cleanEmail);
-      authSent = true;
     } catch (authErr: any) {
       console.warn('[Firebase Auth] sendPasswordResetEmail note:', authErr);
+      const code = authErr?.code || '';
+      if (code === 'auth/user-not-found') {
+        throw new Error(`No encontramos ninguna cuenta registrada con el correo "${cleanEmail}".`);
+      } else if (code === 'auth/invalid-email') {
+        throw new Error('El formato de correo no es válido.');
+      } else if (code === 'auth/too-many-requests') {
+        throw new Error('Demasiadas solicitudes. Por favor aguarda unos instantes antes de volver a intentar.');
+      }
     }
 
     return {
       success: true,
-      code,
-      message: `Tu código de 6 dígitos para restablecer tu contraseña es: ${code}`,
-      simulatedLink: !authSent ? `https://vulnerable.app/auth/reset?email=${encodeURIComponent(cleanEmail)}` : undefined
+      message: `Hemos enviado un enlace seguro para restablecer tu contraseña a ${cleanEmail}. Revisa tu bandeja de entrada y la carpeta de spam.`
     };
   }
 
