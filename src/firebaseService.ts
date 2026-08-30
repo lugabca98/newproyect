@@ -20,6 +20,7 @@ import {
   updatePassword,
   sendEmailVerification,
   sendPasswordResetEmail,
+  deleteUser,
   reload,
   GoogleAuthProvider, 
   signOut, 
@@ -173,18 +174,60 @@ class FirebaseService {
     } catch (authErr: any) {
       const code = authErr?.code || '';
       if (code === 'auth/email-already-in-use') {
-        throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
-      }
-      if (code === 'auth/invalid-email') {
+        // Check if this is a previously deleted account being re-registered
+        let isReactivation = false;
+        try {
+          // Attempt sign-in with the provided password
+          const cred = await signInWithEmailAndPassword(auth, email, cleanPass);
+          const existingUserDoc = await getDoc(doc(db, 'users', cred.user.uid));
+          const localUser = localDb.getUsers().find(u => (u.email || '').toLowerCase() === email || u.id === cred.user.uid);
+
+          // If no active Firestore document exists or it was deleted, allow seamless recreation!
+          if (!existingUserDoc.exists() && (!localUser || localUser.id.startsWith('user-'))) {
+            uid = cred.user.uid;
+            emailVerified = cred.user.emailVerified;
+            isReactivation = true;
+            try {
+              await updateProfile(cred.user, { displayName: userData.name?.trim() || 'Usuario' });
+            } catch {}
+          } else if (existingUserDoc.exists()) {
+            const existingData = existingUserDoc.data() as User;
+            if (existingData.status === 'blocked') {
+              throw new Error('Esta cuenta se encuentra bloqueada por el administrador.');
+            }
+            throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
+          }
+        } catch (signInErr: any) {
+          if (isReactivation) {
+            // Already handled
+          } else if (signInErr.message?.includes('bloqueada') || signInErr.message?.includes('inicia sesión')) {
+            throw signInErr;
+          } else {
+            // Check if profile exists in Firestore
+            const existingProfile = await this.getUserByEmail(email);
+            if (existingProfile && existingProfile.status === 'blocked') {
+              throw new Error('Esta cuenta se encuentra bloqueada por el administrador.');
+            }
+            if (!existingProfile) {
+              // Account was deleted, but old Firebase Auth password differs
+              throw new Error('Este correo pertenecía a una cuenta previa. Si recuerdas la contraseña anterior, inicia sesión, o utiliza "Olvidé mi contraseña" para restablecerla.');
+            }
+            throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
+          }
+        }
+
+        if (!isReactivation && !uid) {
+          throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
+        }
+      } else if (code === 'auth/invalid-email') {
         throw new Error('El formato del correo electrónico no es válido.');
-      }
-      if (code === 'auth/weak-password') {
+      } else if (code === 'auth/weak-password') {
         throw new Error('La contraseña debe tener al menos 6 caracteres.');
-      }
-      if (code === 'auth/operation-not-allowed') {
+      } else if (code === 'auth/operation-not-allowed') {
         throw new Error('El proveedor de Email/Contraseña debe estar habilitado en la consola de Firebase Authentication.');
+      } else {
+        throw authErr;
       }
-      throw authErr;
     }
 
     // 3. User document (NO PASSWORDS stored in Firestore)
@@ -1538,21 +1581,93 @@ class FirebaseService {
     return { ...user, verified: newVerified };
   }
 
+  async deleteCurrentUser(): Promise<void> {
+    const currentUid = auth.currentUser?.uid || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_uid') : null);
+    const currentEmail = auth.currentUser?.email || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_email') : null);
+
+    if (!currentUid) throw new Error('No hay sesión activa para eliminar');
+
+    // 1. Delete in server backend (cascade swipes, matches, messages, sessions)
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_token') : null;
+      if (token) {
+        await fetch('/api/user/account', {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
+    } catch (err) {
+      console.warn('[Server] Delete account notice:', err);
+    }
+
+    // 2. Delete in Firestore
+    try {
+      await deleteDoc(doc(db, 'users', currentUid));
+      await deleteDoc(doc(db, 'publicProfiles', currentUid)).catch(() => {});
+      if (currentEmail) {
+        await deleteDoc(doc(db, 'credentials', currentEmail.toLowerCase().trim())).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[Firestore] Delete account notice:', err);
+    }
+
+    // 3. Delete in LocalStorage & localDb
+    if (currentEmail) {
+      localDb.removeUser(currentUid, currentEmail);
+    } else {
+      localDb.removeUser(currentUid);
+    }
+
+    // 4. Delete Firebase Auth User record (releases email in Firebase Auth!)
+    if (auth.currentUser) {
+      try {
+        await deleteUser(auth.currentUser);
+      } catch (authDelErr: any) {
+        console.warn('[Firebase Auth] deleteUser notice:', authDelErr);
+      }
+    }
+
+    // 5. Clear session storage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('vulnerable_auth_token');
+      localStorage.removeItem('vulnerable_auth_uid');
+      localStorage.removeItem('vulnerable_auth_email');
+      localStorage.removeItem('vulnerable_auth_role');
+    }
+  }
+
   async adminDeleteUser(targetUserId: string): Promise<void> {
     const user = await this.getUserById(targetUserId) || localDb.getUsers().find(u => u.id === targetUserId);
-    
-    // Delete in Firestore
+    const userEmail = (user?.email || '').trim().toLowerCase();
+
+    // 1. Call server-side admin delete
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_token') : null;
+      if (token) {
+        await fetch(`/api/admin/users/${targetUserId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
+    } catch (err) {
+      console.warn('[Server Admin Delete] Notice:', err);
+    }
+
+    // 2. Delete in Firestore
     try {
       await deleteDoc(doc(db, 'users', targetUserId));
       await deleteDoc(doc(db, 'publicProfiles', targetUserId)).catch(() => {});
+      if (userEmail) {
+        await deleteDoc(doc(db, 'credentials', userEmail)).catch(() => {});
+      }
     } catch (err) {
       console.warn('[Firestore] Delete notice:', err);
     }
 
-    // Delete in local storage
-    const updatedUsers = localDb.getUsers().filter(u => u.id !== targetUserId);
-    localDb.saveUsers(updatedUsers);
+    // 3. Delete in local storage & credentials
+    localDb.removeUser(targetUserId, userEmail);
 
+    // 4. Record audit log
     const currentAdmin = auth.currentUser;
     const adminEmail = currentAdmin?.email || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_email') : null) || DEFAULT_ADMIN_EMAIL;
     const adminUid = currentAdmin?.uid || (typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_uid') : null) || 'admin-owner';
@@ -1565,7 +1680,7 @@ class FirebaseService {
       targetUserId,
       targetUserName: user?.name || targetUserId,
       timestamp: new Date().toISOString(),
-      details: `Cuenta eliminada permanentemente por el administrador.`
+      details: `Cuenta eliminada permanentemente por el administrador (${userEmail || targetUserId}).`
     };
 
     localDb.addAuditLog(logData);

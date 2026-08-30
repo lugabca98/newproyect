@@ -419,6 +419,12 @@ class ApiService {
     return { user, message: `Insignia de verificación actualizada (${user.verified ? 'Verificado' : 'No verificado'}).` };
   }
 
+  async deleteOwnAccount(): Promise<{ success: boolean; message: string }> {
+    await firebaseService.deleteCurrentUser();
+    this.setToken(null);
+    return { success: true, message: 'Tu cuenta ha sido eliminada exitosamente.' };
+  }
+
   async deleteUser(userId: string): Promise<{ success: boolean; message: string }> {
     await firebaseService.adminDeleteUser(userId);
     return { success: true, message: 'Usuario eliminado permanentemente de la base de datos.' };

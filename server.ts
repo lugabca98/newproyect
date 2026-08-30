@@ -1239,6 +1239,55 @@ app.put('/api/user/change-password', requireAuth, passwordLimiter, (req, res) =>
   res.json({ success: true, message: '¡Tu contraseña ha sido actualizada exitosamente!' });
 });
 
+// Self-Delete Account (User permanently deletes their own account and all data)
+app.delete('/api/user/account', requireAuth, (req, res) => {
+  const user = (req as any).user as ServerUser;
+  const userId = user.id;
+  const userEmail = (user.email || '').toLowerCase().trim();
+
+  if (user.role === 'admin') {
+    res.status(400).json({ error: 'No es posible eliminar la cuenta del administrador principal.' });
+    return;
+  }
+
+  const userIndex = users.findIndex(u => u.id === userId);
+  if (userIndex !== -1) {
+    users.splice(userIndex, 1);
+  }
+
+  // Cascade clean-up (swipes, matches, messages)
+  swipes = swipes.filter(s => s.swiperId !== userId && s.targetId !== userId);
+  matches = matches.filter(m => !m.userIds.includes(userId));
+  messages = messages.filter(msg => msg.senderId !== userId && msg.receiverId !== userId);
+
+  // Clean up OTP store for this email
+  if (userEmail) {
+    otpStore.delete(`${userEmail}_verify_email`);
+    otpStore.delete(`${userEmail}_password_reset`);
+  }
+
+  // Invalidate all active sessions for this user
+  for (const [token, session] of sessions.entries()) {
+    if (session.userId === userId) {
+      sessions.delete(token);
+    }
+  }
+
+  const log: AuditLog = {
+    id: `log-${Date.now()}`,
+    adminEmail: userEmail || 'user-self',
+    action: 'DELETE_USER',
+    targetUserId: userId,
+    targetUserName: user.name,
+    timestamp: new Date().toISOString(),
+    details: `El usuario eliminó voluntariamente su cuenta (${userEmail}).`
+  };
+  auditLogs.unshift(log);
+  saveDatabase();
+
+  res.json({ success: true, message: 'Tu cuenta ha sido eliminada permanentemente.' });
+});
+
 // Discover / Swipe Candidates Feed (Strictly sanitizes other profiles to prevent data leak)
 app.get('/api/profiles/feed', requireAuth, (req, res) => {
   const currentUserId = (req as any).user.id;
@@ -1725,6 +1774,13 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   swipes = swipes.filter(s => s.swiperId !== id && s.targetId !== id);
   matches = matches.filter(m => !m.userIds.includes(id));
   messages = messages.filter(msg => msg.senderId !== id && msg.receiverId !== id);
+
+  // Clean up OTP store for target user's email
+  const targetEmail = (targetUser.email || '').toLowerCase().trim();
+  if (targetEmail) {
+    otpStore.delete(`${targetEmail}_verify_email`);
+    otpStore.delete(`${targetEmail}_password_reset`);
+  }
 
   // Invalidate all active sessions for this deleted user
   for (const [token, session] of sessions.entries()) {

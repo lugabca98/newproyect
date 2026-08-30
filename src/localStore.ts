@@ -416,6 +416,29 @@ class LocalDatabaseStore {
     this.setStored(STORAGE_KEY_USERS, users);
   }
 
+  removeUser(userId: string, email?: string): void {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const currentUsers = this.getStored<User[]>(STORAGE_KEY_USERS, []);
+    const filtered = currentUsers.filter(u => 
+      u.id !== userId && (!cleanEmail || (u.email || '').trim().toLowerCase() !== cleanEmail)
+    );
+    this.saveUsers(filtered);
+
+    if (cleanEmail) {
+      this.removeCredential(cleanEmail);
+    }
+  }
+
+  removeCredential(email: string): void {
+    if (!email) return;
+    const creds = this.getCredentials();
+    const cleanEmail = email.trim().toLowerCase();
+    if (creds[cleanEmail]) {
+      delete creds[cleanEmail];
+      this.setStored(STORAGE_KEY_CREDENTIALS, creds);
+    }
+  }
+
   getSwipes(): SwipeRecord[] {
     return this.getStored<SwipeRecord[]>(STORAGE_KEY_SWIPES, []);
   }

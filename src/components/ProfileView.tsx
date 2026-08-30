@@ -21,7 +21,8 @@ import {
   Upload,
   Mail,
   MailCheck,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
@@ -95,6 +96,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [generatedProfileOtp, setGeneratedProfileOtp] = useState('');
   const [verifyingProfileOtp, setVerifyingProfileOtp] = useState(false);
   const [showOtpEntry, setShowOtpEntry] = useState(false);
+
+  // Account Deletion State
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteErrorMsg, setDeleteErrorMsg] = useState('');
+
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    setDeleteErrorMsg('');
+    try {
+      await api.deleteOwnAccount();
+      setShowDeleteModal(false);
+      if (onLogout) {
+        onLogout();
+      }
+    } catch (err: any) {
+      setDeleteErrorMsg(err?.message || 'Error al eliminar la cuenta. Por favor intenta de nuevo.');
+      setDeletingAccount(false);
+    }
+  };
 
   // Handle local file upload with auto-compression (compact JPEG for fast Firestore saving)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -943,6 +964,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </form>
       </div>
 
+      {/* Danger Zone: Permanent Account Deletion */}
+      {currentUser.role !== 'admin' && (
+        <div className="bg-red-950/20 border border-red-900/40 rounded-3xl p-6 shadow-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-red-400 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500" />
+              <span>Zona de Peligro</span>
+            </h3>
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Si deseas eliminar tu cuenta permanentemente, se borrarán todos tus datos de perfil, fotos, matches y mensajes. Tu correo quedará liberado inmediatamente para que puedas registrarte nuevamente si lo deseas.
+          </p>
+          <div className="pt-2">
+            <button
+              id="btn-trigger-delete-account"
+              type="button"
+              onClick={() => {
+                setDeleteErrorMsg('');
+                setShowDeleteModal(true);
+              }}
+              className="px-4 py-2.5 bg-red-950/80 hover:bg-red-900 text-red-300 hover:text-white border border-red-800/60 rounded-xl text-xs font-bold transition flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Eliminar mi cuenta definitivamente</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Save Button & Feedback Alerts */}
       <div className="sticky bottom-4 z-30 flex flex-col gap-2">
         {errorMsg && (
@@ -980,6 +1030,60 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </button>
         )}
       </div>
+
+      {/* Delete Account Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-400 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-lg font-bold text-white">¿Eliminar cuenta permanentemente?</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Esta acción no se puede deshacer. Se eliminarán todas tus fotos, preferencias, matches y conversaciones. Tu correo electrónico quedará libre para un nuevo registro.
+              </p>
+            </div>
+
+            {deleteErrorMsg && (
+              <div className="p-3 rounded-xl bg-red-950/80 border border-red-500/40 text-red-300 text-xs text-center">
+                {deleteErrorMsg}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={deletingAccount}
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn-confirm-delete-account"
+                type="button"
+                disabled={deletingAccount}
+                onClick={handleDeleteAccount}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-red-600/30 flex items-center justify-center gap-1.5"
+              >
+                {deletingAccount ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sí, Eliminar Cuenta</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
