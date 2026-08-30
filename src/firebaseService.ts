@@ -20,6 +20,7 @@ import {
   updatePassword,
   sendEmailVerification,
   sendPasswordResetEmail,
+  reload,
   GoogleAuthProvider, 
   signOut, 
   onAuthStateChanged,
@@ -152,49 +153,45 @@ class FirebaseService {
       throw new Error('El correo y una contraseña de al menos 6 caracteres son requeridos.');
     }
 
-    // Check if user is already registered locally or in Firestore
-    const existingLocal = localDb.getUsers().find(u => (u.email || '').toLowerCase().trim() === email);
-    if (existingLocal) {
-      throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión en la pestaña "Ingresar".');
-    }
-
     const isOwnerAdmin = email === DEFAULT_ADMIN_EMAIL.toLowerCase();
-    let uid = isOwnerAdmin ? 'admin-owner' : 'usr_' + Math.abs(email.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)).toString(36);
 
-    // Compute cryptographic password hash
-    const passwordHash = await hashPassword(cleanPass);
+    // 1. Create account directly with Firebase Authentication
+    let uid = '';
+    let emailVerified = false;
 
-    // 1. Try Firebase Authentication first, fallback gracefully if provider is disabled in console
-    let emailSentToUser = false;
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, cleanPass);
       uid = cred.user.uid;
+      emailVerified = cred.user.emailVerified;
+
+      // 2. Immediately send verification email
       try {
         await sendEmailVerification(cred.user);
-        emailSentToUser = true;
       } catch (verErr) {
-        console.warn('[Firebase Auth] sendEmailVerification note:', verErr);
+        console.warn('[Firebase Auth] sendEmailVerification notice:', verErr);
       }
     } catch (authErr: any) {
-      const code = authErr?.code;
+      const code = authErr?.code || '';
       if (code === 'auth/email-already-in-use') {
-        throw new Error('Este correo electrónico ya se encuentra registrado en Firebase. Por favor inicia sesión.');
+        throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
       }
-      try {
-        const anonCred = await signInAnonymously(auth);
-        uid = anonCred.user.uid;
-      } catch {
-        // Continue with resilient local/Firestore deterministic UID
+      if (code === 'auth/invalid-email') {
+        throw new Error('El formato del correo electrónico no es válido.');
       }
+      if (code === 'auth/weak-password') {
+        throw new Error('La contraseña debe tener al menos 6 caracteres.');
+      }
+      if (code === 'auth/operation-not-allowed') {
+        throw new Error('El proveedor de Email/Contraseña debe estar habilitado en la consola de Firebase Authentication.');
+      }
+      throw authErr;
     }
 
-    // Save credential in local database
-    localDb.saveCredential(email, passwordHash, uid);
-
-    // 2. Public profile (visible in feed - NO EMAIL, NO PREFERENCES, NO PASSWORDS)
-    const publicProfile = {
+    // 3. User document (NO PASSWORDS stored in Firestore)
+    const newUser: User = {
       id: uid,
       name: userData.name?.trim() || (isOwnerAdmin ? 'Administrador' : 'Nuevo Miembro'),
+      email,
       age: Number(userData.age) || 24,
       gender: userData.gender || 'female',
       bio: userData.bio?.trim() || '',
@@ -206,21 +203,14 @@ class FirebaseService {
       occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
       verified: isOwnerAdmin,
-      emailVerified: isOwnerAdmin ? true : emailSentToUser,
-      status: ('active' as UserStatus),
+      emailVerified: isOwnerAdmin ? true : emailVerified,
+      status: 'active' as UserStatus,
       role: (isOwnerAdmin ? 'admin' : 'user') as UserRole,
       createdAt: new Date().toISOString(),
       lastActive: new Date().toISOString(),
       likesCount: 0,
-      matchesCount: 0
-    };
-
-    // 3. Full private profile (for settings & account management)
-    const newUser: User = {
-      ...publicProfile,
-      email,
-      passwordHash,
-      preferences: {
+      matchesCount: 0,
+      preferences: userData.preferences || {
         minAge: 18,
         maxAge: 60,
         interestedIn: ['female', 'male', 'non-binary', 'other'],
@@ -229,30 +219,13 @@ class FirebaseService {
     };
 
     try {
-      if (!isOwnerAdmin) {
-        await setDoc(doc(db, 'publicProfiles', uid), publicProfile);
-      } else {
-        await deleteDoc(doc(db, 'publicProfiles', uid)).catch(() => {});
-      }
       await setDoc(doc(db, 'users', uid), newUser);
-      await setDoc(doc(db, 'credentials', email), {
-        email,
-        passwordHash,
-        userId: uid,
-        updatedAt: new Date().toISOString()
-      }).catch(() => {});
-
       if (isOwnerAdmin) {
         await setDoc(doc(db, 'admins', uid), { email, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
       }
     } catch (dbErr) {
       console.warn('[Firestore] Register sync note:', dbErr);
     }
-
-    // Generate 6-digit activation OTP
-    try {
-      await this.generateOtp(email, 'verify_email');
-    } catch {}
 
     // Save in local storage cache
     const existingUsers = localDb.getUsers().filter(u => u.id !== uid && u.email !== email);
@@ -271,107 +244,67 @@ class FirebaseService {
 
     const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
-    // 1. Locate user in local store or Firestore
-    const localUsers = localDb.getUsers();
-    let user = localUsers.find(u => (u.email || '').toLowerCase().trim() === cleanEmail) || null;
+    // 1. Authenticate directly with Firebase Authentication
+    let authUid = '';
+    let isEmailVerified = false;
 
-    if (!user) {
-      try {
-        const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          user = snap.docs[0].data() as User;
-        }
-      } catch {}
-    }
-
-    // If user is completely unregistered and not the default admin, reject immediately
-    if (!user && !isOwnerAdmin) {
-      throw new Error(`No existe ninguna cuenta registrada con el correo "${cleanEmail}". Por favor crea una cuenta en la pestaña "Registrarse".`);
-    }
-
-    // 2. Strict Password Validation: Exact password match against stored hash is mandatory!
-    const enteredHash = await hashPassword(cleanPass);
-    let isAuthenticated = false;
-    let authUid = user?.id || (isOwnerAdmin ? 'admin-owner' : '');
-
-    // Step 2A: Try Firebase Authentication SDK if available
     try {
       const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
-      isAuthenticated = true;
+      // Reload user from Firebase servers to fetch freshest emailVerified state
+      await reload(cred.user);
       authUid = cred.user.uid;
+      isEmailVerified = cred.user.emailVerified;
     } catch (authErr: any) {
-      // If Firebase Auth is not available or email/pass disabled, proceed with secure hash verification
-    }
-
-    // Step 2B: Strict verification against stored credential (local storage & Firestore)
-    let storedHash = localDb.getCredential(cleanEmail)?.passwordHash;
-
-    if (!storedHash) {
-      try {
-        const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
-        if (credDoc.exists()) {
-          storedHash = credDoc.data()?.passwordHash;
-          if (storedHash) {
-            localDb.saveCredential(cleanEmail, storedHash, user?.id || authUid);
-          }
-        }
-      } catch {}
-    }
-
-    if (!storedHash && user?.passwordHash) {
-      storedHash = user.passwordHash;
-    }
-
-    if (storedHash) {
-      // If credential exists in database/storage, ONLY the current updated password matching storedHash is allowed!
-      if (storedHash === enteredHash) {
-        isAuthenticated = true;
-      } else {
-        throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
+      const code = authErr?.code || '';
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/user-not-found') {
+        throw new Error('Correo o contraseña incorrectos. Por favor verifícalos.');
       }
-    } else {
-      // Fallback ONLY for initial un-seeded demo accounts before any password was set or modified
-      const isDemo = DEMO_ACCOUNTS.find(d => d.email.toLowerCase() === cleanEmail);
-      if (isDemo && isDemo.primaryPass === cleanPass) {
-        isAuthenticated = true;
-        localDb.saveCredential(cleanEmail, enteredHash, user?.id || authUid);
-        setDoc(doc(db, 'credentials', cleanEmail), {
-          email: cleanEmail,
-          passwordHash: enteredHash,
-          userId: user?.id || authUid,
-          updatedAt: new Date().toISOString()
-        }).catch(() => {});
-      } else {
-        throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
+      if (code === 'auth/invalid-email') {
+        throw new Error('El formato de correo electrónico no es válido.');
       }
+      if (code === 'auth/too-many-requests') {
+        throw new Error('Demasiados intentos fallidos. Por favor espera unos minutos antes de volver a intentar.');
+      }
+      if (code === 'auth/user-disabled') {
+        throw new Error('Esta cuenta ha sido deshabilitada.');
+      }
+      if (code === 'auth/network-request-failed') {
+        throw new Error('Problema de conexión con el servidor. Revisa tu conexión a internet.');
+      }
+      throw authErr;
     }
 
-    if (!isAuthenticated) {
-      throw new Error('La contraseña ingresada es incorrecta. Por favor verifica tus credenciales.');
-    }
-
-    // Maintain anonymous session for Firestore rules if email auth provider was unavailable
-    if (!auth.currentUser) {
-      try {
-        await signInAnonymously(auth);
-      } catch {}
-    }
-
-    // Bootstrap user if it was not in local/Firestore yet (e.g. initial admin)
+    // 2. Fetch User Profile from Firestore
+    let user = await this.getUserById(authUid);
     if (!user) {
-      if (isOwnerAdmin) {
-        user = {
-          ...INITIAL_ADMIN,
-          id: authUid || 'admin-owner',
-          lastActive: new Date().toISOString(),
-          passwordHash: enteredHash
-        };
-        await setDoc(doc(db, 'users', user.id), user).catch(() => {});
-        await setDoc(doc(db, 'admins', user.id), { email: cleanEmail, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
-      } else {
-        throw new Error('No se encontró el perfil de usuario asociado a este correo.');
-      }
+      user = await this.getUserByEmail(cleanEmail);
+    }
+
+    if (!user) {
+      // Create user doc if not present
+      user = {
+        id: authUid,
+        name: isOwnerAdmin ? 'Administrador' : 'Usuario',
+        email: cleanEmail,
+        age: 25,
+        gender: 'other',
+        bio: 'Conectando con empatía en Vulnerable.',
+        photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+        location: 'Buenos Aires, Argentina',
+        distanceKm: 2,
+        occupation: 'Neurodivergente',
+        interests: ['Música', 'Lectura'],
+        verified: isOwnerAdmin,
+        emailVerified: isOwnerAdmin ? true : isEmailVerified,
+        status: 'active',
+        role: isOwnerAdmin ? 'admin' : 'user',
+        createdAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        likesCount: 0,
+        matchesCount: 0,
+        preferences: { minAge: 18, maxAge: 60, interestedIn: ['female', 'male', 'non-binary', 'other'], maxDistanceKm: 50 }
+      };
+      await setDoc(doc(db, 'users', authUid), user).catch(() => {});
     }
 
     if (user.status === 'blocked') {
@@ -379,20 +312,126 @@ class FirebaseService {
       throw new Error('Esta cuenta se encuentra temporalmente suspendida.');
     }
 
-    const now = new Date().toISOString();
-    user.lastActive = now;
-    await updateDoc(doc(db, 'users', user.id), { lastActive: now }).catch(() => {});
-    if (!isOwnerAdmin && user.role !== 'admin') {
-      await updateDoc(doc(db, 'publicProfiles', user.id), { lastActive: now }).catch(() => {});
-    } else {
-      await deleteDoc(doc(db, 'publicProfiles', user.id)).catch(() => {});
+    user.emailVerified = isOwnerAdmin ? true : isEmailVerified;
+    user.lastActive = new Date().toISOString();
+
+    // If verified, ensure public profile exists in feed
+    if (user.emailVerified && !isOwnerAdmin && user.role !== 'admin') {
+      await setDoc(doc(db, 'publicProfiles', user.id), {
+        id: user.id,
+        name: user.name,
+        age: user.age,
+        gender: user.gender,
+        bio: user.bio,
+        photos: user.photos,
+        location: user.location,
+        distanceKm: user.distanceKm,
+        occupation: user.occupation,
+        interests: user.interests,
+        verified: user.verified,
+        status: user.status,
+        role: user.role,
+        createdAt: user.createdAt,
+        lastActive: user.lastActive
+      }).catch(() => {});
     }
+
+    await updateDoc(doc(db, 'users', user.id), { 
+      lastActive: user.lastActive,
+      emailVerified: user.emailVerified 
+    }).catch(() => {});
 
     // Save in local storage cache
     const existingUsers = localDb.getUsers().filter(u => u.id !== user!.id && (u.email || '').toLowerCase() !== cleanEmail);
     localDb.saveUsers([user, ...existingUsers]);
 
     return user;
+  }
+
+  async sendVerificationEmail(targetEmail?: string): Promise<{ success: boolean; message: string }> {
+    const current = auth.currentUser;
+    if (!current) {
+      throw new Error('No hay una sesión activa para reenviar el correo de verificación.');
+    }
+
+    try {
+      await sendEmailVerification(current);
+      return {
+        success: true,
+        message: `Te enviamos un correo de confirmación a ${current.email || targetEmail || 'tu correo'}. Revisá tu bandeja de entrada y también la carpeta de spam.`
+      };
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/too-many-requests') {
+        throw new Error('Por favor espera 60 segundos antes de solicitar otro reenvío de correo.');
+      }
+      throw new Error(err?.message || 'Error al enviar el correo de verificación.');
+    }
+  }
+
+  async checkEmailVerification(): Promise<{ isVerified: boolean; user: User | null; message: string }> {
+    const current = auth.currentUser;
+    if (!current) {
+      return {
+        isVerified: false,
+        user: null,
+        message: 'No hay una sesión activa.'
+      };
+    }
+
+    // Force reload from Firebase Authentication servers
+    await reload(current);
+    const isVerified = current.emailVerified;
+
+    if (isVerified) {
+      let user = await this.getUserById(current.uid);
+      if (user) {
+        user.emailVerified = true;
+        user.lastActive = new Date().toISOString();
+
+        // Update Firestore
+        await updateDoc(doc(db, 'users', user.id), {
+          emailVerified: true,
+          lastActive: user.lastActive
+        }).catch(() => {});
+
+        // Sync public profile
+        if (user.role !== 'admin') {
+          await setDoc(doc(db, 'publicProfiles', user.id), {
+            id: user.id,
+            name: user.name,
+            age: user.age,
+            gender: user.gender,
+            bio: user.bio,
+            photos: user.photos,
+            location: user.location,
+            distanceKm: user.distanceKm,
+            occupation: user.occupation,
+            interests: user.interests,
+            verified: user.verified,
+            status: user.status,
+            role: user.role,
+            createdAt: user.createdAt,
+            lastActive: user.lastActive
+          }).catch(() => {});
+        }
+
+        const existingUsers = localDb.getUsers().filter(u => u.id !== user!.id);
+        localDb.saveUsers([user, ...existingUsers]);
+      }
+
+      return {
+        isVerified: true,
+        user,
+        message: '¡Tu correo electrónico ha sido verificado con éxito!'
+      };
+    }
+
+    return {
+      isVerified: false,
+      user: null,
+      message: 'Tu correo todavía no ha sido verificado. Por favor abrí el enlace de confirmación que te enviamos o hacé clic en "Reenviar correo".'
+    };
   }
 
   async changeUserPassword(userId: string, currentPass: string, newPass: string): Promise<{ success: boolean; message: string }> {
@@ -473,29 +512,6 @@ class FirebaseService {
     }
 
     return { success: true, message: '¡Contraseña actualizada con éxito!' };
-  }
-
-  async sendVerificationEmail(targetEmail?: string): Promise<{ success: boolean; code: string; message: string }> {
-    const cleanEmail = (targetEmail || auth.currentUser?.email || '').trim().toLowerCase();
-    const code = await this.generateOtp(cleanEmail, 'verify_email');
-    
-    let sentViaAuth = false;
-    if (auth.currentUser) {
-      try {
-        await sendEmailVerification(auth.currentUser);
-        sentViaAuth = true;
-      } catch (authErr: any) {
-        console.warn('[Firebase Auth] sendEmailVerification error:', authErr);
-      }
-    }
-
-    return {
-      success: true,
-      code,
-      message: sentViaAuth
-        ? `Se envió un enlace a ${cleanEmail} y tu código de activación de 6 dígitos es: ${code}`
-        : `Tu código de activación de 6 dígitos es: ${code}`
-    };
   }
 
   async generateOtp(email: string, type: 'verify_email' | 'password_reset'): Promise<string> {
@@ -914,6 +930,7 @@ class FirebaseService {
         occupation: 'Neurodivergente',
         interests: ['Música', 'Lectura', 'Tecnología'],
         verified: isOwnerAdmin,
+        emailVerified: true,
         status: 'active',
         role: isOwnerAdmin ? 'admin' : 'user',
         createdAt: new Date().toISOString(),
@@ -962,8 +979,14 @@ class FirebaseService {
         user.verified = true;
         setDoc(doc(db, 'admins', user.id), { email, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
       }
+      user.emailVerified = true;
       user.lastActive = new Date().toISOString();
-      updateDoc(doc(db, 'users', user.id), { lastActive: user.lastActive, role: user.role, verified: user.verified }).catch(() => {});
+      updateDoc(doc(db, 'users', user.id), { 
+        lastActive: user.lastActive, 
+        role: user.role, 
+        verified: user.verified,
+        emailVerified: true
+      }).catch(() => {});
     }
 
     // Save to local cache

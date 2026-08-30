@@ -22,49 +22,87 @@ service cloud.firestore {
       );
     }
 
+    function isEmailVerified() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        isAdmin()
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isNotBlocked(userId) {
+      return !exists(/databases/$(database)/documents/users/$(userId)) ||
+        get(/databases/$(database)/documents/users/$(userId)).data.status != 'blocked';
+    }
+
     // 1. PERFILES PÚBLICOS (/publicProfiles/{userId})
+    // Requiere email verificado y usuario no bloqueado para ver el feed
     match /publicProfiles/{userId} {
-      allow read, write: if true;
+      allow read: if isEmailVerified() && isNotBlocked(request.auth.uid);
+      allow create, update: if isEmailVerified() && isOwner(userId) && isNotBlocked(userId) && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'admin', 'verified', 'status']) || 
+        isAdmin()
+      );
+      allow delete: if isAdmin() || (isSignedIn() && isOwner(userId));
     }
 
     // 2. PERFILES PRIVADOS (/users/{userId})
+    // Un usuario puede crear/leer su perfil privado durante registro, pero no puede alterar role, admin, verified ni status
     match /users/{userId} {
-      allow read, write: if true;
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && isOwner(userId) && (
+        !request.resource.data.keys().hasAny(['role', 'admin', 'verified']) || 
+        isAdmin()
+      );
+      allow update: if isSignedIn() && (
+        (isOwner(userId) && isNotBlocked(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'admin', 'verified', 'status'])) || 
+        isAdmin()
+      );
+      allow delete: if isAdmin() || (isSignedIn() && isOwner(userId));
     }
 
     // 3. REGISTRO DE ADMINISTRADORES (/admins/{adminId})
     match /admins/{adminId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
     // 4. SWIPES (/swipes/{swipeId})
+    // Solo usuarios verificados y no bloqueados pueden swipear
     match /swipes/{swipeId} {
-      allow read, write: if true;
+      allow read: if isEmailVerified() && (resource.data.swiperId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && request.resource.data.swiperId == request.auth.uid && isNotBlocked(request.auth.uid);
+      allow update, delete: if isAdmin();
     }
 
     // 5. MATCHES (/matches/{matchId})
     match /matches/{matchId} {
-      allow read, write: if true;
+      allow read: if isEmailVerified() && (resource.data.userIds.hasAny([request.auth.uid]) || isAdmin());
+      allow create: if isEmailVerified() && request.resource.data.userIds.hasAny([request.auth.uid]) && isNotBlocked(request.auth.uid);
+      allow update: if isEmailVerified() && resource.data.userIds.hasAny([request.auth.uid]) && isNotBlocked(request.auth.uid);
+      allow delete: if isAdmin();
     }
 
     // 6. MENSAJES DE CHAT (/messages/{messageId})
     match /messages/{messageId} {
-      allow read, write: if true;
+      allow read: if isEmailVerified() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
+      allow create: if isEmailVerified() && request.resource.data.senderId == request.auth.uid && isNotBlocked(request.auth.uid);
+      allow update: if isEmailVerified() && resource.data.receiverId == request.auth.uid;
+      allow delete: if isAdmin();
     }
 
     // 7. AUDITORÍA (/auditLogs/{logId})
     match /auditLogs/{logId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
     // 8. REPORTES (/reports/{reportId})
     match /reports/{reportId} {
-      allow read, write: if true;
-    }
-
-    // 9. CREDENCIALES DE ACCESO (/credentials/{credentialId})
-    match /credentials/{credentialId} {
-      allow read, write: if true;
+      allow create: if isEmailVerified() && request.auth.uid == request.resource.data.reporterId && isNotBlocked(request.auth.uid);
+      allow read, update, delete: if isAdmin();
     }
   }
 }

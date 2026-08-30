@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
+import { firebaseService } from '../firebaseService';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
 
@@ -325,7 +326,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !password) {
       setErrorMsg('Por favor completa tu correo y contraseña.');
       return;
@@ -336,6 +337,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       const res = await api.login(cleanEmail, password);
+      
+      // Strict check: if email is not verified and not admin, show verification screen
+      if (!res.user.emailVerified && !res.isAdmin) {
+        setRegisteredUser(res.user);
+        setRegisteredIsAdmin(res.isAdmin);
+        setRegEmail(cleanEmail);
+        setResendVerificationNotice(`Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
+        setMode('verify-email-pending');
+        setResendVerificationCooldown(60);
+        return;
+      }
+
       resetAllFormInputs();
       onSuccess(res.user, res.isAdmin);
       onClose();
@@ -392,19 +405,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setRegisteredIsAdmin(res.isAdmin);
       setRegOtpInput('');
 
-      // Dispatch mail and get delivery state
-      const mailRes = await api.sendVerificationEmail(regEmail.trim(), name.trim());
-      if (mailRes.code) {
-        setGeneratedRegOtp(mailRes.code);
+      // If user is owner or already verified
+      if (res.isAdmin || res.user.emailVerified) {
+        resetAllFormInputs();
+        onSuccess(res.user, res.isAdmin);
+        onClose();
+        return;
       }
-      setIsRealDeliveryReg(Boolean(mailRes.isRealDelivery));
-      setResendVerificationNotice(mailRes.message || `Hemos enviado un correo a ${regEmail.trim()} con tu código de 6 dígitos.`);
+
+      setResendVerificationNotice(`Te enviamos un correo de confirmación a ${regEmail.trim()}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
 
       // Prompt email confirmation step immediately
       setMode('verify-email-pending');
-      setResendVerificationCooldown(30);
+      setResendVerificationCooldown(60);
     } catch (err: any) {
       setErrorMsg(formatAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCheckEmailVerification = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    setResendVerificationNotice('');
+    try {
+      const res = await firebaseService.checkEmailVerification();
+      if (res.isVerified && res.user) {
+        setOtpVerifySuccess(true);
+        setResendVerificationNotice(res.message);
+        setTimeout(() => {
+          onSuccess(res.user!, registeredIsAdmin);
+          resetAllFormInputs();
+          onClose();
+        }, 800);
+      } else {
+        setErrorMsg(res.message || 'Tu correo todavía no ha sido verificado. Por favor abrí el enlace de confirmación que te enviamos a tu correo electrónico.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al comprobar el estado de verificación.');
     } finally {
       setLoading(false);
     }
@@ -455,15 +494,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg('');
     try {
       const emailTarget = (regEmail || registeredUser?.email || '').trim();
-      const res = await api.sendVerificationEmail(emailTarget, name);
-      if (res.code) {
-        setGeneratedRegOtp(res.code);
-      }
-      setIsRealDeliveryReg(Boolean(res.isRealDelivery));
-      setResendVerificationNotice(res.message || `Nuevo código de 6 dígitos enviado a ${emailTarget}.`);
-      setResendVerificationCooldown(30);
+      const res = await firebaseService.sendVerificationEmail(emailTarget);
+      setResendVerificationNotice(res.message || `Te enviamos un correo de confirmación a ${emailTarget}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
+      setResendVerificationCooldown(60);
     } catch (err: any) {
-      setResendVerificationNotice(err.message || 'Error al reenviar el código de verificación.');
+      setErrorMsg(err.message || 'Error al reenviar el correo de verificación.');
     } finally {
       setLoading(false);
     }
@@ -612,153 +647,124 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* --- 1. EMAIL VERIFICATION PENDING SCREEN (ON REGISTER) --- */}
+        {/* --- 1. EMAIL VERIFICATION PENDING SCREEN (ON REGISTER/LOGIN) --- */}
         {/* ------------------------------------------------------------- */}
         {mode === 'verify-email-pending' && (
           <div className="space-y-5 py-1 animate-in fade-in">
             <div className="text-center space-y-2.5">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 shadow-lg shadow-rose-500/10 mx-auto">
-                <Mail className="w-7 h-7" />
+                <MailCheck className="w-7 h-7" />
               </div>
               
               <h3 className="text-base sm:text-lg font-bold text-white">
-                Revisá tu Correo Electrónico
+                Verificá tu Correo Electrónico
               </h3>
               
-              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
-                Hemos enviado un código de seguridad de 6 dígitos a:
-              </p>
-
-              <div className="inline-block px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-rose-300 font-mono">
-                {regEmail || registeredUser?.email}
+              <div className="p-3.5 bg-rose-950/40 border border-rose-500/30 rounded-2xl text-xs text-rose-200 leading-relaxed max-w-md mx-auto space-y-2">
+                <p>
+                  Te enviamos un correo de confirmación a <strong className="text-white font-mono">{regEmail || registeredUser?.email}</strong>.
+                </p>
+                <p className="text-[11px] text-slate-300">
+                  Revisá tu bandeja de entrada y también la carpeta de <strong>spam / correo no deseado</strong>.
+                </p>
               </div>
 
-              {isRealDeliveryReg ? (
-                <div className="p-3 bg-emerald-950/60 border border-emerald-500/30 rounded-2xl text-[11px] text-emerald-200 max-w-md mx-auto space-y-1 text-left">
-                  <p className="flex items-center gap-1.5 text-emerald-300 font-semibold">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>Correo despachado a tu casilla de correo</span>
-                  </p>
-                  <p className="text-slate-300 text-[10px]">
-                    Revisa tu bandeja de entrada o la carpeta de <strong>Spam / Correo no deseado</strong> para copiar tu código de 6 dígitos.
-                  </p>
-                </div>
-              ) : generatedRegOtp ? (
-                <div className="p-3 bg-slate-950/90 border border-rose-500/30 rounded-2xl max-w-md mx-auto space-y-2 text-left">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-rose-300 flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
-                      Código de Acceso:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRegOtpInput(generatedRegOtp);
-                        setCopiedRegOtp(true);
-                        setTimeout(() => setCopiedRegOtp(false), 2000);
-                      }}
-                      className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-200 rounded-lg text-[10px] font-semibold transition flex items-center gap-1"
-                    >
-                      {copiedRegOtp ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedRegOtp ? 'Copiado' : 'Autocompletar'}</span>
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-center p-2 bg-slate-900 border border-slate-800 rounded-xl font-mono text-xl font-black text-white tracking-widest">
-                    {generatedRegOtp}
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    💡 <em>Para recibir correos directamente en tu casilla de Gmail, configurá tu <code className="text-rose-300">GMAIL_APP_PASSWORD</code> o <code className="text-rose-300">RESEND_API_KEY</code> en la configuración.</em>
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3 bg-slate-950/70 border border-slate-800/80 rounded-2xl text-[11px] text-slate-400 max-w-md mx-auto space-y-1">
-                  <p className="flex items-center justify-center gap-1 text-slate-300 font-medium">
-                    <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Buscá el correo de <strong>Vulnerable</strong> en tu bandeja</span>
-                  </p>
-                  <p className="text-slate-400">
-                    Si no lo ves en tu bandeja principal, por favor verificá tu carpeta de <strong>Spam / Correo no deseado</strong> o Promociones.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* 6-Digit OTP Box inputs */}
-            <form onSubmit={handleVerifyRegisterOtp} className="space-y-4">
-              <div>
-                <label className="block text-center text-xs font-semibold text-slate-300 mb-2">
-                  Ingresá el código de 6 dígitos recibido en tu mail:
-                </label>
-                <OtpBoxes
-                  value={regOtpInput}
-                  onChange={(val) => {
-                    setRegOtpInput(val);
-                    setErrorMsg('');
-                  }}
-                  idPrefix="reg-otp"
-                  disabled={loading || otpVerifySuccess}
-                />
-              </div>
-
-              {otpVerifySuccess && (
-                <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-xs text-center font-bold flex items-center justify-center gap-2 animate-in fade-in">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>¡Código validado! Activando tu cuenta...</span>
-                </div>
-              )}
-
-              {resendVerificationNotice && !otpVerifySuccess && (
+              {resendVerificationNotice && (
                 <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-rose-300 text-xs text-center font-medium animate-in fade-in">
                   {resendVerificationNotice}
                 </div>
               )}
 
-              <div className="space-y-2.5 pt-1">
+              {otpVerifySuccess && (
+                <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-xs text-center font-bold flex items-center justify-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>¡Email verificado! Ingresando a la aplicación...</span>
+                </div>
+              )}
+            </div>
+
+            {/* Primary Action Buttons */}
+            <div className="space-y-3 pt-2">
+              <button
+                id="btn-check-email-verification"
+                type="button"
+                onClick={handleCheckEmailVerification}
+                disabled={loading || otpVerifySuccess}
+                className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Comprobando verificación...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-5 h-5" />
+                    <span>Ya verifiqué mi correo</span>
+                  </>
+                )}
+              </button>
+
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
-                  id="btn-verify-otp-submit"
-                  type="submit"
-                  disabled={loading || otpVerifySuccess || regOtpInput.replace(/\s+/g, '').length !== 6}
-                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+                  id="btn-resend-verification"
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={loading || resendVerificationCooldown > 0}
+                  className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Validando código...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Validar Código y Activar Cuenta</span>
-                    </>
-                  )}
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  <span>
+                    {resendVerificationCooldown > 0
+                      ? `Reenviar correo en (${resendVerificationCooldown}s)`
+                      : 'Reenviar correo'}
+                  </span>
                 </button>
 
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    id="btn-resend-verification"
-                    type="button"
-                    onClick={handleResendVerification}
-                    disabled={loading || resendVerificationCooldown > 0}
-                    className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                    <span>
-                      {resendVerificationCooldown > 0
-                        ? `Reenviar correo en (${resendVerificationCooldown}s)`
-                        : 'Reenviar código al correo'}
-                    </span>
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode('login'); setErrorMsg(''); }}
+                  className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
+                >
+                  Volver al Login
+                </button>
+              </div>
+            </div>
+
+            {/* Optional 6-Digit OTP Box inputs for alternative code verification */}
+            <div className="pt-3 border-t border-slate-800/80">
+              <details className="group">
+                <summary className="text-[11px] text-slate-400 hover:text-rose-300 font-medium cursor-pointer text-center list-none transition">
+                  ¿Recibiste un código de 6 dígitos? Ingresalo aquí ↓
+                </summary>
+                
+                <form onSubmit={handleVerifyRegisterOtp} className="mt-3 space-y-3">
+                  <OtpBoxes
+                    value={regOtpInput}
+                    onChange={(val) => {
+                      setRegOtpInput(val);
+                      setErrorMsg('');
+                    }}
+                    idPrefix="reg-otp"
+                    disabled={loading || otpVerifySuccess}
+                  />
 
                   <button
-                    type="button"
-                    onClick={handleCompleteVerificationFlow}
-                    className="px-3.5 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
+                    id="btn-verify-otp-submit"
+                    type="submit"
+                    disabled={loading || otpVerifySuccess || regOtpInput.replace(/\s+/g, '').length !== 6}
+                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-2"
                   >
-                    Omitir por ahora
+                    {loading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    <span>Validar Código</span>
                   </button>
-                </div>
-              </div>
-            </form>
+                </form>
+              </details>
+            </div>
           </div>
         )}
 

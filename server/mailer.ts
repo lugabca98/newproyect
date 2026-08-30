@@ -206,9 +206,19 @@ Si no solicitaste este código, puedes ignorar este mensaje.
   `.trim();
 
   // 1. Try Resend API first if key exists (https://resend.com)
-  const resendApiKey = process.env.RESEND_API_KEY || process.env.RESEND_KEY;
+  const resendApiKey = (process.env.RESEND_API_KEY || process.env.RESEND_KEY || '').trim();
   if (resendApiKey) {
     try {
+      // If user has a verified custom domain, use EMAIL_FROM, otherwise Resend default sandbox sender 'onboarding@resend.dev'
+      let resendFrom = process.env.EMAIL_FROM;
+      if (!resendFrom || resendFrom.includes('tudominio') || resendFrom.includes('example')) {
+        resendFrom = 'Vulnerable <onboarding@resend.dev>';
+      } else if (!resendFrom.includes('<')) {
+        resendFrom = `Vulnerable <${resendFrom}>`;
+      }
+
+      console.log(`[Resend] Attempting to deliver email to ${email} from ${resendFrom}...`);
+
       const resendRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -216,28 +226,35 @@ Si no solicitaste este código, puedes ignorar este mensaje.
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: fromAddress.includes('<') ? fromAddress : `Vulnerable <${fromAddress}>`,
-          to: email,
+          from: resendFrom,
+          to: [email],
           subject,
           html: htmlContent,
           text: textContent
         })
       });
 
-      if (resendRes.ok) {
-        console.log(`[Resend] Email successfully sent to ${email}`);
+      const resendData = await resendRes.json().catch(() => null);
+
+      if (resendRes.ok && resendData?.id) {
+        console.log(`[Resend] Email successfully dispatched to ${email} (ID: ${resendData.id})`);
         return {
           success: true,
-          message: `Código enviado con éxito a tu correo (${email}). Revisa tu bandeja de entrada o Spam.`,
+          message: `Código enviado con éxito a tu correo (${email}). Revisá tu bandeja de entrada o la carpeta de Spam.`,
           provider: 'resend',
           isRealDelivery: true
         };
       } else {
-        const errText = await resendRes.text();
-        console.warn('[Resend] API response:', errText);
+        const errorMsg = resendData?.message || resendData?.name || 'Resend error';
+        console.warn(`[Resend] Delivery response status ${resendRes.status}:`, errorMsg);
+        
+        // If Resend rejected because of sandbox restriction (onboarding@resend.dev only sends to account owner email in free tier)
+        if (errorMsg.includes('can only send testing emails to your own email address') || errorMsg.includes('validation_error')) {
+          console.warn('[Resend] Sandbox notice: Free Resend onboarding sender can only deliver to the account owner email.');
+        }
       }
     } catch (resendErr) {
-      console.warn('[Resend] Request failed:', resendErr);
+      console.warn('[Resend] Request exception:', resendErr);
     }
   }
 

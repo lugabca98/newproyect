@@ -190,7 +190,6 @@ class ApiService {
     const fbRes = await firebaseService.sendVerificationEmail(targetEmail);
     return {
       success: fbRes.success,
-      code: fbRes.code,
       message: fbRes.message,
       isRealDelivery: false
     };
@@ -223,6 +222,10 @@ class ApiService {
 
     // 2. Fallback to Firebase verification
     return firebaseService.verifyOtpCode(cleanEmail, cleanCode, 'verify_email');
+  }
+
+  async checkEmailVerification(): Promise<{ isVerified: boolean; user?: User | null; message: string }> {
+    return firebaseService.checkEmailVerification();
   }
 
   async sendPasswordReset(email: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string; isRealDelivery?: boolean; provider?: string }> {
