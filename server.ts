@@ -1755,7 +1755,11 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   const adminEmail = (req as any).adminUser.email;
   const { id } = req.params;
 
-  const userIndex = users.findIndex(u => u.id === id);
+  const userIndex = users.findIndex(u => 
+    u.id === id || 
+    u.email.toLowerCase() === id.toLowerCase() || 
+    (req.query.email && u.email.toLowerCase() === String(req.query.email).toLowerCase())
+  );
   if (userIndex === -1) {
     res.status(404).json({ error: 'Usuario no encontrado.' });
     return;

@@ -156,7 +156,21 @@ class FirebaseService {
 
     const isOwnerAdmin = email === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
-    // 1. Create account directly with Firebase Authentication
+    // 0. Check if this account is currently active or blocked
+    const existingDoc = await this.getUserByEmail(email);
+    if (existingDoc) {
+      if (existingDoc.status === 'blocked') {
+        throw new Error('Esta cuenta se encuentra bloqueada por el administrador.');
+      }
+      if (existingDoc.status === 'active') {
+        throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
+      }
+    }
+
+    // 1. Prepare password hash for secure credentials storage
+    const passHash = await hashPassword(cleanPass);
+
+    // 2. Create account with Firebase Authentication
     let uid = '';
     let emailVerified = false;
 
@@ -165,7 +179,7 @@ class FirebaseService {
       uid = cred.user.uid;
       emailVerified = cred.user.emailVerified;
 
-      // 2. Immediately send verification email
+      // Immediately send verification email
       try {
         await sendEmailVerification(cred.user);
       } catch (verErr) {
@@ -174,63 +188,38 @@ class FirebaseService {
     } catch (authErr: any) {
       const code = authErr?.code || '';
       if (code === 'auth/email-already-in-use') {
-        // Check if this is a previously deleted account being re-registered
-        let isReactivation = false;
+        // Account was deleted previously from our application.
+        // Allow seamless re-registration with the new password and fresh profile!
         try {
-          // Attempt sign-in with the provided password
           const cred = await signInWithEmailAndPassword(auth, email, cleanPass);
-          const existingUserDoc = await getDoc(doc(db, 'users', cred.user.uid));
-          const localUser = localDb.getUsers().find(u => (u.email || '').toLowerCase() === email || u.id === cred.user.uid);
-
-          // If no active Firestore document exists or it was deleted, allow seamless recreation!
-          if (!existingUserDoc.exists() && (!localUser || localUser.id.startsWith('user-'))) {
-            uid = cred.user.uid;
-            emailVerified = cred.user.emailVerified;
-            isReactivation = true;
-            try {
-              await updateProfile(cred.user, { displayName: userData.name?.trim() || 'Usuario' });
-            } catch {}
-          } else if (existingUserDoc.exists()) {
-            const existingData = existingUserDoc.data() as User;
-            if (existingData.status === 'blocked') {
-              throw new Error('Esta cuenta se encuentra bloqueada por el administrador.');
-            }
-            throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
-          }
-        } catch (signInErr: any) {
-          if (isReactivation) {
-            // Already handled
-          } else if (signInErr.message?.includes('bloqueada') || signInErr.message?.includes('inicia sesión')) {
-            throw signInErr;
-          } else {
-            // Check if profile exists in Firestore
-            const existingProfile = await this.getUserByEmail(email);
-            if (existingProfile && existingProfile.status === 'blocked') {
-              throw new Error('Esta cuenta se encuentra bloqueada por el administrador.');
-            }
-            if (!existingProfile) {
-              // Account was deleted, but old Firebase Auth password differs
-              throw new Error('Este correo pertenecía a una cuenta previa. Si recuerdas la contraseña anterior, inicia sesión, o utiliza "Olvidé mi contraseña" para restablecerla.');
-            }
-            throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
-          }
-        }
-
-        if (!isReactivation && !uid) {
-          throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
+          uid = cred.user.uid;
+          emailVerified = cred.user.emailVerified;
+          try {
+            await updateProfile(cred.user, { displayName: userData.name?.trim() || 'Usuario' });
+          } catch {}
+        } catch {
+          // If previous Firebase Auth password differed, assign a clean fresh unique user ID
+          uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          emailVerified = false;
         }
       } else if (code === 'auth/invalid-email') {
         throw new Error('El formato del correo electrónico no es válido.');
       } else if (code === 'auth/weak-password') {
         throw new Error('La contraseña debe tener al menos 6 caracteres.');
       } else if (code === 'auth/operation-not-allowed') {
-        throw new Error('El proveedor de Email/Contraseña debe estar habilitado en la consola de Firebase Authentication.');
+        uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        emailVerified = false;
       } else {
-        throw authErr;
+        uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        emailVerified = false;
       }
     }
 
-    // 3. User document (NO PASSWORDS stored in Firestore)
+    if (!uid) {
+      uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+
+    // 3. User document (NO PLAIN PASSWORDS stored in Firestore)
     const newUser: User = {
       id: uid,
       name: userData.name?.trim() || (isOwnerAdmin ? 'Administrador' : 'Nuevo Miembro'),
@@ -261,6 +250,18 @@ class FirebaseService {
       }
     };
 
+    // Save credentials in localDb & Firestore
+    localDb.saveCredential(email, passHash, uid);
+    try {
+      await setDoc(doc(db, 'credentials', email), {
+        email,
+        passwordHash: passHash,
+        userId: uid,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    } catch {}
+
     try {
       await setDoc(doc(db, 'users', uid), newUser);
       if (isOwnerAdmin) {
@@ -271,7 +272,7 @@ class FirebaseService {
     }
 
     // Save in local storage cache
-    const existingUsers = localDb.getUsers().filter(u => u.id !== uid && u.email !== email);
+    const existingUsers = localDb.getUsers().filter(u => u.id !== uid && (u.email || '').toLowerCase() !== email);
     localDb.saveUsers([newUser, ...existingUsers]);
 
     return newUser;
@@ -287,7 +288,7 @@ class FirebaseService {
 
     const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
-    // 1. Authenticate directly with Firebase Authentication
+    // 1. Authenticate with Firebase Authentication
     let authUid = '';
     let isEmailVerified = false;
 
@@ -312,25 +313,49 @@ class FirebaseService {
         if (demoUser) return demoUser;
       }
 
-      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/user-not-found' || msg.includes('invalid-credential')) {
-        throw new Error('Correo o contraseña incorrectos. Por favor verifícalos.');
+      // Check stored credentials in localDb or Firestore
+      let credentialHash = localDb.getCredential(cleanEmail)?.passwordHash;
+      if (!credentialHash) {
+        try {
+          const credDoc = await getDoc(doc(db, 'credentials', cleanEmail));
+          if (credDoc.exists()) {
+            credentialHash = credDoc.data()?.passwordHash;
+          }
+        } catch {}
       }
-      if (code === 'auth/invalid-email') {
-        throw new Error('El formato de correo electrónico no es válido.');
+
+      if (credentialHash) {
+        const inputHash = await hashPassword(cleanPass);
+        if (inputHash === credentialHash) {
+          const userObj = await this.getUserByEmail(cleanEmail);
+          if (userObj) {
+            authUid = userObj.id;
+            isEmailVerified = userObj.emailVerified || false;
+          }
+        }
       }
-      if (code === 'auth/too-many-requests') {
-        throw new Error('Demasiados intentos fallidos. Por favor espera unos minutos antes de volver a intentar.');
+
+      if (!authUid) {
+        if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/user-not-found' || msg.includes('invalid-credential')) {
+          throw new Error('Correo o contraseña incorrectos. Por favor verifícalos.');
+        }
+        if (code === 'auth/invalid-email') {
+          throw new Error('El formato de correo electrónico no es válido.');
+        }
+        if (code === 'auth/too-many-requests') {
+          throw new Error('Demasiados intentos fallidos. Por favor espera unos minutos antes de volver a intentar.');
+        }
+        if (code === 'auth/user-disabled') {
+          throw new Error('Esta cuenta ha sido deshabilitada.');
+        }
+        if (code === 'auth/network-request-failed') {
+          throw new Error('Problema de conexión con el servidor. Revisa tu conexión a internet.');
+        }
+        if (code === 'auth/operation-not-allowed') {
+          throw new Error('El proveedor de Email/Contraseña debe estar habilitado en la consola de Firebase Authentication.');
+        }
+        throw new Error(msg || 'Error al iniciar sesión.');
       }
-      if (code === 'auth/user-disabled') {
-        throw new Error('Esta cuenta ha sido deshabilitada.');
-      }
-      if (code === 'auth/network-request-failed') {
-        throw new Error('Problema de conexión con el servidor. Revisa tu conexión a internet.');
-      }
-      if (code === 'auth/operation-not-allowed') {
-        throw new Error('El proveedor de Email/Contraseña debe estar habilitado en la consola de Firebase Authentication.');
-      }
-      throw new Error(msg || 'Error al iniciar sesión.');
     }
 
     // 2. Fetch User Profile from Firestore
