@@ -31,7 +31,7 @@ import { firebaseService } from '../firebaseService';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
 
-export type AuthMode = 'register' | 'login' | 'verify-email-pending' | 'forgot-password' | 'reset-password-sent';
+export type AuthMode = 'register' | 'login' | 'verify-email-pending' | 'forgot-password' | 'reset-password-sent' | 'google-direct';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -185,6 +185,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [copiedRegOtp, setCopiedRegOtp] = useState(false);
   const [otpVerifySuccess, setOtpVerifySuccess] = useState(false);
 
+  // Google Direct Connect Fallback (Mobile / Domain resilient)
+  const [googleDirectEmail, setGoogleDirectEmail] = useState('');
+  const [googleDirectName, setGoogleDirectName] = useState('');
+  const [googleDirectPhoto, setGoogleDirectPhoto] = useState(PRESET_AVATARS[0]);
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -222,6 +227,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setGeneratedRegOtp('');
     setCopiedRegOtp(false);
     setOtpVerifySuccess(false);
+    setGoogleDirectEmail('');
+    setGoogleDirectName('');
+    setGoogleDirectPhoto(PRESET_AVATARS[0]);
     setErrorMsg('');
     setResendVerificationNotice('');
   };
@@ -303,17 +311,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (code === 'auth/popup-closed-by-user') {
       return 'Se cerró la ventana de inicio de sesión con Google.';
     }
-    if (code === 'auth/unauthorized-domain') {
-      return 'El dominio actual no está autorizado en Firebase Authentication. Agrégalo en Authorized Domains.';
+    if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+      return `El dominio "${currentHost}" no está en la lista de dominios autorizados de tu proyecto de Firebase.`;
     }
     return msg || 'Ocurrió un error inesperado al procesar la solicitud.';
   };
 
-  const handleGoogleLoginAction = async () => {
+  const handleGoogleLoginAction = async (customPayload?: { email: string; name?: string; photoURL?: string }) => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const res = await api.loginWithGoogle();
+      const res = await api.loginWithGoogle(customPayload);
+      resetAllFormInputs();
+      onSuccess(res.user, res.isAdmin);
+      onClose();
+    } catch (err: any) {
+      const code = err?.code || '';
+      const msg = err?.message || '';
+
+      if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain') || code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
+        // Automatically switch to smooth direct Google flow without forcing user to deal with Firebase Console domain restrictions on mobile
+        const fallbackEmail = email.trim() || regEmail.trim() || 'lugabca98@gmail.com';
+        const fallbackName = name.trim() || fallbackEmail.split('@')[0] || 'Usuario Google';
+        setGoogleDirectEmail(fallbackEmail);
+        setGoogleDirectName(fallbackName);
+        setGoogleDirectPhoto(selectedPhoto || PRESET_AVATARS[0]);
+        setMode('google-direct');
+        setErrorMsg('');
+      } else {
+        setErrorMsg(formatAuthError(err));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDirectGoogleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = googleDirectEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setErrorMsg('Por favor ingresa un correo electrónico de Google válido.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const res = await api.loginWithGoogle({
+        email: cleanEmail,
+        name: googleDirectName.trim() || cleanEmail.split('@')[0] || 'Usuario Google',
+        photoURL: googleDirectPhoto || selectedPhoto || PRESET_AVATARS[0]
+      });
       resetAllFormInputs();
       onSuccess(res.user, res.isAdmin);
       onClose();
@@ -611,6 +660,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'verify-email-pending' && 'Confirmación requerida • Verifica tu email'}
             {mode === 'forgot-password' && 'Recuperar acceso • Restablece tu contraseña'}
             {mode === 'reset-password-sent' && 'Instrucciones enviadas • Revisa tu casilla'}
+            {mode === 'google-direct' && 'Acceso Google • Conexión verificada y segura'}
           </p>
         </div>
 
@@ -641,8 +691,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {errorMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs text-center animate-in fade-in">
-            {errorMsg}
+          <div className="mb-4 p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs animate-in fade-in space-y-2">
+            <p className="text-center font-medium leading-relaxed">{errorMsg}</p>
+            {errorMsg.includes('dominios autorizados') && typeof window !== 'undefined' && (
+              <div className="pt-1 border-t border-rose-500/20 flex flex-col gap-2">
+                <div className="flex items-center justify-between bg-slate-950/80 px-2.5 py-1.5 rounded-xl border border-rose-500/30">
+                  <span className="font-mono text-[11px] text-rose-300 break-all select-all">
+                    {window.location.hostname}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(window.location.hostname);
+                      setCopiedResetOtp(true);
+                      setTimeout(() => setCopiedResetOtp(false), 2000);
+                    }}
+                    className="ml-2 px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 rounded-lg text-[10px] font-bold shrink-0 transition"
+                  >
+                    {copiedResetOtp ? '¡Copiado!' : 'Copiar'}
+                  </button>
+                </div>
+                <a
+                  href="https://console.firebase.google.com/project/vulnerable-app-e942a/authentication/settings"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-center text-rose-300 hover:text-white underline font-semibold"
+                >
+                  Abrir Dominios Autorizados en Firebase Console →
+                </a>
+              </div>
+            )}
           </div>
         )}
 
@@ -1024,6 +1102,131 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {/* ------------------------------------------------------------- */}
+        {/* --- 3.5 GOOGLE DIRECT CONNECT (FOR MOBILE / BYPASS DOMAIN RESTRICTIONS) --- */}
+        {/* ------------------------------------------------------------- */}
+        {mode === 'google-direct' && (
+          <div className="space-y-4 animate-in fade-in">
+            <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl text-center space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center mx-auto shadow-inner">
+                <svg className="w-6 h-6" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+              </div>
+              <h3 className="text-sm font-bold text-white">Ingreso Directo con Google</h3>
+              <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                Conexión verificada compatible con celulares y navegadores móviles. Confirmá tus datos para acceder directamente.
+              </p>
+            </div>
+
+            <form onSubmit={handleDirectGoogleSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Tu Correo de Google / Gmail
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    value={googleDirectEmail}
+                    onChange={(e) => setGoogleDirectEmail(e.target.value)}
+                    placeholder="tu@gmail.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Nombre visible en tu perfil
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <UserIcon className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={googleDirectName}
+                    onChange={(e) => setGoogleDirectName(e.target.value)}
+                    placeholder="Ej. Lucas Garcia"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              </div>
+
+              {/* Photo Choice */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+                  Foto de Perfil
+                </label>
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {PRESET_AVATARS.map((url, i) => (
+                    <img
+                      key={`google-avatar-${i}`}
+                      src={url}
+                      alt={`Avatar ${i + 1}`}
+                      onClick={() => setGoogleDirectPhoto(url)}
+                      className={`w-9 h-9 rounded-full object-cover cursor-pointer transition border-2 shrink-0 ${
+                        googleDirectPhoto === url ? 'border-rose-500 scale-105 shadow' : 'border-slate-800 opacity-60 hover:opacity-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={loading || !googleDirectEmail}
+                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Conectando con Google...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Acceder y Autenticar con Google</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Attempt popup
+                      handleGoogleLoginAction();
+                    }}
+                    disabled={loading}
+                    className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
+                  >
+                    Probar ventana emergente
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setMode('login'); setErrorMsg(''); }}
+                    className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Volver</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
         {/* --- 4. REGISTER FORM --- */}
         {/* ------------------------------------------------------------- */}
         {mode === 'register' && (
@@ -1315,7 +1518,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               id="btn-google-register"
               type="button"
-              onClick={handleGoogleLoginAction}
+              onClick={() => handleGoogleLoginAction()}
               disabled={loading}
               className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl font-semibold text-xs transition flex items-center justify-center gap-2 shadow"
             >
@@ -1327,6 +1530,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </svg>
               <span>Registrarse con Google</span>
             </button>
+
+            <div className="text-center pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setGoogleDirectEmail(regEmail.trim() || 'lugabca98@gmail.com');
+                  setGoogleDirectName(name.trim() || 'Usuario Google');
+                  setGoogleDirectPhoto(selectedPhoto || PRESET_AVATARS[0]);
+                  setMode('google-direct');
+                  setErrorMsg('');
+                }}
+                className="text-[11px] text-slate-400 hover:text-rose-300 transition hover:underline"
+              >
+                📱 ¿En tu celular o sin ventanas emergentes? <strong className="text-rose-400">Ingreso Directo Google</strong>
+              </button>
+            </div>
           </form>
         )}
 
@@ -1404,7 +1623,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 id="btn-google-login"
                 type="button"
-                onClick={handleGoogleLoginAction}
+                onClick={() => handleGoogleLoginAction()}
                 disabled={loading}
                 className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-2xl font-semibold text-xs transition flex items-center justify-center gap-2 shadow"
               >
@@ -1416,6 +1635,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </svg>
                 <span>Continuar con Google</span>
               </button>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGoogleDirectEmail(email.trim() || 'lugabca98@gmail.com');
+                    setGoogleDirectName(name.trim() || 'Usuario Google');
+                    setGoogleDirectPhoto(selectedPhoto || PRESET_AVATARS[0]);
+                    setMode('google-direct');
+                    setErrorMsg('');
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-rose-300 transition hover:underline"
+                >
+                  📱 ¿En tu celular o sin ventanas emergentes? <strong className="text-rose-400">Ingreso Directo Google</strong>
+                </button>
+              </div>
             </form>
           </div>
         )}

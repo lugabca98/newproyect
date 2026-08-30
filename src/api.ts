@@ -75,8 +75,8 @@ class ApiService {
     return { user: sanitizedUser, token: sanitizedUser.id, isAdmin: isOwner };
   }
 
-  async loginWithGoogle(): Promise<{ user: User; token: string; isAdmin: boolean }> {
-    const user = await firebaseService.loginWithGoogle();
+  async loginWithGoogle(customGoogleUser?: { email: string; name?: string; photoURL?: string; uid?: string }): Promise<{ user: User; token: string; isAdmin: boolean }> {
+    const user = await firebaseService.loginWithGoogle(customGoogleUser);
     const cleanEmail = (user.email || '').trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, user.id);
     const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user' };

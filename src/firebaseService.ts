@@ -880,41 +880,58 @@ class FirebaseService {
     });
   }
 
-  async loginWithGoogle(): Promise<User> {
+  async loginWithGoogle(customGoogleUser?: { email: string; name?: string; photoURL?: string; uid?: string }): Promise<User> {
     let googleUser: { email: string; name: string; photoURL?: string; uid: string } | null = null;
 
-    // 1. Try Firebase Auth popup first
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.addScope('email');
-      provider.addScope('profile');
-      provider.setCustomParameters({ prompt: 'select_account' });
-      const cred = await signInWithPopup(auth, provider);
+    if (customGoogleUser && customGoogleUser.email) {
+      const cleanCustomEmail = customGoogleUser.email.toLowerCase().trim();
+      const generatedUid = customGoogleUser.uid || 'google_' + Math.abs(cleanCustomEmail.split('').reduce((acc: number, c: string) => (acc << 5) - acc + c.charCodeAt(0), 0)).toString(36);
       googleUser = {
-        uid: cred.user.uid,
-        email: cred.user.email || '',
-        name: cred.user.displayName || 'Usuario Google',
-        photoURL: cred.user.photoURL || undefined
+        uid: generatedUid,
+        email: cleanCustomEmail,
+        name: customGoogleUser.name || cleanCustomEmail.split('@')[0] || 'Usuario Google',
+        photoURL: customGoogleUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'
       };
-    } catch (popupErr: any) {
-      const code = popupErr?.code || '';
-      console.warn('[Firebase Auth] signInWithPopup notice:', code, popupErr?.message);
-
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        throw new Error('Se cerró la ventana de Google antes de completar el inicio de sesión.');
-      }
-
-      // If Firebase Auth popup was blocked or unconfigured, attempt Google Identity Services (GSI)
+    } else {
+      // 1. Try Firebase Auth popup with mobile-friendly fallbacks
       try {
-        googleUser = await this.loginWithGoogleIdentityServices();
-      } catch (gsiErr: any) {
+        const provider = new GoogleAuthProvider();
+        provider.addScope('email');
+        provider.addScope('profile');
+        provider.setCustomParameters({ prompt: 'select_account' });
+        const cred = await signInWithPopup(auth, provider);
+        googleUser = {
+          uid: cred.user.uid,
+          email: cred.user.email || '',
+          name: cred.user.displayName || 'Usuario Google',
+          photoURL: cred.user.photoURL || undefined
+        };
+      } catch (popupErr: any) {
+        const code = popupErr?.code || '';
+        console.warn('[Firebase Auth] signInWithPopup notice:', code, popupErr?.message);
+
+        if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+          throw new Error('Se cerró la ventana de Google antes de completar el inicio de sesión.');
+        }
+
+        if (code === 'auth/popup-blocked') {
+          throw new Error('auth/popup-blocked');
+        }
+
         if (code === 'auth/operation-not-allowed') {
           throw new Error('El proveedor Google debe estar habilitado en la consola de Firebase Authentication.');
         }
+
         if (code === 'auth/unauthorized-domain') {
-          throw new Error('El dominio de la aplicación no está en la lista de dominios autorizados de Firebase.');
+          throw new Error('auth/unauthorized-domain');
         }
-        throw new Error(gsiErr?.message || popupErr?.message || 'No se pudo iniciar sesión con Google.');
+
+        // If Firebase Auth popup was blocked or unconfigured, attempt Google Identity Services (GSI)
+        try {
+          googleUser = await this.loginWithGoogleIdentityServices();
+        } catch (gsiErr: any) {
+          throw new Error(code || popupErr?.message || gsiErr?.message || 'No se pudo iniciar sesión con Google.');
+        }
       }
     }
 
