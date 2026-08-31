@@ -177,7 +177,7 @@ class FirebaseService {
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, cleanPass);
       uid = cred.user.uid;
-      emailVerified = cred.user.emailVerified;
+      emailVerified = false; // Always require fresh confirmation
 
       // Immediately send verification email
       try {
@@ -193,10 +193,15 @@ class FirebaseService {
         try {
           const cred = await signInWithEmailAndPassword(auth, email, cleanPass);
           uid = cred.user.uid;
-          emailVerified = cred.user.emailVerified;
+          emailVerified = false; // Must strictly re-confirm email
           try {
             await updateProfile(cred.user, { displayName: userData.name?.trim() || 'Usuario' });
           } catch {}
+          try {
+            await sendEmailVerification(cred.user);
+          } catch (verErr) {
+            console.warn('[Firebase Auth] sendEmailVerification note:', verErr);
+          }
         } catch {
           // If previous Firebase Auth password differed, assign a clean fresh unique user ID
           uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -235,7 +240,7 @@ class FirebaseService {
       occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
       verified: isOwnerAdmin,
-      emailVerified: isOwnerAdmin ? true : emailVerified,
+      emailVerified: isOwnerAdmin ? true : false,
       status: 'active' as UserStatus,
       role: (isOwnerAdmin ? 'admin' : 'user') as UserRole,
       createdAt: new Date().toISOString(),
@@ -398,7 +403,7 @@ class FirebaseService {
       throw new Error('Esta cuenta se encuentra temporalmente suspendida por un administrador.');
     }
 
-    user.emailVerified = isOwnerAdmin ? true : isEmailVerified;
+    user.emailVerified = isOwnerAdmin ? true : Boolean(user.emailVerified && (isEmailVerified || user.verified));
     user.lastActive = new Date().toISOString();
 
     // If verified, ensure public profile exists in feed

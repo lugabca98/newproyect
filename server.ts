@@ -157,6 +157,7 @@ function toPrivateUser(user: ServerUser): User {
     occupation: user.occupation,
     interests: user.interests,
     verified: user.verified,
+    emailVerified: (user as any).emailVerified ?? (user.email.toLowerCase() === 'lugabca98@gmail.com' ? true : false),
     status: user.status,
     role: user.role,
     createdAt: user.createdAt,
@@ -901,6 +902,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     occupation: sanitizeText(occupation || 'Profesional Independiente', 100),
     interests: safeInterests.length > 0 ? safeInterests : ['Música', 'Café', 'Viajes'],
     verified: false,
+    emailVerified: false,
     status: 'active',
     role: 'user', // Explicit: public registration can NEVER grant admin role
     createdAt: new Date().toISOString(),
