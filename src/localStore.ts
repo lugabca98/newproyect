@@ -1,4 +1,4 @@
-import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, UserCredential, OtpRecord } from './types';
+import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, UserCredential, OtpRecord, PendingRegistration } from './types';
 import { DEFAULT_ADMIN_EMAIL, DEMO_ACCOUNTS, hashPassword, hashPasswordSync } from './utils/security';
 
 const STORAGE_KEY_USERS = 'mv_db_users';
@@ -9,6 +9,7 @@ const STORAGE_KEY_LOGS = 'mv_db_logs';
 const STORAGE_KEY_CREDENTIALS = 'mv_db_credentials';
 const STORAGE_KEY_OTPS = 'mv_db_otps';
 const STORAGE_KEY_DELETED_EMAILS = 'mv_db_deleted_emails';
+const STORAGE_KEY_PENDING_REGISTRATIONS = 'mv_db_pending_registrations';
 
 export { DEFAULT_ADMIN_EMAIL };
 
@@ -607,6 +608,82 @@ class LocalDatabaseStore {
     }
 
     return { valid: true };
+  }
+
+  // Pending Registrations (Profiles are NOT created until email confirmation)
+  getPendingRegistrations(): PendingRegistration[] {
+    return this.getStored<PendingRegistration[]>(STORAGE_KEY_PENDING_REGISTRATIONS, []);
+  }
+
+  getPendingRegistration(email: string): PendingRegistration | null {
+    if (!email) return null;
+    const cleanEmail = email.trim().toLowerCase();
+    const pendings = this.getPendingRegistrations();
+    return pendings.find(p => p.email.toLowerCase() === cleanEmail) || null;
+  }
+
+  savePendingRegistration(pending: PendingRegistration): void {
+    if (!pending || !pending.email) return;
+    const cleanEmail = pending.email.trim().toLowerCase();
+    const current = this.getPendingRegistrations().filter(p => p.email.toLowerCase() !== cleanEmail);
+    current.push({ ...pending, email: cleanEmail });
+    this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, current);
+  }
+
+  removePendingRegistration(email: string): void {
+    if (!email) return;
+    const cleanEmail = email.trim().toLowerCase();
+    const current = this.getPendingRegistrations().filter(p => p.email.toLowerCase() !== cleanEmail);
+    this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, current);
+  }
+
+  activatePendingRegistration(email: string): User | null {
+    if (!email) return null;
+    const cleanEmail = email.trim().toLowerCase();
+    const pending = this.getPendingRegistration(cleanEmail);
+    if (!pending) return null;
+
+    const u = pending.userData;
+    const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+    const activatedUser: User = {
+      id: pending.id || `user-${Date.now()}`,
+      name: u.name?.trim() || (isOwnerAdmin ? 'Administrador' : 'Nuevo Miembro'),
+      email: cleanEmail,
+      age: Number(u.age) || 24,
+      gender: u.gender || 'female',
+      bio: u.bio?.trim() || '',
+      photos: u.photos?.length ? u.photos : [
+        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'
+      ],
+      location: u.location?.trim() || 'Buenos Aires, Argentina',
+      distanceKm: u.distanceKm || 2,
+      occupation: u.occupation?.trim() || 'Neurodivergente',
+      interests: u.interests?.length ? u.interests : ['Música', 'Cine', 'Café'],
+      verified: false,
+      emailVerified: true,
+      status: 'active',
+      role: isOwnerAdmin ? 'admin' : 'user',
+      createdAt: pending.createdAt || new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 0,
+      matchesCount: 0,
+      preferences: u.preferences || {
+        minAge: 18,
+        maxAge: 60,
+        interestedIn: ['female', 'male', 'non-binary', 'other'],
+        maxDistanceKm: 50
+      },
+      passwordHash: pending.passwordHash
+    };
+
+    // Remove from pending
+    this.removePendingRegistration(cleanEmail);
+
+    // Save into active users
+    const existingUsers = this.getUsers().filter(user => user.id !== activatedUser.id && (user.email || '').toLowerCase() !== cleanEmail);
+    this.saveUsers([activatedUser, ...existingUsers]);
+
+    return activatedUser;
   }
 }
 

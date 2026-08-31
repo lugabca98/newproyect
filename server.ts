@@ -533,6 +533,7 @@ function getDefaultSeedMessages(): Message[] {
 
 // In-Memory active database instances loaded from disk
 let users: ServerUser[] = [];
+let pendingRegistrations: { id: string; email: string; user: ServerUser; createdAt: string }[] = [];
 let swipes: SwipeRecord[] = [];
 let matches: Match[] = [];
 let messages: Message[] = [];
@@ -569,12 +570,14 @@ function loadDatabase() {
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
       const data = JSON.parse(raw);
       users = Array.isArray(data.users) && data.users.length > 0 ? data.users : getDefaultSeedUsers();
+      pendingRegistrations = Array.isArray(data.pendingRegistrations) ? data.pendingRegistrations : [];
       swipes = Array.isArray(data.swipes) ? data.swipes : getDefaultSeedSwipes();
       matches = Array.isArray(data.matches) ? data.matches : getDefaultSeedMatches();
       messages = Array.isArray(data.messages) ? data.messages : getDefaultSeedMessages();
       auditLogs = Array.isArray(data.auditLogs) ? data.auditLogs : getDefaultSeedAuditLogs();
     } else {
       users = getDefaultSeedUsers();
+      pendingRegistrations = [];
       swipes = getDefaultSeedSwipes();
       matches = getDefaultSeedMatches();
       messages = getDefaultSeedMessages();
@@ -583,6 +586,7 @@ function loadDatabase() {
   } catch (err) {
     console.error('Error reading database file from disk, using fallback defaults:', err);
     users = getDefaultSeedUsers();
+    pendingRegistrations = [];
     swipes = getDefaultSeedSwipes();
     matches = getDefaultSeedMatches();
     messages = getDefaultSeedMessages();
@@ -609,6 +613,7 @@ function saveDatabase() {
     }
     const data = {
       users,
+      pendingRegistrations,
       swipes,
       matches,
       messages,
@@ -780,6 +785,15 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 
   if (!user) {
+    const isPending = pendingRegistrations.find(p => p.email === normalizedEmail);
+    if (isPending) {
+      res.status(403).json({ 
+        error: 'Tu perfil aún no ha sido creado porque no has confirmado tu correo electrónico. Por favor verifica tu casilla de correo para activar tu cuenta.',
+        unconfirmed: true 
+      });
+      return;
+    }
+
     res.status(401).json({ error: 'Credenciales inválidas. Verifica tu correo o contraseña.' });
     return;
   }
@@ -815,6 +829,14 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
 
   const isOwner = normalizedEmail === 'lugabca98@gmail.com' || user.role === 'admin';
   const isEmailVerified = Boolean((user as any).emailVerified);
+
+  if (!isEmailVerified && !isOwner && user.role !== 'admin') {
+    res.status(403).json({
+      error: 'Debes confirmar tu correo electrónico antes de ingresar a la plataforma.',
+      unconfirmed: true
+    });
+    return;
+  }
 
   user.lastActive = new Date().toISOString();
   saveDatabase();
@@ -903,7 +925,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     photos: safePhotos,
     location: sanitizeText(location || 'Buenos Aires, Argentina', 100),
     distanceKm: Math.floor(Math.random() * 12) + 2,
-    occupation: sanitizeText(occupation || 'Profesional Independiente', 100),
+    occupation: sanitizeText(occupation || 'Neurodivergente', 100),
     interests: safeInterests.length > 0 ? safeInterests : ['Música', 'Café', 'Viajes'],
     verified: false,
     emailVerified: false,
@@ -921,7 +943,14 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     }
   };
 
-  users.push(newUser);
+  // DO NOT add to active users array yet; store in pendingRegistrations until email is confirmed!
+  pendingRegistrations = pendingRegistrations.filter(p => p.email !== normalizedEmail);
+  pendingRegistrations.push({
+    id: newUser.id,
+    email: normalizedEmail,
+    user: newUser,
+    createdAt: new Date().toISOString()
+  });
   saveDatabase();
 
   // Generate and send initial 6-digit email verification OTP in the background
@@ -949,7 +978,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     token: '', 
     isAdmin: false,
     emailSent: true,
-    message: 'Cuenta creada. Hemos enviado un código de verificación a tu correo electrónico.'
+    message: 'Hemos enviado un código de verificación a tu correo electrónico. Tu perfil será creado una vez confirmado el registro.'
   });
 });
 
@@ -1058,14 +1087,24 @@ app.post('/api/mail/verify-otp', authLimiter, (req, res) => {
     return;
   }
 
-  // If verifying email, update user in database
+  // If verifying email, activate user from pending registrations or update existing user
   if (cleanType === 'verify_email') {
-    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
-    if (user) {
-      user.verified = true;
-      (user as any).emailVerified = true;
-      user.lastActive = new Date().toISOString();
+    const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === cleanEmail);
+    if (pendingIdx !== -1) {
+      const pending = pendingRegistrations[pendingIdx];
+      pending.user.emailVerified = true;
+      pending.user.verified = false;
+      pending.user.lastActive = new Date().toISOString();
+      users.push(pending.user);
+      pendingRegistrations.splice(pendingIdx, 1);
       saveDatabase();
+    } else {
+      const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+      if (user) {
+        (user as any).emailVerified = true;
+        user.lastActive = new Date().toISOString();
+        saveDatabase();
+      }
     }
   }
 
@@ -1077,7 +1116,7 @@ app.post('/api/mail/verify-otp', authLimiter, (req, res) => {
   res.json({
     success: true,
     message: cleanType === 'verify_email'
-      ? '¡Correo electrónico verificado con éxito! Tu cuenta ha sido activada.'
+      ? '¡Correo electrónico verificado con éxito! Tu perfil ha sido creado y tu cuenta activada.'
       : '¡Código validado correctamente! Ahora podés ingresar tu nueva contraseña.'
   });
 });

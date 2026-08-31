@@ -98,6 +98,14 @@ export interface AuthSession {
   isAdmin: boolean;
 }
 
+export interface PendingRegistration {
+  id: string;
+  email: string;
+  userData: Partial<User>;
+  passwordHash?: string;
+  createdAt: string;
+}
+
 export interface OtpRecord {
   email: string;
   code: string;

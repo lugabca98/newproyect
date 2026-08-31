@@ -188,8 +188,7 @@ class FirebaseService {
     } catch (authErr: any) {
       const code = authErr?.code || '';
       if (code === 'auth/email-already-in-use') {
-        // Account was deleted previously from our application.
-        // Allow seamless re-registration with the new password and fresh profile!
+        // Account was deleted previously or already in Firebase Auth.
         try {
           const cred = await signInWithEmailAndPassword(auth, email, cleanPass);
           uid = cred.user.uid;
@@ -224,8 +223,8 @@ class FirebaseService {
       uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     }
 
-    // 3. User document (NO PLAIN PASSWORDS stored in Firestore)
-    const newUser: User = {
+    // 3. User document preparation (PROFILE IS NOT CREATED UNTIL EMAIL IS CONFIRMED)
+    const pendingUserData: Partial<User> = {
       id: uid,
       name: userData.name?.trim() || (isOwnerAdmin ? 'Administrador' : 'Nuevo Miembro'),
       email,
@@ -272,20 +271,138 @@ class FirebaseService {
       });
     } catch {}
 
+    // STORE IN PENDING REGISTRATIONS - DO NOT CREATE USER DOCUMENT IN FIRESTORE OR ACTIVE LIST
+    const pendingRecord = {
+      id: uid,
+      email,
+      userData: pendingUserData,
+      passwordHash: passHash,
+      createdAt: new Date().toISOString()
+    };
+
     try {
-      await setDoc(doc(db, 'users', uid), newUser);
-      if (isOwnerAdmin) {
-        await setDoc(doc(db, 'admins', uid), { email, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
-      }
+      await setDoc(doc(db, 'pendingRegistrations', email), pendingRecord);
     } catch (dbErr) {
-      console.warn('[Firestore] Register sync note:', dbErr);
+      console.warn('[Firestore] Pending registration save note:', dbErr);
     }
 
-    // Save in local storage cache
-    const existingUsers = localDb.getUsers().filter(u => u.id !== uid && (u.email || '').toLowerCase() !== email);
-    localDb.saveUsers([newUser, ...existingUsers]);
+    localDb.savePendingRegistration(pendingRecord);
 
-    return newUser;
+    // Return unconfirmed representation for UI flow (profile is NOT created yet)
+    return {
+      ...(pendingUserData as User),
+      emailVerified: false
+    };
+  }
+
+  async activatePendingUser(email: string): Promise<User | null> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) return null;
+
+    let pendingData: any = null;
+
+    // 1. Check in Firestore
+    try {
+      const pendingSnap = await getDoc(doc(db, 'pendingRegistrations', cleanEmail));
+      if (pendingSnap.exists()) {
+        pendingData = pendingSnap.data();
+      }
+    } catch (err) {
+      console.warn('[Firestore] Error getting pending registration:', err);
+    }
+
+    // 2. Check in localDb
+    if (!pendingData) {
+      const localPending = localDb.getPendingRegistration(cleanEmail);
+      if (localPending) {
+        pendingData = localPending;
+      }
+    }
+
+    const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+
+    let finalUser: User;
+    if (pendingData && pendingData.userData) {
+      const u = pendingData.userData;
+      finalUser = {
+        id: pendingData.id || u.id || `user-${Date.now()}`,
+        name: u.name?.trim() || (isOwnerAdmin ? 'Administrador' : 'Nuevo Miembro'),
+        email: cleanEmail,
+        age: Number(u.age) || 24,
+        gender: u.gender || 'female',
+        bio: u.bio?.trim() || '',
+        photos: u.photos?.length ? u.photos : [
+          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'
+        ],
+        location: u.location?.trim() || 'Buenos Aires, Argentina',
+        distanceKm: u.distanceKm || 2,
+        occupation: u.occupation?.trim() || 'Neurodivergente',
+        interests: u.interests?.length ? u.interests : ['Música', 'Cine', 'Café'],
+        verified: false,
+        emailVerified: true,
+        status: 'active',
+        role: isOwnerAdmin ? 'admin' : 'user',
+        createdAt: pendingData.createdAt || new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        likesCount: 0,
+        matchesCount: 0,
+        preferences: u.preferences || {
+          minAge: 18,
+          maxAge: 60,
+          interestedIn: ['female', 'male', 'non-binary', 'other'],
+          maxDistanceKm: 50
+        },
+        passwordHash: pendingData.passwordHash
+      };
+    } else {
+      // If user profile is already created in Firestore, make sure emailVerified is true
+      const existing = await this.getUserByEmail(cleanEmail);
+      if (existing) {
+        existing.emailVerified = true;
+        await updateDoc(doc(db, 'users', existing.id), {
+          emailVerified: true,
+          lastActive: new Date().toISOString()
+        }).catch(() => {});
+        return existing;
+      }
+      return null;
+    }
+
+    // Now create profile in Firestore 'users' collection
+    try {
+      await setDoc(doc(db, 'users', finalUser.id), finalUser);
+      if (isOwnerAdmin) {
+        await setDoc(doc(db, 'admins', finalUser.id), { email: cleanEmail, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
+      } else {
+        // Create in publicProfiles for dating pool
+        await setDoc(doc(db, 'publicProfiles', finalUser.id), {
+          id: finalUser.id,
+          name: finalUser.name,
+          age: finalUser.age,
+          gender: finalUser.gender,
+          bio: finalUser.bio,
+          photos: finalUser.photos,
+          location: finalUser.location,
+          distanceKm: finalUser.distanceKm,
+          occupation: finalUser.occupation,
+          interests: finalUser.interests,
+          verified: finalUser.verified,
+          status: finalUser.status,
+          role: finalUser.role,
+          createdAt: finalUser.createdAt,
+          lastActive: finalUser.lastActive
+        }).catch(() => {});
+      }
+      // Delete pending registration doc
+      await deleteDoc(doc(db, 'pendingRegistrations', cleanEmail)).catch(() => {});
+    } catch (err) {
+      console.warn('[Firestore] Error activating user in Firestore:', err);
+    }
+
+    // Activate in localDb
+    localDb.activatePendingRegistration(cleanEmail);
+
+    return finalUser;
   }
 
   async loginUser(email: string, pass: string): Promise<User> {
@@ -392,7 +509,29 @@ class FirebaseService {
       user = localDb.getUsers().find(u => (u.email || '').toLowerCase() === cleanEmail) || null;
     }
 
-    // If user document is missing or deleted, strictly forbid login and do not auto-create
+    // If user document does not exist, check if there is a pending unconfirmed registration
+    if (!user) {
+      let isPending = false;
+      try {
+        const pSnap = await getDoc(doc(db, 'pendingRegistrations', cleanEmail));
+        if (pSnap.exists()) isPending = true;
+      } catch {}
+      if (!isPending && localDb.getPendingRegistration(cleanEmail)) {
+        isPending = true;
+      }
+
+      if (isPending) {
+        // If email was verified via link in Firebase Auth, auto-activate now!
+        if (isEmailVerified) {
+          user = await this.activatePendingUser(cleanEmail);
+        } else {
+          await signOut(auth).catch(() => {});
+          throw new Error('Tu perfil aún no ha sido creado porque no has confirmado tu correo electrónico. Por favor verifica tu casilla de correo para activar tu cuenta.');
+        }
+      }
+    }
+
+    // If user document is still missing or deleted, strictly forbid login and do not auto-create
     if (!user || user.status === 'deleted') {
       await signOut(auth).catch(() => {});
       throw new Error('Esta cuenta ha sido eliminada por el administrador o no existe. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
@@ -401,6 +540,16 @@ class FirebaseService {
     if (user.status === 'blocked') {
       await signOut(auth).catch(() => {});
       throw new Error('Esta cuenta se encuentra temporalmente suspendida por un administrador.');
+    }
+
+    // Check if emailVerified is satisfied
+    if (isEmailVerified) {
+      user.emailVerified = true;
+    }
+
+    if (!user.emailVerified && !isOwnerAdmin && user.role !== 'admin') {
+      await signOut(auth).catch(() => {});
+      throw new Error('Debes confirmar tu correo electrónico antes de ingresar a la plataforma.');
     }
 
     user.emailVerified = Boolean(user.emailVerified === true);
@@ -481,7 +630,7 @@ class FirebaseService {
       }
     }
 
-    // 2. Fetch user profile
+    // 2. Fetch user profile or check pending registration
     let user = await this.getUserByEmail(cleanEmail);
     if (!user && auth.currentUser) {
       user = await this.getUserById(auth.currentUser.uid);
@@ -490,16 +639,21 @@ class FirebaseService {
       user = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail) || null;
     }
 
-    if (!user) {
-      return {
-        isVerified: false,
-        user: null,
-        message: 'No se encontró la cuenta de usuario.'
-      };
-    }
-
     // 3. If verified via Firebase link reload or document
-    if (authIsVerified || user.emailVerified === true) {
+    if (authIsVerified || (user && user.emailVerified === true)) {
+      // If user was not yet created, activate from pending now!
+      if (!user) {
+        user = await this.activatePendingUser(cleanEmail);
+      }
+
+      if (!user) {
+        return {
+          isVerified: false,
+          user: null,
+          message: 'No se encontró la cuenta de usuario.'
+        };
+      }
+
       user.emailVerified = true;
       user.lastActive = new Date().toISOString();
 
@@ -536,7 +690,33 @@ class FirebaseService {
       return {
         isVerified: true,
         user,
-        message: '¡Tu correo electrónico ha sido verificado con éxito!'
+        message: '¡Tu correo electrónico ha sido verificado con éxito! Tu perfil ha sido creado.'
+      };
+    }
+
+    if (!user) {
+      // Check if there is a pending registration
+      let hasPending = false;
+      try {
+        const pSnap = await getDoc(doc(db, 'pendingRegistrations', cleanEmail));
+        if (pSnap.exists()) hasPending = true;
+      } catch {}
+      if (!hasPending && localDb.getPendingRegistration(cleanEmail)) {
+        hasPending = true;
+      }
+
+      if (hasPending) {
+        return {
+          isVerified: false,
+          user: null,
+          message: 'Tu correo todavía no ha sido verificado. Por favor revisa el correo que te enviamos y haz clic en el enlace o ingresa el código de 6 dígitos para crear tu perfil.'
+        };
+      }
+
+      return {
+        isVerified: false,
+        user: null,
+        message: 'No se encontró la cuenta de usuario.'
       };
     }
 
@@ -680,13 +860,16 @@ class FirebaseService {
       throw new Error(validResult.reason || 'El código de 6 dígitos es incorrecto o ha expirado.');
     }
 
-    // If verifying email, update user status to emailVerified = true
+    // If verifying email, create and activate user profile from pending registration
     if (type === 'verify_email') {
-      const user = await this.getUserByEmail(cleanEmail);
+      let user = await this.activatePendingUser(cleanEmail);
+      if (!user) {
+        user = await this.getUserByEmail(cleanEmail);
+      }
       if (user) {
         user.emailVerified = true;
         const users = localDb.getUsers();
-        const idx = users.findIndex(u => u.id === user.id);
+        const idx = users.findIndex(u => u.id === user!.id);
         if (idx !== -1) {
           users[idx].emailVerified = true;
           localDb.saveUsers(users);
@@ -701,7 +884,7 @@ class FirebaseService {
     return {
       success: true,
       message: type === 'verify_email' 
-        ? '¡Cuenta activada y correo verificado con éxito!' 
+        ? '¡Cuenta activada, correo verificado y perfil creado con éxito!' 
         : '¡Código de seguridad validado con éxito!'
     };
   }
