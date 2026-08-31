@@ -1013,7 +1013,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Ocupación / Condición</label>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Neurodivergencia</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-500">
                   <Briefcase className="w-3 h-3" />
@@ -1023,26 +1023,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="text"
                   value={occupation}
                   onChange={(e) => setOccupation(e.target.value)}
-                  placeholder="Ej. Artista visual / TDAH & Espectro Autista"
+                  placeholder="Ej. Bipolaridad, Depresión, Agorafobia..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Bio auténtica</label>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Bio</label>
               <textarea
                 id="reg-input-bio"
                 rows={2}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                placeholder="Contanos sobre vos, tus hiperfocos y lo que buscás..."
+                placeholder="Contanos sobre vos"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 resize-none"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Intereses (separados por coma)</label>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Intereses</label>
               <input
                 id="reg-input-interests"
                 type="text"

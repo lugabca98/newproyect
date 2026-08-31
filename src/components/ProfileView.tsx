@@ -632,13 +632,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-slate-400 mb-1.5">Biografía</label>
+          <label className="block text-xs font-semibold text-slate-400 mb-1.5">Bio</label>
           <textarea
             id="textarea-profile-bio"
             rows={3}
             value={bio}
             onChange={(e) => setBio(e.target.value)}
-            placeholder="Contá un poco sobre ti, tus pasatiempos y lo que buscas..."
+            placeholder="Contanos sobre vos"
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs sm:text-sm text-white focus:outline-none focus:border-rose-500 resize-none"
           />
         </div>
