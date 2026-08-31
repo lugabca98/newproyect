@@ -181,7 +181,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
     try {
-      const res = await api.deleteUser(userToDelete.id);
+      const res = await api.deleteUser(userToDelete.id, userToDelete.email);
       showToast(res.message, 'success');
       setUserToDelete(null);
       if (inspectedUser?.id === userToDelete.id) {

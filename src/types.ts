@@ -1,5 +1,5 @@
 export type Gender = 'female' | 'male' | 'non-binary' | 'other';
-export type UserStatus = 'active' | 'blocked';
+export type UserStatus = 'active' | 'blocked' | 'deleted';
 export type UserRole = 'user' | 'admin';
 
 export interface UserPreferences {

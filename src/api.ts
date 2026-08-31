@@ -425,8 +425,8 @@ class ApiService {
     return { success: true, message: 'Tu cuenta ha sido eliminada exitosamente.' };
   }
 
-  async deleteUser(userId: string): Promise<{ success: boolean; message: string }> {
-    await firebaseService.adminDeleteUser(userId);
+  async deleteUser(userId: string, email?: string): Promise<{ success: boolean; message: string }> {
+    await firebaseService.adminDeleteUser(userId, email);
     return { success: true, message: 'Usuario eliminado permanentemente de la base de datos.' };
   }
 
@@ -440,8 +440,8 @@ class ApiService {
     return { user };
   }
 
-  async deleteUserAdmin(targetUserId: string): Promise<{ success: boolean }> {
-    await firebaseService.adminDeleteUser(targetUserId);
+  async deleteUserAdmin(targetUserId: string, email?: string): Promise<{ success: boolean }> {
+    await firebaseService.adminDeleteUser(targetUserId, email);
     return { success: true };
   }
 

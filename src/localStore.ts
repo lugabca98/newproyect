@@ -8,6 +8,7 @@ const STORAGE_KEY_MESSAGES = 'mv_db_messages';
 const STORAGE_KEY_LOGS = 'mv_db_logs';
 const STORAGE_KEY_CREDENTIALS = 'mv_db_credentials';
 const STORAGE_KEY_OTPS = 'mv_db_otps';
+const STORAGE_KEY_DELETED_EMAILS = 'mv_db_deleted_emails';
 
 export { DEFAULT_ADMIN_EMAIL };
 
@@ -346,12 +347,14 @@ class LocalDatabaseStore {
   }
 
   init(): void {
+    const deletedEmails = new Set(this.getDeletedEmails());
     const creds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
     let credsModified = false;
 
-    // Seed default credentials for demo accounts ONLY if not already saved (preserves user-changed passwords)
+    // Seed default credentials for demo accounts ONLY if not deleted and not already saved
     DEMO_ACCOUNTS.forEach((acc) => {
       const emailLower = acc.email.toLowerCase();
+      if (deletedEmails.has(emailLower)) return;
       if (!creds[emailLower]) {
         const syncHash = hashPasswordSync(acc.primaryPass);
         creds[emailLower] = {
@@ -369,7 +372,8 @@ class LocalDatabaseStore {
 
     const users = this.getStored<User[]>(STORAGE_KEY_USERS, []);
     if (users.length === 0) {
-      this.setStored(STORAGE_KEY_USERS, INITIAL_SEED_USERS);
+      const filteredSeed = INITIAL_SEED_USERS.filter(u => !deletedEmails.has(u.email.toLowerCase()));
+      this.setStored(STORAGE_KEY_USERS, filteredSeed);
       this.setStored(STORAGE_KEY_MATCHES, INITIAL_MATCHES);
       this.setStored(STORAGE_KEY_MESSAGES, INITIAL_MESSAGES);
       this.setStored(STORAGE_KEY_LOGS, INITIAL_LOGS);
@@ -387,42 +391,84 @@ class LocalDatabaseStore {
         }
       });
 
+      // Filter out any deleted users if somehow present
+      const validUsers = users.filter(u => !deletedEmails.has((u.email || '').toLowerCase()));
+      if (validUsers.length !== users.length) {
+        changed = true;
+      }
+
       // Ensure admin exists with admin role
-      const adminIdx = users.findIndex(u => u.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
+      const adminIdx = validUsers.findIndex(u => u.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
       if (adminIdx === -1) {
-        users.unshift(INITIAL_ADMIN);
+        validUsers.unshift(INITIAL_ADMIN);
         changed = true;
       } else {
-        users[adminIdx].role = 'admin';
-        users[adminIdx].status = 'active';
-        if (users[adminIdx].occupation !== INITIAL_ADMIN.occupation) {
-          users[adminIdx].occupation = INITIAL_ADMIN.occupation;
+        validUsers[adminIdx].role = 'admin';
+        validUsers[adminIdx].status = 'active';
+        if (validUsers[adminIdx].occupation !== INITIAL_ADMIN.occupation) {
+          validUsers[adminIdx].occupation = INITIAL_ADMIN.occupation;
           changed = true;
         }
       }
 
       if (changed) {
-        this.setStored(STORAGE_KEY_USERS, users);
+        this.setStored(STORAGE_KEY_USERS, validUsers);
       }
     }
   }
 
+  getDeletedEmails(): string[] {
+    return this.getStored<string[]>(STORAGE_KEY_DELETED_EMAILS, []);
+  }
+
+  recordDeletedEmail(email: string): void {
+    if (!email) return;
+    const cleanEmail = email.trim().toLowerCase();
+    const deleted = this.getDeletedEmails();
+    if (!deleted.includes(cleanEmail)) {
+      deleted.push(cleanEmail);
+      this.setStored(STORAGE_KEY_DELETED_EMAILS, deleted);
+    }
+    this.removeCredential(cleanEmail);
+  }
+
+  isEmailDeleted(email: string): boolean {
+    if (!email) return false;
+    const cleanEmail = email.trim().toLowerCase();
+    const deleted = this.getDeletedEmails();
+    return deleted.includes(cleanEmail);
+  }
+
+  removeDeletedEmail(email: string): void {
+    if (!email) return;
+    const cleanEmail = email.trim().toLowerCase();
+    const deleted = this.getDeletedEmails().filter(e => e.toLowerCase() !== cleanEmail);
+    this.setStored(STORAGE_KEY_DELETED_EMAILS, deleted);
+  }
+
   getUsers(): User[] {
     this.init();
-    return this.getStored<User[]>(STORAGE_KEY_USERS, INITIAL_SEED_USERS);
+    const deleted = new Set(this.getDeletedEmails());
+    const users = this.getStored<User[]>(STORAGE_KEY_USERS, INITIAL_SEED_USERS);
+    return users.filter(u => !deleted.has((u.email || '').toLowerCase()));
   }
 
   saveUsers(users: User[]): void {
-    this.setStored(STORAGE_KEY_USERS, users);
+    const deleted = new Set(this.getDeletedEmails());
+    const filtered = users.filter(u => !deleted.has((u.email || '').toLowerCase()));
+    this.setStored(STORAGE_KEY_USERS, filtered);
   }
 
   removeUser(userId: string, email?: string): void {
     const cleanEmail = (email || '').trim().toLowerCase();
+    if (cleanEmail) {
+      this.recordDeletedEmail(cleanEmail);
+    }
     const currentUsers = this.getStored<User[]>(STORAGE_KEY_USERS, []);
     const filtered = currentUsers.filter(u => 
       u.id !== userId && (!cleanEmail || (u.email || '').trim().toLowerCase() !== cleanEmail)
     );
-    this.saveUsers(filtered);
+    this.setStored(STORAGE_KEY_USERS, filtered);
 
     if (cleanEmail) {
       this.removeCredential(cleanEmail);

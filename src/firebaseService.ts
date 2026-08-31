@@ -251,6 +251,11 @@ class FirebaseService {
     };
 
     // Save credentials in localDb & Firestore
+    localDb.removeDeletedEmail(email);
+    try {
+      await deleteDoc(doc(db, 'deletedAccounts', email)).catch(() => {});
+    } catch {}
+
     localDb.saveCredential(email, passHash, uid);
     try {
       await setDoc(doc(db, 'credentials', email), {
@@ -288,6 +293,21 @@ class FirebaseService {
 
     const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
+    // 0. Check if this email has been deleted by an administrator
+    const isLocallyDeleted = localDb.isEmailDeleted(cleanEmail);
+    let isFirestoreDeleted = false;
+    try {
+      const delSnap = await getDoc(doc(db, 'deletedAccounts', cleanEmail));
+      if (delSnap.exists()) {
+        isFirestoreDeleted = true;
+      }
+    } catch {}
+
+    if (isLocallyDeleted || isFirestoreDeleted) {
+      await signOut(auth).catch(() => {});
+      throw new Error('Esta cuenta ha sido eliminada por el administrador. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
+    }
+
     // 1. Authenticate with Firebase Authentication
     let authUid = '';
     let isEmailVerified = false;
@@ -308,7 +328,7 @@ class FirebaseService {
       }
 
       const isDemo = DEMO_ACCOUNTS.find(d => d.email.toLowerCase() === cleanEmail);
-      if (isDemo && (isPasswordValidForDemoAccount(cleanEmail, cleanPass) || cleanPass === '123456')) {
+      if (isDemo && !localDb.isEmailDeleted(cleanEmail) && (isPasswordValidForDemoAccount(cleanEmail, cleanPass) || cleanPass === '123456')) {
         const demoUser = localDb.getUsers().find(u => (u.email || '').toLowerCase() === cleanEmail);
         if (demoUser) return demoUser;
       }
@@ -363,37 +383,19 @@ class FirebaseService {
     if (!user) {
       user = await this.getUserByEmail(cleanEmail);
     }
+    if (!user && !localDb.isEmailDeleted(cleanEmail)) {
+      user = localDb.getUsers().find(u => (u.email || '').toLowerCase() === cleanEmail) || null;
+    }
 
-    if (!user) {
-      // Create user doc if not present
-      user = {
-        id: authUid,
-        name: isOwnerAdmin ? 'Administrador' : 'Usuario',
-        email: cleanEmail,
-        age: 25,
-        gender: 'other',
-        bio: 'Conectando con empatía en Vulnerable.',
-        photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
-        location: 'Buenos Aires, Argentina',
-        distanceKm: 2,
-        occupation: 'Neurodivergente',
-        interests: ['Música', 'Lectura'],
-        verified: isOwnerAdmin,
-        emailVerified: isOwnerAdmin ? true : isEmailVerified,
-        status: 'active',
-        role: isOwnerAdmin ? 'admin' : 'user',
-        createdAt: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-        likesCount: 0,
-        matchesCount: 0,
-        preferences: { minAge: 18, maxAge: 60, interestedIn: ['female', 'male', 'non-binary', 'other'], maxDistanceKm: 50 }
-      };
-      await setDoc(doc(db, 'users', authUid), user).catch(() => {});
+    // If user document is missing or deleted, strictly forbid login and do not auto-create
+    if (!user || user.status === 'deleted') {
+      await signOut(auth).catch(() => {});
+      throw new Error('Esta cuenta ha sido eliminada por el administrador o no existe. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
     }
 
     if (user.status === 'blocked') {
       await signOut(auth).catch(() => {});
-      throw new Error('Esta cuenta se encuentra temporalmente suspendida.');
+      throw new Error('Esta cuenta se encuentra temporalmente suspendida por un administrador.');
     }
 
     user.emailVerified = isOwnerAdmin ? true : isEmailVerified;
@@ -1469,15 +1471,27 @@ class FirebaseService {
     } catch {}
 
     const userMap = new Map<string, User>();
+    const locallyDeleted = new Set(localDb.getDeletedEmails());
 
-    // 1. First add Initial Seed Users & Local DB users so we ALWAYS have a complete base
+    // Fetch deleted accounts from Firestore
+    try {
+      const delSnap = await getDocs(collection(db, 'deletedAccounts'));
+      delSnap.forEach(d => {
+        const data = d.data();
+        if (data && data.email) {
+          locallyDeleted.add(String(data.email).toLowerCase());
+        }
+      });
+    } catch {}
+
+    // 1. First add Initial Seed Users & Local DB users so we ALWAYS have a complete base (excluding deleted)
     for (const u of INITIAL_SEED_USERS) {
-      if (u && u.id) {
+      if (u && u.id && !locallyDeleted.has(u.email.toLowerCase())) {
         userMap.set(u.id, { ...u });
       }
     }
     for (const u of localDb.getUsers()) {
-      if (u && u.id) {
+      if (u && u.id && !locallyDeleted.has((u.email || '').toLowerCase())) {
         userMap.set(u.id, { ...userMap.get(u.id), ...u });
       }
     }
@@ -1492,7 +1506,7 @@ class FirebaseService {
       const pubSnap = await getDocs(collection(db, 'publicProfiles'));
       pubSnap.forEach(d => {
         const p = d.data() as User;
-        if (p && p.id) {
+        if (p && p.id && !locallyDeleted.has((p.email || '').toLowerCase())) {
           userMap.set(p.id, { ...userMap.get(p.id), ...p });
         }
       });
@@ -1505,7 +1519,7 @@ class FirebaseService {
       const snap = await getDocs(collection(db, 'users'));
       snap.forEach(d => {
         const u = d.data() as User;
-        if (u && u.id) {
+        if (u && u.id && !locallyDeleted.has((u.email || '').toLowerCase())) {
           userMap.set(u.id, { ...userMap.get(u.id), ...u });
         }
       });
@@ -1513,7 +1527,7 @@ class FirebaseService {
       console.warn('[Firestore] Error fetching users in admin:', err);
     }
 
-    const allUsers = Array.from(userMap.values());
+    const allUsers = Array.from(userMap.values()).filter(u => !locallyDeleted.has((u.email || '').toLowerCase()) && u.status !== 'deleted');
     return allUsers;
   }
 
@@ -1661,15 +1675,15 @@ class FirebaseService {
     }
   }
 
-  async adminDeleteUser(targetUserId: string): Promise<void> {
+  async adminDeleteUser(targetUserId: string, targetEmailHint?: string): Promise<void> {
     const user = await this.getUserById(targetUserId) || localDb.getUsers().find(u => u.id === targetUserId);
-    const userEmail = (user?.email || '').trim().toLowerCase();
+    const userEmail = (targetEmailHint || user?.email || '').trim().toLowerCase();
 
     // 1. Call server-side admin delete
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_token') : null;
       if (token) {
-        await fetch(`/api/admin/users/${targetUserId}`, {
+        await fetch(`/api/admin/users/${targetUserId}${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ''}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -1684,13 +1698,23 @@ class FirebaseService {
       await deleteDoc(doc(db, 'publicProfiles', targetUserId)).catch(() => {});
       if (userEmail) {
         await deleteDoc(doc(db, 'credentials', userEmail)).catch(() => {});
+        // Add to deletedAccounts collection so logins are blocked
+        await setDoc(doc(db, 'deletedAccounts', userEmail), {
+          email: userEmail,
+          userId: targetUserId,
+          deletedAt: new Date().toISOString(),
+          deletedBy: 'admin'
+        }).catch(() => {});
       }
     } catch (err) {
       console.warn('[Firestore] Delete notice:', err);
     }
 
-    // 3. Delete in local storage & credentials
+    // 3. Delete in local storage & credentials & record deleted email
     localDb.removeUser(targetUserId, userEmail);
+    if (userEmail) {
+      localDb.recordDeletedEmail(userEmail);
+    }
 
     // 4. Record audit log
     const currentAdmin = auth.currentUser;
