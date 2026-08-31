@@ -59,6 +59,13 @@ export function App() {
       const token = api.getToken();
       if (token) {
         const me = await api.getMe();
+        if (!me.isAdmin && !isUserAdmin(me.user) && !me.user.emailVerified) {
+          api.setToken(null);
+          setCurrentUser(null);
+          setAuthModalMode('login');
+          setAuthModalOpen(true);
+          return;
+        }
         setCurrentUser(me.user);
         setAuthModalOpen(false);
         if (me.isAdmin && isUserAdmin(me.user)) {
@@ -73,7 +80,7 @@ export function App() {
         setAuthModalOpen(true);
       }
     } catch (err) {
-      console.warn('Session expired or error:', err);
+      console.warn('Session expired or unverified:', err);
       api.setToken(null);
       setCurrentUser(null);
       setAuthModalMode('register');
@@ -205,9 +212,15 @@ export function App() {
   };
 
   const handleAuthSuccess = (user: User, isAdmin: boolean) => {
+    const isOwner = isAdmin || isUserAdmin(user);
+    if (!isOwner && !user.emailVerified) {
+      setAuthModalMode('login');
+      setAuthModalOpen(true);
+      return;
+    }
     setCurrentUser(user);
     setAuthModalOpen(false);
-    if (isAdmin && isUserAdmin(user)) {
+    if (isOwner) {
       setCurrentTab('admin');
     } else {
       setCurrentTab('discover');
@@ -333,11 +346,11 @@ export function App() {
 
       {/* AUTHENTICATION MODAL (REGISTER / LOGIN / OWNER) */}
       <AuthModal
-        isOpen={authModalOpen || !currentUser}
+        isOpen={authModalOpen || !currentUser || (!isUserAdmin(currentUser) && !currentUser.emailVerified)}
         initialMode={authModalMode}
-        canClose={!!currentUser}
+        canClose={!!currentUser && (isUserAdmin(currentUser) || !!currentUser.emailVerified)}
         onClose={() => {
-          if (currentUser) {
+          if (currentUser && (isUserAdmin(currentUser) || currentUser.emailVerified)) {
             setAuthModalOpen(false);
           }
         }}

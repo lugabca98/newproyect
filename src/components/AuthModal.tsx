@@ -365,8 +365,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setRegisteredIsAdmin(res.isAdmin);
       setRegOtpInput('');
 
-      // If user is owner or already verified
-      if (res.isAdmin || res.user.emailVerified) {
+      // ONLY owner admin can bypass email verification
+      if (res.isAdmin) {
         resetAllFormInputs();
         onSuccess(res.user, res.isAdmin);
         onClose();
@@ -395,7 +395,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setOtpVerifySuccess(true);
         setResendVerificationNotice(res.message);
         setTimeout(() => {
-          onSuccess(res.user!, registeredIsAdmin);
+          const verifiedUser: User = { ...res.user!, emailVerified: true };
+          api.setToken(verifiedUser.id, verifiedUser.id, verifiedUser.email, registeredIsAdmin ? 'admin' : 'user');
+          onSuccess(verifiedUser, registeredIsAdmin);
           resetAllFormInputs();
           onClose();
         }, 800);
@@ -431,9 +433,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setOtpVerifySuccess(true);
       setResendVerificationNotice(res.message);
 
-      setTimeout(() => {
-        if (registeredUser) {
-          onSuccess({ ...registeredUser, emailVerified: true }, registeredIsAdmin);
+      setTimeout(async () => {
+        let u = registeredUser;
+        if (!u) {
+          u = await firebaseService.getUserByEmail(cleanEmail);
+        }
+        if (u) {
+          const verifiedUser: User = { ...u, emailVerified: true };
+          api.setToken(verifiedUser.id, verifiedUser.id, verifiedUser.email, registeredIsAdmin ? 'admin' : 'user');
+          onSuccess(verifiedUser, registeredIsAdmin);
           resetAllFormInputs();
           onClose();
         } else {

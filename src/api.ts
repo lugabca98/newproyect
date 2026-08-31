@@ -79,9 +79,15 @@ class ApiService {
     const user = await firebaseService.loginWithGoogle(customGoogleUser);
     const cleanEmail = (user.email || '').trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, user.id);
-    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user' };
-    this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
-    return { user: sanitizedUser, token: sanitizedUser.id, isAdmin: isOwner };
+    const isVerified = isOwner || Boolean(user.emailVerified);
+    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user', emailVerified: isVerified };
+    
+    if (isVerified) {
+      this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
+    } else {
+      this.setToken(null);
+    }
+    return { user: sanitizedUser, token: isVerified ? sanitizedUser.id : '', isAdmin: isOwner };
   }
 
   async loginDirectAdmin(): Promise<{ user: User; token: string; isAdmin: boolean }> {
@@ -103,15 +109,21 @@ class ApiService {
     const newUser = await firebaseService.registerUser(userData, password);
     const cleanEmail = (newUser.email || '').trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, newUser.id);
-    const sanitizedUser: User = { ...newUser, role: isOwner ? 'admin' : 'user' };
-    this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
+    const sanitizedUser: User = { ...newUser, role: isOwner ? 'admin' : 'user', emailVerified: isOwner ? true : false };
+    
+    // Explicitly do not grant token for unverified normal users
+    if (isOwner) {
+      this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
+    } else {
+      this.setToken(null);
+    }
 
     // Trigger verification email to the user's email inbox
     this.sendVerificationEmail(cleanEmail, newUser.name).catch(() => {});
 
     return { 
       user: sanitizedUser, 
-      token: sanitizedUser.id, 
+      token: isOwner ? sanitizedUser.id : '', 
       isAdmin: isOwner,
       message: `Cuenta creada. Hemos enviado un código de 6 dígitos a ${cleanEmail}.` 
     };
@@ -143,10 +155,17 @@ class ApiService {
     const currentUserObj: User = user;
     const cleanEmail = (currentUserObj.email || storedEmail).trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, currentUserObj.id);
+    
+    // Strict block: unverified users cannot retain active sessions
+    if (!isOwner && !currentUserObj.emailVerified) {
+      this.setToken(null);
+      throw new Error('Debes confirmar tu correo electrónico antes de ingresar a la plataforma.');
+    }
 
     const sanitizedUser: User = {
       ...currentUserObj,
-      role: isOwner ? 'admin' : 'user'
+      role: isOwner ? 'admin' : 'user',
+      emailVerified: isOwner ? true : Boolean(currentUserObj.emailVerified)
     };
 
     // Keep local session flags strictly in sync

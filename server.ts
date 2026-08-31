@@ -813,14 +813,18 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
     return;
   }
 
+  const isOwner = normalizedEmail === 'lugabca98@gmail.com' || user.role === 'admin';
+  const isEmailVerified = isOwner || Boolean((user as any).emailVerified);
+
   user.lastActive = new Date().toISOString();
   saveDatabase();
-  const token = generateSecureToken(user);
+  const token = isEmailVerified ? generateSecureToken(user) : '';
 
   res.json({ 
     user: toPrivateUser(user), 
     token, 
-    isAdmin: user.role === 'admin' 
+    isAdmin: isOwner,
+    emailVerified: isEmailVerified
   });
 });
 

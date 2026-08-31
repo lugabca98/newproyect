@@ -403,7 +403,7 @@ class FirebaseService {
       throw new Error('Esta cuenta se encuentra temporalmente suspendida por un administrador.');
     }
 
-    user.emailVerified = isOwnerAdmin ? true : Boolean(user.emailVerified && (isEmailVerified || user.verified));
+    user.emailVerified = isOwnerAdmin ? true : Boolean(isEmailVerified || user.emailVerified === true);
     user.lastActive = new Date().toISOString();
 
     // If verified, ensure public profile exists in feed
