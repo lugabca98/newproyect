@@ -298,12 +298,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await api.login(cleanEmail, password);
       
-      // Strict check: if email is not verified and not admin, show verification screen
-      if (!res.user.emailVerified && !res.isAdmin) {
+      // Strict check: if email is not verified, show verification screen
+      if (!res.user.emailVerified) {
+        api.setToken(null);
         setRegisteredUser(res.user);
         setRegisteredIsAdmin(res.isAdmin);
         setRegEmail(cleanEmail);
-        setResendVerificationNotice(`Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
+        setResendVerificationNotice(`Tu correo no ha sido verificado aún. Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
         setMode('verify-email-pending');
         setResendVerificationCooldown(60);
         return;
@@ -364,14 +365,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setRegisteredUser(res.user);
       setRegisteredIsAdmin(res.isAdmin);
       setRegOtpInput('');
-
-      // ONLY owner admin can bypass email verification
-      if (res.isAdmin) {
-        resetAllFormInputs();
-        onSuccess(res.user, res.isAdmin);
-        onClose();
-        return;
-      }
 
       setResendVerificationNotice(`Te enviamos un correo de confirmación a ${regEmail.trim()}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
 

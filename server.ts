@@ -814,7 +814,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 
   const isOwner = normalizedEmail === 'lugabca98@gmail.com' || user.role === 'admin';
-  const isEmailVerified = isOwner || Boolean((user as any).emailVerified);
+  const isEmailVerified = Boolean((user as any).emailVerified);
 
   user.lastActive = new Date().toISOString();
   saveDatabase();
@@ -923,7 +923,6 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
 
   users.push(newUser);
   saveDatabase();
-  const token = generateSecureToken(newUser);
 
   // Generate and send initial 6-digit email verification OTP in the background
   const initialOtp = String(Math.floor(100000 + Math.random() * 900000));
@@ -947,7 +946,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
 
   res.status(201).json({ 
     user: toPrivateUser(newUser), 
-    token, 
+    token: '', 
     isAdmin: false,
     emailSent: true,
     message: 'Cuenta creada. Hemos enviado un código de verificación a tu correo electrónico.'

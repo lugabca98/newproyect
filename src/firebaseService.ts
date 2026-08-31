@@ -239,8 +239,8 @@ class FirebaseService {
       distanceKm: 2,
       occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
-      verified: isOwnerAdmin,
-      emailVerified: isOwnerAdmin ? true : false,
+      verified: false,
+      emailVerified: false,
       status: 'active' as UserStatus,
       role: (isOwnerAdmin ? 'admin' : 'user') as UserRole,
       createdAt: new Date().toISOString(),
@@ -403,7 +403,7 @@ class FirebaseService {
       throw new Error('Esta cuenta se encuentra temporalmente suspendida por un administrador.');
     }
 
-    user.emailVerified = isOwnerAdmin ? true : Boolean(isEmailVerified || user.emailVerified === true);
+    user.emailVerified = Boolean(isEmailVerified || user.emailVerified === true);
     user.lastActive = new Date().toISOString();
 
     // If verified, ensure public profile exists in feed

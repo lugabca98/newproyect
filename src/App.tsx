@@ -59,7 +59,7 @@ export function App() {
       const token = api.getToken();
       if (token) {
         const me = await api.getMe();
-        if (!me.isAdmin && !isUserAdmin(me.user) && !me.user.emailVerified) {
+        if (!me.user.emailVerified) {
           api.setToken(null);
           setCurrentUser(null);
           setAuthModalMode('login');
@@ -212,12 +212,12 @@ export function App() {
   };
 
   const handleAuthSuccess = (user: User, isAdmin: boolean) => {
-    const isOwner = isAdmin || isUserAdmin(user);
-    if (!isOwner && !user.emailVerified) {
+    if (!user.emailVerified) {
       setAuthModalMode('login');
       setAuthModalOpen(true);
       return;
     }
+    const isOwner = isAdmin || isUserAdmin(user);
     setCurrentUser(user);
     setAuthModalOpen(false);
     if (isOwner) {
@@ -346,11 +346,11 @@ export function App() {
 
       {/* AUTHENTICATION MODAL (REGISTER / LOGIN / OWNER) */}
       <AuthModal
-        isOpen={authModalOpen || !currentUser || (!isUserAdmin(currentUser) && !currentUser.emailVerified)}
+        isOpen={authModalOpen || !currentUser || !currentUser.emailVerified}
         initialMode={authModalMode}
-        canClose={!!currentUser && (isUserAdmin(currentUser) || !!currentUser.emailVerified)}
+        canClose={!!currentUser && !!currentUser.emailVerified}
         onClose={() => {
-          if (currentUser && (isUserAdmin(currentUser) || currentUser.emailVerified)) {
+          if (currentUser && currentUser.emailVerified) {
             setAuthModalOpen(false);
           }
         }}

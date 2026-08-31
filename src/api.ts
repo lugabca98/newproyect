@@ -70,16 +70,22 @@ class ApiService {
     const cleanEmail = email.trim().toLowerCase();
     const user = await firebaseService.loginUser(cleanEmail, password);
     const isOwner = isEmailAdmin(cleanEmail, user.id);
-    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user' };
-    this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
-    return { user: sanitizedUser, token: sanitizedUser.id, isAdmin: isOwner };
+    const isVerified = Boolean(user.emailVerified);
+    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user', emailVerified: isVerified };
+
+    if (isVerified) {
+      this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
+    } else {
+      this.setToken(null);
+    }
+    return { user: sanitizedUser, token: isVerified ? sanitizedUser.id : '', isAdmin: isOwner };
   }
 
   async loginWithGoogle(customGoogleUser?: { email: string; name?: string; photoURL?: string; uid?: string }): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginWithGoogle(customGoogleUser);
     const cleanEmail = (user.email || '').trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, user.id);
-    const isVerified = isOwner || Boolean(user.emailVerified);
+    const isVerified = Boolean(user.emailVerified);
     const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user', emailVerified: isVerified };
     
     if (isVerified) {
@@ -93,13 +99,13 @@ class ApiService {
   async loginDirectAdmin(): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginDirectAdmin();
     this.setToken(user.id, user.id, user.email, 'admin');
-    return { user, token: user.id, isAdmin: true };
+    return { user: { ...user, emailVerified: true }, token: user.id, isAdmin: true };
   }
 
   async loginGuest(guestName?: string, guestOccupation?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginGuest(guestName, guestOccupation);
     this.setToken(user.id, user.id, user.email, 'user');
-    return { user: { ...user, role: 'user' }, token: user.id, isAdmin: false };
+    return { user: { ...user, role: 'user', emailVerified: true }, token: user.id, isAdmin: false };
   }
 
   async register(userData: Partial<User>, password?: string): Promise<{ user: User; token: string; isAdmin: boolean; message?: string }> {
@@ -109,21 +115,17 @@ class ApiService {
     const newUser = await firebaseService.registerUser(userData, password);
     const cleanEmail = (newUser.email || '').trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, newUser.id);
-    const sanitizedUser: User = { ...newUser, role: isOwner ? 'admin' : 'user', emailVerified: isOwner ? true : false };
+    const sanitizedUser: User = { ...newUser, role: isOwner ? 'admin' : 'user', emailVerified: false };
     
-    // Explicitly do not grant token for unverified normal users
-    if (isOwner) {
-      this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
-    } else {
-      this.setToken(null);
-    }
+    // Explicitly do not grant token for unverified registrations under any circumstances
+    this.setToken(null);
 
     // Trigger verification email to the user's email inbox
     this.sendVerificationEmail(cleanEmail, newUser.name).catch(() => {});
 
     return { 
       user: sanitizedUser, 
-      token: isOwner ? sanitizedUser.id : '', 
+      token: '', 
       isAdmin: isOwner,
       message: `Cuenta creada. Hemos enviado un código de 6 dígitos a ${cleanEmail}.` 
     };
@@ -157,7 +159,7 @@ class ApiService {
     const isOwner = isEmailAdmin(cleanEmail, currentUserObj.id);
     
     // Strict block: unverified users cannot retain active sessions
-    if (!isOwner && !currentUserObj.emailVerified) {
+    if (!currentUserObj.emailVerified) {
       this.setToken(null);
       throw new Error('Debes confirmar tu correo electrónico antes de ingresar a la plataforma.');
     }
@@ -165,7 +167,7 @@ class ApiService {
     const sanitizedUser: User = {
       ...currentUserObj,
       role: isOwner ? 'admin' : 'user',
-      emailVerified: isOwner ? true : Boolean(currentUserObj.emailVerified)
+      emailVerified: Boolean(currentUserObj.emailVerified)
     };
 
     // Keep local session flags strictly in sync
