@@ -602,65 +602,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
             </div>
 
-            {/* 6-Digit OTP Box inputs (Direct code verification) */}
-            <form onSubmit={handleVerifyRegisterOtp} className="p-4 bg-slate-950/80 border border-slate-800/90 rounded-2xl space-y-3.5">
-              <div className="text-center space-y-1">
-                <p className="text-xs font-bold text-white">
-                  Ingresá tu Código de 6 Dígitos
-                </p>
-                <p className="text-[11px] text-slate-400">
-                  Ingresá el código que enviamos a tu correo para activar tu cuenta inmediatamente:
-                </p>
-              </div>
-
-              <OtpBoxes
-                value={regOtpInput}
-                onChange={(val) => {
-                  setRegOtpInput(val);
-                  setErrorMsg('');
-                }}
-                idPrefix="reg-otp"
-                disabled={loading || otpVerifySuccess}
-              />
-
-              <button
-                id="btn-verify-otp-submit"
-                type="submit"
-                disabled={loading || otpVerifySuccess || regOtpInput.replace(/\s+/g, '').length !== 6}
-                className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs shadow-md shadow-rose-500/20 transition hover:scale-[1.01] flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Validando código...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-4 h-4" />
-                    <span>Validar Código y Activar Cuenta</span>
-                  </>
-                )}
-              </button>
-            </form>
-
-            {/* Alternative: Check link click or Resend */}
-            <div className="space-y-2.5 pt-1">
+            {/* Primary Action Button: "Ya verifiqué mi correo" */}
+            <div className="space-y-3 pt-2">
               <button
                 id="btn-check-email-verification"
                 type="button"
                 onClick={handleCheckEmailVerification}
                 disabled={loading || otpVerifySuccess}
-                className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white rounded-xl font-semibold text-xs transition flex items-center justify-center gap-2"
+                className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Comprobando estado...</span>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Comprobando verificación...</span>
                   </>
                 ) : (
                   <>
-                    <Check className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Comprobar enlace de correo</span>
+                    <Check className="w-5 h-5" />
+                    <span>Ya verifiqué mi correo</span>
                   </>
                 )}
               </button>
@@ -671,20 +630,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="button"
                   onClick={handleResendVerification}
                   disabled={loading || resendVerificationCooldown > 0}
-                  className="flex-1 py-2 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
                 >
-                  <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                   <span>
                     {resendVerificationCooldown > 0
-                      ? `Reenviar código en (${resendVerificationCooldown}s)`
-                      : 'Reenviar código por correo'}
+                      ? `Reenviar correo en (${resendVerificationCooldown}s)`
+                      : 'Reenviar correo de confirmación'}
                   </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => { setMode('login'); setErrorMsg(''); }}
-                  className="px-4 py-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
+                  className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
                 >
                   Volver al Login
                 </button>

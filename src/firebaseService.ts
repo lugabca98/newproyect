@@ -470,6 +470,18 @@ class FirebaseService {
       };
     }
 
+    // 1. If Firebase Auth user is present, reload from Firebase Auth servers to check emailVerified status
+    let authIsVerified = false;
+    if (auth.currentUser) {
+      try {
+        await reload(auth.currentUser);
+        authIsVerified = auth.currentUser.emailVerified === true;
+      } catch (err) {
+        console.warn('[Firebase Auth] Error reloading auth user:', err);
+      }
+    }
+
+    // 2. Fetch user profile
     let user = await this.getUserByEmail(cleanEmail);
     if (!user && auth.currentUser) {
       user = await this.getUserById(auth.currentUser.uid);
@@ -486,8 +498,41 @@ class FirebaseService {
       };
     }
 
-    // Check if the user document is legitimately verified in Firestore/localDb
-    if (user.emailVerified === true) {
+    // 3. If verified via Firebase link reload or document
+    if (authIsVerified || user.emailVerified === true) {
+      user.emailVerified = true;
+      user.lastActive = new Date().toISOString();
+
+      // Persist in Firestore
+      await updateDoc(doc(db, 'users', user.id), {
+        emailVerified: true,
+        lastActive: user.lastActive
+      }).catch(() => {});
+
+      // Sync public profile
+      if (user.role !== 'admin') {
+        await setDoc(doc(db, 'publicProfiles', user.id), {
+          id: user.id,
+          name: user.name,
+          age: user.age,
+          gender: user.gender,
+          bio: user.bio,
+          photos: user.photos,
+          location: user.location,
+          distanceKm: user.distanceKm,
+          occupation: user.occupation,
+          interests: user.interests,
+          verified: user.verified,
+          status: user.status,
+          role: user.role,
+          createdAt: user.createdAt,
+          lastActive: user.lastActive
+        }).catch(() => {});
+      }
+
+      const existingUsers = localDb.getUsers().filter(u => u.id !== user!.id);
+      localDb.saveUsers([user, ...existingUsers]);
+
       return {
         isVerified: true,
         user,
@@ -495,11 +540,11 @@ class FirebaseService {
       };
     }
 
-    // If still unverified, reject verification check
+    // If still unverified on Firebase Auth and Firestore
     return {
       isVerified: false,
       user: null,
-      message: 'Tu correo todavía no ha sido confirmado. Ingresá el código de 6 dígitos que te enviamos a tu casilla o abrí el enlace de confirmación.'
+      message: 'Tu correo todavía no ha sido verificado. Por favor abrí el correo que te enviamos y hacé clic en el enlace de confirmación.'
     };
   }
 
