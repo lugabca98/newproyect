@@ -245,8 +245,8 @@ class ApiService {
     return firebaseService.verifyOtpCode(cleanEmail, cleanCode, 'verify_email');
   }
 
-  async checkEmailVerification(): Promise<{ isVerified: boolean; user?: User | null; message: string }> {
-    return firebaseService.checkEmailVerification();
+  async checkEmailVerification(email?: string): Promise<{ isVerified: boolean; user?: User | null; message: string }> {
+    return firebaseService.checkEmailVerification(email);
   }
 
   async sendPasswordReset(email: string): Promise<{ success: boolean; message: string }> {

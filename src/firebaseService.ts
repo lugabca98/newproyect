@@ -403,7 +403,7 @@ class FirebaseService {
       throw new Error('Esta cuenta se encuentra temporalmente suspendida por un administrador.');
     }
 
-    user.emailVerified = Boolean(isEmailVerified || user.emailVerified === true);
+    user.emailVerified = Boolean(user.emailVerified === true);
     user.lastActive = new Date().toISOString();
 
     // If verified, ensure public profile exists in feed
@@ -460,57 +460,34 @@ class FirebaseService {
     }
   }
 
-  async checkEmailVerification(): Promise<{ isVerified: boolean; user: User | null; message: string }> {
-    const current = auth.currentUser;
-    if (!current) {
+  async checkEmailVerification(targetEmail?: string): Promise<{ isVerified: boolean; user: User | null; message: string }> {
+    const cleanEmail = (targetEmail || auth.currentUser?.email || '').trim().toLowerCase();
+    if (!cleanEmail) {
       return {
         isVerified: false,
         user: null,
-        message: 'No hay una sesión activa.'
+        message: 'No se detectó un correo electrónico.'
       };
     }
 
-    // Force reload from Firebase Authentication servers
-    await reload(current);
-    const isVerified = current.emailVerified;
+    let user = await this.getUserByEmail(cleanEmail);
+    if (!user && auth.currentUser) {
+      user = await this.getUserById(auth.currentUser.uid);
+    }
+    if (!user) {
+      user = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail) || null;
+    }
 
-    if (isVerified) {
-      let user = await this.getUserById(current.uid);
-      if (user) {
-        user.emailVerified = true;
-        user.lastActive = new Date().toISOString();
+    if (!user) {
+      return {
+        isVerified: false,
+        user: null,
+        message: 'No se encontró la cuenta de usuario.'
+      };
+    }
 
-        // Update Firestore
-        await updateDoc(doc(db, 'users', user.id), {
-          emailVerified: true,
-          lastActive: user.lastActive
-        }).catch(() => {});
-
-        // Sync public profile
-        if (user.role !== 'admin') {
-          await setDoc(doc(db, 'publicProfiles', user.id), {
-            id: user.id,
-            name: user.name,
-            age: user.age,
-            gender: user.gender,
-            bio: user.bio,
-            photos: user.photos,
-            location: user.location,
-            distanceKm: user.distanceKm,
-            occupation: user.occupation,
-            interests: user.interests,
-            verified: user.verified,
-            status: user.status,
-            role: user.role,
-            createdAt: user.createdAt,
-            lastActive: user.lastActive
-          }).catch(() => {});
-        }
-
-        const existingUsers = localDb.getUsers().filter(u => u.id !== user!.id);
-        localDb.saveUsers([user, ...existingUsers]);
-      }
-
+    // Check if the user document is legitimately verified in Firestore/localDb
+    if (user.emailVerified === true) {
       return {
         isVerified: true,
         user,
@@ -518,10 +495,11 @@ class FirebaseService {
       };
     }
 
+    // If still unverified, reject verification check
     return {
       isVerified: false,
       user: null,
-      message: 'Tu correo todavía no ha sido verificado. Por favor abrí el enlace de confirmación que te enviamos o hacé clic en "Reenviar correo".'
+      message: 'Tu correo todavía no ha sido confirmado. Ingresá el código de 6 dígitos que te enviamos a tu casilla o abrí el enlace de confirmación.'
     };
   }
 
