@@ -34,7 +34,7 @@ export function App() {
 
   // Auth modal state: starts open with 'register' mode if not logged in
   const [authModalOpen, setAuthModalOpen] = useState(true);
-  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('register');
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot-password' | 'enter-new-password'>('register');
   const [, setAuthChecking] = useState(true);
 
   // Can rewind state
@@ -56,6 +56,20 @@ export function App() {
       // Trigger cloud initialization in background
       firebaseService.initializeDatabase().catch(() => {});
       
+      // Check if arriving with a reset password or verify email link
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlMode = searchParams.get('mode');
+      if (urlMode === 'reset-password' || urlMode === 'resetPassword') {
+        setCurrentUser(null);
+        setAuthModalMode('enter-new-password');
+        setAuthModalOpen(true);
+        return;
+      } else if (urlMode === 'verify-email' || urlMode === 'verifyEmail') {
+        setCurrentUser(null);
+        setAuthModalOpen(true);
+        return;
+      }
+
       const token = api.getToken();
       if (token) {
         const me = await api.getMe();

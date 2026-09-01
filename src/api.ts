@@ -249,12 +249,67 @@ class ApiService {
     return firebaseService.checkEmailVerification(email);
   }
 
-  async sendPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+  async sendPasswordReset(email: string): Promise<{ 
+    success: boolean; 
+    message: string; 
+    code?: string; 
+    isRealDelivery?: boolean; 
+    provider?: string; 
+    previewUrl?: string 
+  }> {
     const cleanEmail = (email || '').trim().toLowerCase();
-    const fbRes = await firebaseService.sendPasswordReset(cleanEmail);
+    if (!cleanEmail) {
+      throw new Error('Por favor ingresá tu correo electrónico.');
+    }
+
+    let serverData: any = null;
+    let serverError: string | null = null;
+
+    // 1. Send password reset email via server mailer endpoint (SMTP / Resend / Brevo / SendGrid / Gmail)
+    try {
+      const response = await fetch('/api/mail/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, type: 'password_reset' })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        serverData = data;
+      } else if (!response.ok && data.error) {
+        serverError = data.error;
+      }
+    } catch (err: any) {
+      console.warn('[Api] Server mail send-otp network error:', err);
+    }
+
+    // 2. Also trigger Firebase Auth password reset email & generate client OTP record
+    let fbMessage = '';
+    try {
+      const fbRes = await firebaseService.sendPasswordReset(cleanEmail);
+      fbMessage = fbRes.message;
+    } catch (fbErr: any) {
+      console.warn('[Firebase Auth] sendPasswordReset notice:', fbErr);
+      if (!serverData && serverError) {
+        throw new Error(serverError);
+      }
+    }
+
+    await firebaseService.generateOtp(cleanEmail, 'password_reset').catch(() => {});
+
+    if (serverData) {
+      return {
+        success: true,
+        message: serverData.message || `Hemos enviado un correo de recuperación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`,
+        code: serverData.code,
+        isRealDelivery: serverData.isRealDelivery,
+        provider: serverData.provider,
+        previewUrl: serverData.previewUrl
+      };
+    }
+
     return {
-      success: fbRes.success,
-      message: fbRes.message
+      success: true,
+      message: fbMessage || `Hemos enviado un correo con instrucciones para restablecer tu contraseña a ${cleanEmail}. Revisá tu bandeja de entrada y spam.`
     };
   }
 

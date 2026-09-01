@@ -964,11 +964,17 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   });
 
   // Fire and forget email send to avoid delaying register response
+  const reqHost = req.get('host') || 'localhost:3000';
+  const reqProto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const baseAppUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || `${reqProto}://${reqHost}`;
+  const registerVerifyUrl = `${baseAppUrl}/?mode=verify-email&email=${encodeURIComponent(normalizedEmail)}&code=${initialOtp}`;
+
   sendOtpEmail({
     email: normalizedEmail,
     code: initialOtp,
     type: 'verify_email',
-    name: newUser.name
+    name: newUser.name,
+    actionUrl: registerVerifyUrl
   }).catch(err => {
     console.warn('[Register Email] Error sending verification email:', err);
   });
@@ -1001,7 +1007,8 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
   // For password reset, verify user exists first
   if (cleanType === 'password_reset') {
     const userExists = users.some(u => u.email.toLowerCase() === cleanEmail);
-    if (!userExists && cleanEmail !== 'lugabca98@gmail.com') {
+    const pendingExists = pendingRegistrations.some(p => p.email.toLowerCase() === cleanEmail);
+    if (!userExists && !pendingExists && cleanEmail !== 'lugabca98@gmail.com') {
       res.status(404).json({ error: `No se encontró ninguna cuenta registrada con el correo "${cleanEmail}".` });
       return;
     }
@@ -1021,12 +1028,20 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
 
   console.log(`[Mail OTP] Generated 6-digit code for ${cleanEmail} (${cleanType})`);
 
+  const reqHost = req.get('host') || 'localhost:3000';
+  const reqProto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const baseAppUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || `${reqProto}://${reqHost}`;
+  const actionUrl = cleanType === 'password_reset'
+    ? `${baseAppUrl}/?mode=reset-password&email=${encodeURIComponent(cleanEmail)}&code=${code}`
+    : `${baseAppUrl}/?mode=verify-email&email=${encodeURIComponent(cleanEmail)}&code=${code}`;
+
   // Dispatch real email via SMTP / Resend / Brevo / SendGrid
   const mailResult = await sendOtpEmail({
     email: cleanEmail,
     code,
     type: cleanType,
-    name
+    name,
+    actionUrl
   });
 
   res.json({

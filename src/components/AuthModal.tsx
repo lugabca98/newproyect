@@ -31,13 +31,13 @@ import { firebaseService } from '../firebaseService';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
 
-export type AuthMode = 'register' | 'login' | 'verify-email-pending' | 'forgot-password' | 'reset-password-sent';
+export type AuthMode = 'register' | 'login' | 'verify-email-pending' | 'forgot-password' | 'reset-password-sent' | 'enter-new-password';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (user: User, isAdmin: boolean) => void;
-  initialMode?: 'login' | 'register';
+  initialMode?: 'login' | 'register' | 'forgot-password' | 'enter-new-password';
   canClose?: boolean;
 }
 
@@ -163,6 +163,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Password Recovery form
   const [forgotEmail, setForgotEmail] = useState('');
   const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
+  const [resetOtpInput, setResetOtpInput] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showNewPasswordConfirm, setShowNewPasswordConfirm] = useState(false);
+  const [resetPasswordCompleted, setResetPasswordCompleted] = useState(false);
 
   // Verification Pending State (Registration OTP)
   const [registeredUser, setRegisteredUser] = useState<User | null>(null);
@@ -199,6 +205,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setInterestInput('');
     setForgotEmail('');
     setRecoverySuccessMsg('');
+    setResetOtpInput('');
+    setNewPassword('');
+    setNewPasswordConfirm('');
+    setShowNewPassword(false);
+    setShowNewPasswordConfirm(false);
+    setResetPasswordCompleted(false);
     setRegOtpInput('');
     setGeneratedRegOtp('');
     setCopiedRegOtp(false);
@@ -209,6 +221,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      // Check if URL contains query params from email links
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const urlMode = searchParams.get('mode');
+        const urlEmail = searchParams.get('email');
+        const urlCode = searchParams.get('code');
+
+        if (urlMode === 'reset-password' || urlMode === 'resetPassword') {
+          setMode('enter-new-password');
+          if (urlEmail) setForgotEmail(urlEmail);
+          if (urlCode) setResetOtpInput(urlCode);
+          return;
+        } else if (urlMode === 'verify-email' || urlMode === 'verifyEmail') {
+          setMode('verify-email-pending');
+          if (urlEmail) setRegEmail(urlEmail);
+          if (urlCode) setRegOtpInput(urlCode);
+          return;
+        }
+      } catch {}
+
       setMode(initialMode);
       resetAllFormInputs();
     }
@@ -500,6 +532,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    const cleanCode = resetOtpInput.trim().replace(/\s+/g, '');
+    const cleanNewPass = newPassword.trim();
+    const cleanConfirm = newPasswordConfirm.trim();
+
+    if (!cleanEmail) {
+      setErrorMsg('Por favor ingresá tu correo electrónico.');
+      return;
+    }
+
+    if (!cleanCode || cleanCode.length < 6) {
+      setErrorMsg('Por favor ingresá el código de 6 dígitos que te enviamos por correo.');
+      return;
+    }
+
+    if (!cleanNewPass || cleanNewPass.length < 6) {
+      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    if (cleanNewPass !== cleanConfirm) {
+      setErrorMsg('Las contraseñas no coinciden. Por favor verifícalas.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const res = await api.resetPasswordWithOtp(cleanEmail, cleanCode, cleanNewPass);
+      setResetPasswordCompleted(true);
+      setRecoverySuccessMsg(res.message || '¡Tu contraseña ha sido actualizada con éxito!');
+      setEmail(cleanEmail);
+      setPassword(cleanNewPass);
+    } catch (err: any) {
+      setErrorMsg(formatAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
       <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto">
@@ -530,6 +605,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'verify-email-pending' && 'Confirmación requerida • Verifica tu email'}
             {mode === 'forgot-password' && 'Recuperar acceso • Restablece tu contraseña'}
             {mode === 'reset-password-sent' && 'Instrucciones enviadas • Revisa tu casilla'}
+            {mode === 'enter-new-password' && 'Nueva Contraseña • Elige tu clave'}
           </p>
         </div>
 
@@ -765,12 +841,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
 
-            <div className="space-y-2 pt-2">
+            <div className="space-y-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => { setMode('enter-new-password'); setErrorMsg(''); }}
+                className="w-full py-3.5 bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl text-xs font-bold shadow-lg shadow-rose-500/25 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+              >
+                <Key className="w-4 h-4" />
+                <span>Ingresar Código y Crear Nueva Contraseña</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => handleSendForgotPassword()}
                 disabled={loading || resendVerificationCooldown > 0}
-                className="w-full py-3 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-200 hover:text-white rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                 <span>
@@ -783,12 +868,188 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="button"
                 onClick={() => { setMode('login'); setErrorMsg(''); }}
-                className="w-full py-2.5 bg-transparent hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                className="w-full py-2 bg-transparent hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Volver a Iniciar Sesión</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* --- 4. ENTER NEW PASSWORD (CREAR NUEVA CONTRASEÑA) --- */}
+        {/* ------------------------------------------------------------- */}
+        {mode === 'enter-new-password' && (
+          <div className="space-y-5 animate-in fade-in">
+            {resetPasswordCompleted ? (
+              <div className="text-center space-y-4 py-3">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-xl shadow-emerald-500/10 mx-auto">
+                  <CheckCircle2 className="w-9 h-9" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">¡Contraseña Actualizada con Éxito!</h3>
+                  <p className="text-xs text-slate-300 mt-1 max-w-sm mx-auto">
+                    Tu nueva clave ha sido guardada. Ahora podés ingresar a tu cuenta de Vulnerable con tus nuevas credenciales.
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setMode('login'); setErrorMsg(''); }}
+                    className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+                  >
+                    <span>Iniciar Sesión Ahora</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="text-center space-y-1.5 mb-5">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 shadow-md mx-auto">
+                    <Key className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">Definir Nueva Contraseña</h3>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Ingresá el código de 6 dígitos que te enviamos al correo y escribí tu nueva contraseña.
+                  </p>
+                </div>
+
+                <form onSubmit={handleResetPasswordSubmit} autoComplete="off" className="space-y-4">
+                  {/* Email Field */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Correo Electrónico
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="reset-password-email"
+                        type="email"
+                        required
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="tu@email.com"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 6-Digit Code */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1 text-center">
+                      Código de 6 dígitos del correo
+                    </label>
+                    <OtpBoxes
+                      idPrefix="reset-otp"
+                      value={resetOtpInput}
+                      onChange={setResetOtpInput}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  {/* New Password */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Nueva Contraseña (mínimo 6 caracteres)
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="reset-new-password"
+                        type={showNewPassword ? 'text' : 'password'}
+                        required
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition"
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm New Password */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Confirmar Nueva Contraseña
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="reset-new-password-confirm"
+                        type={showNewPasswordConfirm ? 'text' : 'password'}
+                        required
+                        value={newPasswordConfirm}
+                        onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPasswordConfirm(!showNewPasswordConfirm)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition"
+                      >
+                        {showNewPasswordConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    id="btn-save-new-password"
+                    type="submit"
+                    disabled={loading || !forgotEmail || resetOtpInput.length < 6 || !newPassword}
+                    className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2 mt-2"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Guardando nueva contraseña...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Guardar Nueva Contraseña</span>
+                      </>
+                    )}
+                  </button>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSendForgotPassword()}
+                      disabled={loading || resendVerificationCooldown > 0}
+                      className="text-xs text-rose-400 hover:text-rose-300 font-medium transition"
+                    >
+                      {resendVerificationCooldown > 0
+                        ? `Reenviar código (${resendVerificationCooldown}s)`
+                        : 'Reenviar código'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setMode('login'); setErrorMsg(''); }}
+                      className="text-xs text-slate-400 hover:text-slate-200 font-semibold transition flex items-center gap-1"
+                    >
+                      <ArrowLeft className="w-3 h-3" />
+                      <span>Volver al Login</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
           </div>
         )}
 

@@ -5,6 +5,7 @@ export interface SendOtpMailParams {
   code: string;
   type: 'verify_email' | 'password_reset';
   name?: string;
+  actionUrl?: string;
 }
 
 export interface MailResult {
@@ -121,19 +122,23 @@ async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; 
   }
 }
 
-export async function sendOtpEmail({ email, code, type, name }: SendOtpMailParams): Promise<MailResult> {
+export async function sendOtpEmail({ email, code, type, name, actionUrl }: SendOtpMailParams): Promise<MailResult> {
   const isVerification = type === 'verify_email';
   const subject = isVerification 
-    ? `🔐 Código de Verificación para Vulnerable: ${code}`
-    : `🔑 Restablece tu contraseña de Vulnerable: ${code}`;
+    ? `🔐 Confirma tu correo para activar tu cuenta en Vulnerable (${code})`
+    : `🔑 Restablece tu contraseña de Vulnerable`;
   
   const title = isVerification 
     ? '¡Bienvenido a Vulnerable!' 
     : 'Recuperación de Contraseña';
 
   const subtitle = isVerification
-    ? 'Gracias por unirte a nuestra comunidad. Para activar tu cuenta y proteger tu perfil, ingresa este código en la aplicación:'
-    : 'Hemos recibido una solicitud para restablecer la contraseña de tu cuenta. Ingresa este código en la aplicación para crear tu nueva clave:';
+    ? 'Gracias por unirte a nuestra comunidad. Para activar tu cuenta y acceder a tu perfil, haz clic en el siguiente botón o ingresa tu código de verificación:'
+    : 'Hemos recibido una solicitud para restablecer la contraseña de tu cuenta. Hacé clic en el siguiente botón para ingresar tu nueva clave de inmediato:';
+
+  const buttonText = isVerification
+    ? 'Confirmar mi Correo y Activar Cuenta'
+    : 'Restablecer mi Contraseña';
 
   const fromAddress = process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.GMAIL_USER || '"Vulnerable App" <onboarding@resend.dev>';
   const fromName = 'Vulnerable App';
@@ -153,11 +158,15 @@ export async function sendOtpEmail({ email, code, type, name }: SendOtpMailParam
     .tagline { font-size: 13px; color: rgba(255, 255, 255, 0.85); margin-top: 4px; }
     .body { padding: 32px 24px; }
     .greeting { font-size: 18px; font-weight: 700; color: #ffffff; margin-top: 0; margin-bottom: 12px; }
-    .text { font-size: 14px; line-height: 1.6; color: #94a3b8; margin-bottom: 24px; }
-    .otp-box { background-color: #020617; border: 1px solid #e11d48; border-radius: 16px; padding: 24px; text-align: center; margin: 24px 0; }
+    .text { font-size: 14px; line-height: 1.6; color: #94a3b8; margin-bottom: 20px; }
+    .btn-box { text-align: center; margin: 26px 0; }
+    .btn { display: inline-block; background: linear-gradient(135deg, #e11d48, #db2777); color: #ffffff !important; text-decoration: none; padding: 15px 32px; border-radius: 14px; font-weight: 800; font-size: 15px; box-shadow: 0 10px 15px -3px rgba(225, 29, 72, 0.4); }
+    .otp-box { background-color: #020617; border: 1px solid #e11d48; border-radius: 16px; padding: 20px 24px; text-align: center; margin: 24px 0; }
     .otp-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #fda4af; font-weight: 700; margin-bottom: 8px; }
-    .otp-code { font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #ffffff; margin: 0; text-shadow: 0 0 12px rgba(225, 29, 72, 0.4); }
+    .otp-code { font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #ffffff; margin: 0; text-shadow: 0 0 12px rgba(225, 29, 72, 0.4); }
     .validity { font-size: 12px; color: #64748b; margin-top: 10px; margin-bottom: 0; }
+    .link-fallback { font-size: 12px; color: #64748b; line-height: 1.5; margin-top: 16px; word-break: break-all; }
+    .link-fallback a { color: #fda4af; text-decoration: underline; }
     .security-note { background-color: rgba(30, 41, 59, 0.5); border-left: 3px solid #e11d48; padding: 12px 16px; border-radius: 8px; font-size: 12px; color: #94a3b8; line-height: 1.5; margin-top: 24px; }
     .footer { background-color: #090d16; padding: 20px 24px; text-align: center; font-size: 11px; color: #475569; border-top: 1px solid #1e293b; }
   </style>
@@ -172,15 +181,28 @@ export async function sendOtpEmail({ email, code, type, name }: SendOtpMailParam
       <h2 class="greeting">${title}</h2>
       ${name ? `<p class="text" style="color: #cbd5e1;">Hola <strong>${name}</strong>,</p>` : ''}
       <p class="text">${subtitle}</p>
+
+      ${actionUrl ? `
+      <div class="btn-box">
+        <a href="${actionUrl}" class="btn" target="_blank">${buttonText}</a>
+      </div>
+      ` : ''}
       
       <div class="otp-box">
-        <div class="otp-label">Tu Código de Seguridad</div>
+        <div class="otp-label">${isVerification ? 'Código de Verificación' : 'O Código de Seguridad Directo'}</div>
         <div class="otp-code">${code}</div>
         <p class="validity">⏱ Válido durante los próximos 15 minutos</p>
       </div>
 
+      ${actionUrl ? `
+      <div class="link-fallback">
+        Si el botón superior no funciona, podés copiar y pegar este enlace en tu navegador:<br>
+        <a href="${actionUrl}" target="_blank">${actionUrl}</a>
+      </div>
+      ` : ''}
+
       <div class="security-note">
-        🔒 <strong>Aviso de seguridad:</strong> Si no realizaste esta solicitud en Vulnerable, podés ignorar este correo con total tranquilidad. Tu cuenta permanece protegida. Nunca compartas este código con nadie.
+        🔒 <strong>Aviso de seguridad:</strong> Si no realizaste esta solicitud en Vulnerable, podés ignorar este correo con total tranquilidad. Tu cuenta permanece protegida y nadie puede acceder sin tu confirmación.
       </div>
     </div>
     <div class="footer">
@@ -198,11 +220,12 @@ ${title}
 ${name ? `Hola ${name},\n` : ''}
 ${subtitle}
 
-Tu código de verificación de 6 dígitos es:
+${actionUrl ? `Enlace directo:\n${actionUrl}\n\n` : ''}
+Tu código de seguridad de 6 dígitos es:
 >>> ${code} <<<
 
 Este código es válido durante 15 minutos.
-Si no solicitaste este código, puedes ignorar este mensaje.
+Si no solicitaste este cambio, puedes ignorar este mensaje de forma segura.
   `.trim();
 
   // 1. Try Resend API first if key exists (https://resend.com)
