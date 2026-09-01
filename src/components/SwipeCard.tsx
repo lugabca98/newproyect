@@ -85,7 +85,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
         dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
         dragElastic={0.8}
         onDragEnd={handleDragEnd}
-        className="relative w-full h-[540px] rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl tinder-card-shadow cursor-grab active:cursor-grabbing"
+        className="relative w-full h-[470px] sm:h-[510px] rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl tinder-card-shadow cursor-grab active:cursor-grabbing"
       >
         {/* Photo Image */}
         <img
@@ -248,59 +248,92 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
         </div>
       </motion.div>
 
-      {/* Action Control Buttons (Tinder Style) */}
-      <div className="w-full flex items-center justify-center gap-3.5 mt-5">
+      {/* Action Control Buttons (Tinder Style - High Visibility Deck) */}
+      <div className="w-full max-w-sm mt-4 bg-slate-900/90 border border-slate-800 backdrop-blur-md rounded-2xl p-3 shadow-2xl flex items-center justify-around gap-1.5">
         
-        {/* Rewind */}
-        <button
-          id="btn-swipe-rewind"
-          disabled={!canRewind}
-          onClick={onRewind}
-          className={`w-12 h-12 rounded-full border flex items-center justify-center transition-all ${
-            canRewind 
-              ? 'bg-slate-900 border-amber-500/40 text-amber-400 hover:scale-110 hover:bg-amber-500/10 shadow-lg shadow-amber-500/10'
-              : 'bg-slate-950/60 border-slate-800 text-slate-700 cursor-not-allowed'
-          }`}
-          title="Deshacer último swipe"
-        >
-          <RotateCcw className="w-5 h-5" />
-        </button>
+        {/* Rewind / Deshacer */}
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            id="btn-swipe-rewind"
+            disabled={!canRewind}
+            onClick={onRewind}
+            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center transition-all ${
+              canRewind 
+                ? 'bg-slate-950 border-amber-500/60 text-amber-400 hover:scale-110 hover:bg-amber-500/20 shadow-lg shadow-amber-500/20 active:scale-95'
+                : 'bg-slate-950/40 border-slate-800 text-slate-700 cursor-not-allowed'
+            }`}
+            title="Deshacer último swipe"
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
+          <span className={`text-[10px] font-semibold ${canRewind ? 'text-amber-400/90' : 'text-slate-600'}`}>
+            Atrás
+          </span>
+        </div>
 
-        {/* Pass (NOPE) */}
-        <button
-          id="btn-swipe-pass"
-          onClick={() => onSwipe('pass')}
-          className="w-14 h-14 rounded-full bg-slate-900 border border-rose-500/40 text-rose-500 flex items-center justify-center hover:scale-110 hover:bg-rose-500/10 transition-all shadow-xl shadow-rose-500/15"
-          title="Pasar"
-        >
-          <X className="w-7 h-7 stroke-[2.5]" />
-        </button>
+        {/* Pass (NOPE / X) */}
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            id="btn-swipe-pass"
+            onClick={() => onSwipe('pass')}
+            className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-slate-950 border-2 border-rose-500/70 text-rose-500 flex items-center justify-center hover:scale-110 hover:bg-rose-500/20 active:scale-95 transition-all shadow-xl shadow-rose-500/25 ring-2 ring-rose-500/10"
+            title="Pasar"
+          >
+            <X className="w-7 h-7 stroke-[2.5]" />
+          </button>
+          <span className="text-[10px] font-bold text-rose-400">
+            Pasar
+          </span>
+        </div>
 
-        {/* Super Like */}
-        <button
-          id="btn-swipe-superlike"
-          onClick={() => onSwipe('superlike')}
-          className="w-12 h-12 rounded-full bg-slate-900 border border-sky-400/40 text-sky-400 flex items-center justify-center hover:scale-110 hover:bg-sky-400/10 transition-all shadow-lg shadow-sky-400/15"
-          title="Super Like"
-        >
-          <Star className="w-6 h-6 fill-sky-400/20 stroke-[2]" />
-        </button>
+        {/* Super Like (Star) */}
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            id="btn-swipe-superlike"
+            onClick={() => onSwipe('superlike')}
+            className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-slate-950 border-2 border-sky-400/80 text-sky-400 flex items-center justify-center hover:scale-110 hover:bg-sky-400/20 active:scale-95 transition-all shadow-xl shadow-sky-400/25 ring-2 ring-sky-400/10"
+            title="Super Like"
+          >
+            <Star className="w-6 h-6 fill-sky-400 stroke-[2]" />
+          </button>
+          <span className="text-[10px] font-bold text-sky-400">
+            Super Like
+          </span>
+        </div>
 
-        {/* Like */}
-        <button
-          id="btn-swipe-like"
-          onClick={() => onSwipe('like')}
-          className="w-14 h-14 rounded-full bg-gradient-to-tr from-rose-600 to-pink-500 text-white flex items-center justify-center hover:scale-110 transition-all shadow-xl shadow-rose-500/30"
-          title="Me Gusta"
-        >
-          <Heart className="w-7 h-7 fill-white stroke-[2]" />
-        </button>
+        {/* Like (Heart) */}
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            id="btn-swipe-like"
+            onClick={() => onSwipe('like')}
+            className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-gradient-to-tr from-rose-600 via-pink-600 to-rose-500 text-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-xl shadow-rose-500/40 ring-4 ring-rose-500/20"
+            title="Me Gusta"
+          >
+            <Heart className="w-7 h-7 fill-white stroke-[2.5]" />
+          </button>
+          <span className="text-[10px] font-bold text-pink-400">
+            Me Gusta
+          </span>
+        </div>
 
-        {/* Fast spark/boost badge */}
-        <div className="w-12 h-12 rounded-full bg-slate-900 border border-purple-500/40 text-purple-400 flex items-center justify-center hover:scale-110 hover:bg-purple-500/10 transition-all shadow-lg shadow-purple-500/10 cursor-pointer"
-             onClick={() => onSwipe('like')}
-             title="Conexión Rápida">
-          <Sparkles className="w-5 h-5" />
+        {/* Sparkles / Boost / Fast Connect */}
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            id="btn-swipe-boost"
+            onClick={() => onSwipe('like')}
+            className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-slate-950 border-2 border-purple-500/60 text-purple-400 flex items-center justify-center hover:scale-110 hover:bg-purple-500/20 active:scale-95 transition-all shadow-lg shadow-purple-500/20"
+            title="Conexión Directa"
+          >
+            <Sparkles className="w-5 h-5 fill-purple-400/20" />
+          </button>
+          <span className="text-[10px] font-semibold text-purple-400/90">
+            Conectar
+          </span>
         </div>
 
       </div>
