@@ -1396,6 +1396,40 @@ class FirebaseService {
     await this.initializeDatabase();
     const swipedTargetIds = new Set<string>();
 
+    // 0. Fetch the active user's search preferences
+    let currentUser: User | null = await this.getUserById(currentUserId);
+    if (!currentUser) {
+      currentUser = localDb.getUsers().find(u => u.id === currentUserId) || null;
+    }
+
+    const interestedIn = currentUser?.preferences?.interestedIn && currentUser.preferences.interestedIn.length > 0
+      ? currentUser.preferences.interestedIn
+      : null;
+    const minAge = currentUser?.preferences?.minAge || 18;
+    const maxAge = currentUser?.preferences?.maxAge || 99;
+
+    const matchesPreference = (u: User) => {
+      if (u.id === currentUserId) return false;
+      const isAdmin = u.role === 'admin' || u.id === 'admin-owner' || (u.email && u.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
+      if (isAdmin) return false;
+      if (u.status === 'blocked' || u.status === 'deleted') return false;
+      if (swipedTargetIds.has(u.id)) return false;
+
+      // Gender preference filter (e.g. ['female'] => only female, ['male'] => only male)
+      if (interestedIn && interestedIn.length > 0) {
+        if (!u.gender || !interestedIn.includes(u.gender)) {
+          return false;
+        }
+      }
+
+      // Age range filter
+      if (u.age && (u.age < minAge || u.age > maxAge)) {
+        return false;
+      }
+
+      return true;
+    };
+
     try {
       // 1. Get all swipes recorded by current user
       const swipesCol = collection(db, 'swipes');
@@ -1412,13 +1446,7 @@ class FirebaseService {
       const users: User[] = [];
       publicSnap.forEach(d => {
         const u = d.data() as User;
-        const isAdmin = u.role === 'admin' || u.id === 'admin-owner' || (u.email && u.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
-        if (
-          u.id !== currentUserId && 
-          !isAdmin && 
-          u.status === 'active' && 
-          !swipedTargetIds.has(u.id)
-        ) {
+        if (matchesPreference(u)) {
           users.push({
             ...u,
             email: '' // Strictly stripped for privacy
@@ -1433,18 +1461,12 @@ class FirebaseService {
       console.warn('[Firestore] Error loading feed:', err);
     }
 
-    // Fallback to all seed and local store profiles with strict admin and swiped filtering
+    // Fallback to all seed and local store profiles with strict preference and swiped filtering
     const combinedCandidates = [...INITIAL_SEED_USERS, ...localDb.getUsers()];
     const uniqueMap = new Map<string, User>();
     
     combinedCandidates.forEach(u => {
-      const isAdmin = u.role === 'admin' || u.id === 'admin-owner' || (u.email && u.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
-      if (
-        u.id !== currentUserId && 
-        !isAdmin && 
-        u.status === 'active' && 
-        !swipedTargetIds.has(u.id)
-      ) {
+      if (matchesPreference(u)) {
         uniqueMap.set(u.id, { ...u, email: '' });
       }
     });

@@ -153,6 +153,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
   const [age, setAge] = useState(24);
   const [gender, setGender] = useState<Gender>('female');
+  const [regInterestedIn, setRegInterestedIn] = useState<Gender[]>(['male']);
   const [occupation, setOccupation] = useState('');
   const [location, setLocation] = useState('');
   const [bio, setBio] = useState('');
@@ -197,6 +198,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setShowRegConfirmPassword(false);
     setAge(24);
     setGender('female');
+    setRegInterestedIn(['male']);
     setOccupation('');
     setLocation('');
     setBio('');
@@ -389,7 +391,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         preferences: {
           minAge: 18,
           maxAge: 45,
-          interestedIn: gender === 'female' ? ['male'] : ['female'],
+          interestedIn: regInterestedIn && regInterestedIn.length > 0 ? regInterestedIn : (gender === 'female' ? ['male'] : ['female']),
           maxDistanceKm: 50
         }
       }, regPassword.trim());
@@ -1270,6 +1272,56 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Seeking / Interested in preference */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+                ¿A quién te gustaría conocer en Match?
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  id="reg-filter-women"
+                  onClick={() => setRegInterestedIn(['female'])}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                    regInterestedIn.length === 1 && regInterestedIn[0] === 'female'
+                      ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white border-pink-400 shadow-md shadow-pink-500/20 ring-1 ring-pink-400'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <span>♀</span>
+                  <span>Solo Mujeres</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="reg-filter-men"
+                  onClick={() => setRegInterestedIn(['male'])}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                    regInterestedIn.length === 1 && regInterestedIn[0] === 'male'
+                      ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white border-sky-400 shadow-md shadow-sky-500/20 ring-1 ring-sky-400'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <span>♂</span>
+                  <span>Solo Hombres</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="reg-filter-all"
+                  onClick={() => setRegInterestedIn(['female', 'male', 'non-binary', 'other'])}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                    regInterestedIn.length > 1
+                      ? 'bg-gradient-to-r from-purple-600 to-rose-600 text-white border-purple-400 shadow-md shadow-purple-500/20 ring-1 ring-purple-400'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <span>✨</span>
+                  <span>Todos</span>
+                </button>
               </div>
             </div>
 

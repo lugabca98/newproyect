@@ -207,6 +207,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setInterests(prev => prev.filter(t => t !== tag));
   };
 
+  const setInterestedInPreset = (preset: 'women' | 'men' | 'all' | 'non-binary') => {
+    if (preset === 'women') setInterestedIn(['female']);
+    else if (preset === 'men') setInterestedIn(['male']);
+    else if (preset === 'non-binary') setInterestedIn(['non-binary']);
+    else setInterestedIn(['female', 'male', 'non-binary', 'other']);
+  };
+
   const toggleInterestedIn = (g: Gender) => {
     if (interestedIn.includes(g)) {
       if (interestedIn.length === 1) return; // Keep at least one
@@ -683,20 +690,86 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* Discovery Preferences */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-        <h3 className="text-base font-bold text-white flex items-center gap-2">
-          <Sliders className="w-4 h-4 text-rose-400" />
-          <span>Preferencias de Búsqueda</span>
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-white flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-rose-400" />
+            <span>Preferencias de Búsqueda</span>
+          </h3>
+          <span className="text-xs font-bold text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
+            {interestedIn.length === 1 && interestedIn[0] === 'female'
+              ? '♀ Solo Mujeres'
+              : interestedIn.length === 1 && interestedIn[0] === 'male'
+              ? '♂ Solo Hombres'
+              : interestedIn.length === 1 && interestedIn[0] === 'non-binary'
+              ? '⚧ Solo No Binario'
+              : '✨ Todos los géneros'}
+          </span>
+        </div>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-2">Me interesa conocer:</label>
+            <label className="block text-xs font-semibold text-slate-400 mb-2">Accesos directos de preferencia:</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+              <button
+                type="button"
+                onClick={() => setInterestedInPreset('women')}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                  interestedIn.length === 1 && interestedIn[0] === 'female'
+                    ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white border-pink-400 shadow-md shadow-pink-500/20'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span>♀</span>
+                <span>Solo Mujeres</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setInterestedInPreset('men')}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                  interestedIn.length === 1 && interestedIn[0] === 'male'
+                    ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white border-sky-400 shadow-md shadow-sky-500/20'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span>♂</span>
+                <span>Solo Hombres</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setInterestedInPreset('all')}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                  interestedIn.length > 1
+                    ? 'bg-gradient-to-r from-purple-600 to-rose-600 text-white border-purple-400 shadow-md shadow-purple-500/20'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span>✨</span>
+                <span>Todos</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setInterestedInPreset('non-binary')}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                  interestedIn.length === 1 && interestedIn[0] === 'non-binary'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-400 shadow-md shadow-purple-500/20'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <span>⚧</span>
+                <span>No Binario</span>
+              </button>
+            </div>
+
+            <label className="block text-xs font-semibold text-slate-400 mb-2">Selección detallada (marcar todas las que apliquen):</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
-                { label: 'Mujeres', val: 'female' as Gender },
-                { label: 'Hombres', val: 'male' as Gender },
-                { label: 'No Binario', val: 'non-binary' as Gender },
-                { label: 'Todos', val: 'other' as Gender }
+                { label: 'Mujeres ♀', val: 'female' as Gender },
+                { label: 'Hombres ♂', val: 'male' as Gender },
+                { label: 'No Binario ⚧', val: 'non-binary' as Gender },
+                { label: 'Otros géneros ✨', val: 'other' as Gender }
               ].map(item => (
                 <button
                   key={item.val}
@@ -704,7 +777,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   onClick={() => toggleInterestedIn(item.val)}
                   className={`py-2 px-3 rounded-xl text-xs font-semibold border transition ${
                     interestedIn.includes(item.val)
-                      ? 'bg-rose-600/20 border-rose-500 text-rose-300'
+                      ? 'bg-rose-600/20 border-rose-500 text-rose-300 ring-1 ring-rose-500/40'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800'
                   }`}
                 >

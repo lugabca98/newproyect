@@ -247,6 +247,122 @@ export const INITIAL_SEED_USERS: User[] = [
       interestedIn: ['male', 'female'],
       maxDistanceKm: 25
     }
+  },
+  {
+    id: 'user-martina',
+    name: 'Martina Castro',
+    email: 'martina@ejemplo.com',
+    age: 28,
+    gender: 'female',
+    bio: 'TDAH & Altas Capacidades (AACC) 📚✨. Diseñadora UX, apasionada por la psicología y la música ambiental en días de lluvia.',
+    photos: [
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Villa Urquiza, CABA',
+    distanceKm: 6,
+    occupation: 'TDAH & AACC',
+    interests: ['Diseño UX', 'Psicología', 'Café', 'Podcasts', 'Gatos'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 120,
+    matchesCount: 21,
+    preferences: {
+      minAge: 24,
+      maxAge: 36,
+      interestedIn: ['male'],
+      maxDistanceKm: 30
+    }
+  },
+  {
+    id: 'user-lucia',
+    name: 'Lucía Álvarez',
+    email: 'lucia@ejemplo.com',
+    age: 22,
+    gender: 'female',
+    bio: 'Espectro autista (TEA) & ilustradora digital 🎨🌿. Me encantan los museos tranquilos, el anime y los videojuegos cooperativos.',
+    photos: [
+      'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Almagro, CABA',
+    distanceKm: 5,
+    occupation: 'TEA / Asperger',
+    interests: ['Ilustración', 'Anime', 'Videojuegos', 'Lectura', 'Té Verde'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 95,
+    matchesCount: 16,
+    preferences: {
+      minAge: 20,
+      maxAge: 28,
+      interestedIn: ['male', 'female'],
+      maxDistanceKm: 25
+    }
+  },
+  {
+    id: 'user-tomas',
+    name: 'Tomás Herrera',
+    email: 'tomas@ejemplo.com',
+    age: 26,
+    gender: 'male',
+    bio: 'Bipolaridad tipo II & compositor de música electrónica ambiental 🎹🎧. Valoro los vínculos sinceros y profundos.',
+    photos: [
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Chacarita, CABA',
+    distanceKm: 4,
+    occupation: 'Bipolaridad & Creatividad',
+    interests: ['Música', 'Sintetizadores', 'Cine', 'Cocina', 'Perros'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 6).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 82,
+    matchesCount: 15,
+    preferences: {
+      minAge: 22,
+      maxAge: 32,
+      interestedIn: ['female'],
+      maxDistanceKm: 35
+    }
+  },
+  {
+    id: 'user-joaquin',
+    name: 'Joaquín Paz',
+    email: 'joaquin@ejemplo.com',
+    age: 28,
+    gender: 'male',
+    bio: 'TDAH & Ansiedad Social. Desarrollador de software y amante del trekking en montaña 🏔️💻. Aprendiendo a vivir sin máscaras.',
+    photos: [
+      'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80',
+      'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80'
+    ],
+    location: 'Belgrano, CABA',
+    distanceKm: 7,
+    occupation: 'TDAH & Ansiedad',
+    interests: ['Trekking', 'Tecnología', 'Café', 'Senderismo', 'Libros'],
+    verified: true,
+    status: 'active',
+    role: 'user',
+    createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
+    lastActive: new Date().toISOString(),
+    likesCount: 104,
+    matchesCount: 19,
+    preferences: {
+      minAge: 24,
+      maxAge: 34,
+      interestedIn: ['female'],
+      maxDistanceKm: 40
+    }
   }
 ];
 

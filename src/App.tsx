@@ -6,7 +6,7 @@ import { ChatView } from './components/ChatView';
 import { ProfileView } from './components/ProfileView';
 import { AdminPanel } from './components/AdminPanel';
 import { AuthModal } from './components/AuthModal';
-import { User, Match, SwipeType } from './types';
+import { User, Match, SwipeType, Gender, UserPreferences } from './types';
 import { api } from './api';
 import { firebaseService } from './firebaseService';
 import { 
@@ -16,7 +16,8 @@ import {
   SlidersHorizontal, 
   Users, 
   ShieldCheck,
-  HeartHandshake
+  HeartHandshake,
+  Filter
 } from 'lucide-react';
 
 export function App() {
@@ -217,6 +218,39 @@ export function App() {
     }
   };
 
+  const handleQuickFilterChange = async (newInterestedIn: Gender[]) => {
+    if (!currentUser) return;
+    const updatedPreferences: UserPreferences = {
+      ...(currentUser.preferences || { minAge: 18, maxAge: 99, maxDistanceKm: 50 }),
+      interestedIn: newInterestedIn
+    };
+    
+    // Optimistically update currentUser state
+    const updatedUser: User = {
+      ...currentUser,
+      preferences: updatedPreferences
+    };
+    setCurrentUser(updatedUser);
+    
+    // Save to database / local store
+    try {
+      await api.updateProfile({ preferences: updatedPreferences });
+    } catch (err) {
+      console.warn('Error saving preference filter:', err);
+    }
+    
+    // Reload candidates feed immediately
+    setFeedLoading(true);
+    try {
+      const data = await api.getFeed();
+      setFeedProfiles(data.profiles);
+    } catch (err) {
+      console.error('Error reloading feed after filter change:', err);
+    } finally {
+      setFeedLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     await api.logout();
     setCurrentUser(null);
@@ -241,6 +275,11 @@ export function App() {
     }
   };
 
+  const isOnlyWomen = currentUser?.preferences?.interestedIn?.length === 1 && currentUser.preferences.interestedIn[0] === 'female';
+  const isOnlyMen = currentUser?.preferences?.interestedIn?.length === 1 && currentUser.preferences.interestedIn[0] === 'male';
+  const isOnlyNonBinary = currentUser?.preferences?.interestedIn?.length === 1 && currentUser.preferences.interestedIn[0] === 'non-binary';
+  const isAllGenders = !isOnlyWomen && !isOnlyMen && !isOnlyNonBinary;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
       
@@ -263,6 +302,72 @@ export function App() {
         {/* TAB 1: DISCOVER / SWIPE CARDS */}
         {currentTab === 'discover' && (
           <div className="w-full flex flex-col items-center">
+            
+            {/* Quick Gender Preference Selector Bar (Match Tab) */}
+            {currentUser && (
+              <div className="w-full max-w-sm mb-4 bg-slate-900/90 border border-slate-800/80 backdrop-blur rounded-2xl p-3 shadow-xl flex flex-col gap-2.5">
+                <div className="flex items-center justify-between px-0.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
+                    <Filter className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Tu preferencia en Match:</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 px-2.5 py-0.5 rounded-full border border-rose-500/30">
+                    {isOnlyWomen
+                      ? '♀ Solo Mujeres'
+                      : isOnlyMen
+                      ? '♂ Solo Hombres'
+                      : isOnlyNonBinary
+                      ? '⚧ Solo No Binario'
+                      : '✨ Todos los géneros'}
+                  </span>
+                </div>
+
+                {/* Preference Toggle Buttons */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    id="filter-women-btn"
+                    onClick={() => handleQuickFilterChange(['female'])}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                      isOnlyWomen
+                        ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white border-pink-400/80 shadow-lg shadow-pink-500/25 ring-2 ring-pink-500/40 scale-[1.02]'
+                        : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>♀</span>
+                    <span>Solo Mujeres</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="filter-men-btn"
+                    onClick={() => handleQuickFilterChange(['male'])}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                      isOnlyMen
+                        ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white border-sky-400/80 shadow-lg shadow-sky-500/25 ring-2 ring-sky-500/40 scale-[1.02]'
+                        : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>♂</span>
+                    <span>Solo Hombres</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="filter-all-btn"
+                    onClick={() => handleQuickFilterChange(['female', 'male', 'non-binary', 'other'])}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                      isAllGenders
+                        ? 'bg-gradient-to-r from-purple-600 to-rose-600 text-white border-purple-400/80 shadow-lg shadow-purple-500/25 ring-2 ring-purple-500/40 scale-[1.02]'
+                        : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>✨</span>
+                    <span>Todos</span>
+                  </button>
+                </div>
+              </div>
+            )}
             
             {feedLoading ? (
               <div className="w-full max-w-sm h-[520px] rounded-3xl bg-slate-900/60 border border-slate-800 flex flex-col items-center justify-center gap-3 animate-pulse">

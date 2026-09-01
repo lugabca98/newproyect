@@ -192,8 +192,24 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
             </button>
           </div>
 
-          {/* Neurodivergence & Location */}
-          <div className="flex flex-wrap items-center gap-y-1.5 gap-x-3 text-xs text-slate-300">
+          {/* Gender, Neurodivergence & Location */}
+          <div className="flex flex-wrap items-center gap-y-1.5 gap-x-2.5 text-xs text-slate-300">
+            {profile.gender && (
+              <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+                profile.gender === 'female'
+                  ? 'bg-pink-500/20 text-pink-300 border-pink-500/30'
+                  : profile.gender === 'male'
+                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                  : profile.gender === 'non-binary'
+                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+              }`}>
+                <span>
+                  {profile.gender === 'female' ? '♀ Mujer' : profile.gender === 'male' ? '♂ Hombre' : profile.gender === 'non-binary' ? '⚧ No Binario' : '✨ ' + profile.gender}
+                </span>
+              </div>
+            )}
+
             {profile.occupation && (
               <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] font-medium">
                 <Sparkles className="w-3 h-3 text-rose-400" />
