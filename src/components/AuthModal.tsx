@@ -28,6 +28,7 @@ import {
 import { User, Gender } from '../types';
 import { api } from '../api';
 import { firebaseService } from '../firebaseService';
+import { localDb } from '../localStore';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
 
@@ -238,7 +239,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         } else if (urlMode === 'verify-email' || urlMode === 'verifyEmail') {
           setMode('verify-email-pending');
           if (urlEmail) setRegEmail(urlEmail);
-          if (urlCode) setRegOtpInput(urlCode);
+          if (urlCode) {
+            setRegOtpInput(urlCode);
+            if (urlCode.trim().length === 6 && urlEmail) {
+              setTimeout(() => {
+                handleVerifyRegisterOtp(undefined, urlEmail.trim(), urlCode.trim());
+              }, 400);
+            }
+          }
           return;
         }
       } catch {}
@@ -442,10 +450,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleVerifyRegisterOtp = async (e?: React.FormEvent) => {
+  const handleVerifyRegisterOtp = async (e?: React.FormEvent, customEmail?: string, customCode?: string) => {
     if (e) e.preventDefault();
-    const cleanOtp = regOtpInput.trim().replace(/\s+/g, '');
-    const cleanEmail = (regEmail || registeredUser?.email || '').trim();
+    const cleanOtp = (customCode || regOtpInput).trim().replace(/\s+/g, '');
+    const cleanEmail = (customEmail || regEmail || registeredUser?.email || '').trim().toLowerCase();
 
     if (!cleanEmail) {
       setErrorMsg('No se detectó un correo electrónico.');
@@ -465,9 +473,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setResendVerificationNotice(res.message);
 
       setTimeout(async () => {
-        let u = registeredUser;
+        let u = res.user || registeredUser;
         if (!u) {
           u = await firebaseService.getUserByEmail(cleanEmail);
+        }
+        if (!u) {
+          u = localDb.getUsers().find((user: User) => (user.email || '').toLowerCase() === cleanEmail) || null;
         }
         if (u) {
           const verifiedUser: User = { ...u, emailVerified: true };
@@ -478,7 +489,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         } else {
           setMode('login');
         }
-      }, 1000);
+      }, 900);
     } catch (err: any) {
       setErrorMsg(err.message || 'El código ingresado es incorrecto o ha expirado.');
     } finally {
@@ -492,9 +503,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setResendVerificationNotice('');
     setErrorMsg('');
     try {
-      const emailTarget = (regEmail || registeredUser?.email || '').trim();
-      const res = await firebaseService.sendVerificationEmail(emailTarget);
-      setResendVerificationNotice(res.message || `Te enviamos un correo de confirmación a ${emailTarget}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
+      const emailTarget = (regEmail || registeredUser?.email || '').trim().toLowerCase();
+      const res = await api.sendVerificationEmail(emailTarget, registeredUser?.name);
+      setResendVerificationNotice(res.message || `Te enviamos un nuevo código de confirmación a ${emailTarget}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
       setResendVerificationCooldown(60);
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al reenviar el correo de verificación.');
@@ -662,10 +673,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               
               <div className="p-3.5 bg-rose-950/40 border border-rose-500/30 rounded-2xl text-xs text-rose-200 leading-relaxed max-w-md mx-auto space-y-2">
                 <p>
-                  Te enviamos un correo de confirmación a <strong className="text-white font-mono">{regEmail || registeredUser?.email}</strong>.
+                  Te enviamos un correo con tu código de confirmación a <strong className="text-white font-mono">{regEmail || registeredUser?.email}</strong>.
                 </p>
                 <p className="text-[11px] text-slate-300">
-                  Revisá tu bandeja de entrada y también la carpeta de <strong>spam / correo no deseado</strong>.
+                  Revisá tu bandeja de entrada o la carpeta de <strong>spam / correo no deseado</strong>.
                 </p>
               </div>
 
@@ -678,31 +689,72 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {otpVerifySuccess && (
                 <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-xs text-center font-bold flex items-center justify-center gap-2 animate-in fade-in">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>¡Email verificado! Ingresando a la aplicación...</span>
+                  <span>¡Email verificado con éxito! Activando cuenta...</span>
                 </div>
               )}
             </div>
 
-            {/* Primary Action Button: "Ya verifiqué mi correo" */}
-            <div className="space-y-3 pt-2">
+            {/* 6-Digit Code Input Form */}
+            <form onSubmit={handleVerifyRegisterOtp} className="space-y-4 pt-1">
+              <div className="space-y-2 text-left">
+                <label htmlFor="input-register-otp" className="block text-xs font-semibold text-slate-300 text-center">
+                  Ingresá el código de 6 dígitos que te enviamos
+                </label>
+                <div className="relative max-w-xs mx-auto">
+                  <input
+                    id="input-register-otp"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={regOtpInput}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setRegOtpInput(val);
+                      setErrorMsg('');
+                    }}
+                    placeholder="123456"
+                    className="w-full bg-slate-950/90 border border-slate-700/80 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 text-white font-mono text-2xl tracking-[0.35em] text-center py-3.5 rounded-2xl outline-none placeholder:text-slate-600 transition shadow-inner"
+                    autoFocus
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 text-center">
+                  Es obligatorio verificar este código para que tu cuenta sea activada.
+                </p>
+              </div>
+
+              {/* Primary Action Button: "Verificar Código y Activar Cuenta" */}
+              <button
+                id="btn-verify-register-otp"
+                type="submit"
+                disabled={loading || otpVerifySuccess || regOtpInput.trim().length !== 6}
+                className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verificando código...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-5 h-5" />
+                    <span>Verificar Código y Activar Cuenta</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* Secondary Action: Check if verified via email button/link */}
+            <div className="space-y-3 pt-1">
               <button
                 id="btn-check-email-verification"
                 type="button"
                 onClick={handleCheckEmailVerification}
                 disabled={loading || otpVerifySuccess}
-                className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Comprobando verificación...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-5 h-5" />
-                    <span>Ya verifiqué mi correo</span>
-                  </>
-                )}
+                <CheckCircle2 className="w-4 h-4 text-slate-400" />
+                <span>Ya hice clic en el enlace del correo</span>
               </button>
 
               <div className="flex flex-col sm:flex-row gap-2">
@@ -716,8 +768,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                   <span>
                     {resendVerificationCooldown > 0
-                      ? `Reenviar correo en (${resendVerificationCooldown}s)`
-                      : 'Reenviar correo de confirmación'}
+                      ? `Reenviar en (${resendVerificationCooldown}s)`
+                      : 'Reenviar código al correo'}
                   </span>
                 </button>
 

@@ -242,11 +242,13 @@ class ApiService {
     };
   }
 
-  async verifyEmailOtp(email: string, code: string): Promise<{ success: boolean; message: string }> {
+  async verifyEmailOtp(email: string, code: string): Promise<{ success: boolean; message: string; user?: User }> {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanCode = (code || '').trim().replace(/\s+/g, '');
 
     // 1. Try server verification first
+    let serverOk = false;
+    let serverMessage = '';
     try {
       const response = await fetch('/api/mail/verify-otp', {
         method: 'POST',
@@ -255,9 +257,8 @@ class ApiService {
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        // Keep Firebase/local state in sync
-        await firebaseService.verifyOtpCode(cleanEmail, cleanCode, 'verify_email').catch(() => {});
-        return { success: true, message: data.message };
+        serverOk = true;
+        serverMessage = data.message;
       } else if (!response.ok && data.error && !data.error.includes('No hay un código activo')) {
         throw new Error(data.error);
       }
@@ -267,8 +268,30 @@ class ApiService {
       }
     }
 
-    // 2. Fallback to Firebase verification
-    return firebaseService.verifyOtpCode(cleanEmail, cleanCode, 'verify_email');
+    // 2. Also run Firebase verification to activate Firestore & localDb
+    try {
+      const fbRes = await firebaseService.verifyOtpCode(cleanEmail, cleanCode, 'verify_email');
+      if (!serverMessage) serverMessage = fbRes.message;
+    } catch (fbErr: any) {
+      if (!serverOk) {
+        throw fbErr;
+      }
+    }
+
+    // 3. Ensure local state has the activated user
+    let user = await firebaseService.activatePendingUser(cleanEmail);
+    if (!user) {
+      user = await firebaseService.getUserByEmail(cleanEmail);
+    }
+    if (!user) {
+      user = localDb.getUsers().find(u => (u.email || '').toLowerCase() === cleanEmail) || null;
+    }
+
+    return {
+      success: true,
+      message: serverMessage || '¡Correo electrónico verificado con éxito! Tu perfil ha sido activado.',
+      user: user || undefined
+    };
   }
 
   async checkEmailVerification(email?: string): Promise<{ isVerified: boolean; user?: User | null; message: string }> {

@@ -324,6 +324,12 @@ class FirebaseService {
       });
     } catch {}
 
+    // Clean up any stale user document in Firestore users/publicProfiles collection from prior accounts
+    try {
+      await deleteDoc(doc(db, 'users', uid)).catch(() => {});
+      await deleteDoc(doc(db, 'publicProfiles', uid)).catch(() => {});
+    } catch {}
+
     // STORE IN PENDING REGISTRATIONS - DO NOT CREATE USER DOCUMENT IN FIRESTORE OR ACTIVE LIST
     const pendingRecord = {
       id: uid,
@@ -680,25 +686,27 @@ class FirebaseService {
     }
 
     // If user document does not exist, check if there is a pending unconfirmed registration
-    if (!user) {
-      let isPending = false;
+    let isPending = false;
+    try {
+      const pSnap = await getDoc(doc(db, 'pendingRegistrations', cleanEmail));
+      if (pSnap.exists()) isPending = true;
+    } catch {}
+    if (!isPending && localDb.getPendingRegistration(cleanEmail)) {
+      isPending = true;
+    }
+    if (!isPending) {
       try {
-        const pSnap = await getDoc(doc(db, 'pendingRegistrations', cleanEmail));
-        if (pSnap.exists()) isPending = true;
-      } catch {}
-      if (!isPending && localDb.getPendingRegistration(cleanEmail)) {
-        isPending = true;
-      }
-
-      if (isPending) {
-        // If email was verified via link in Firebase Auth, auto-activate now!
-        if (isEmailVerified) {
-          user = await this.activatePendingUser(cleanEmail);
-        } else {
-          await signOut(auth).catch(() => {});
-          throw new Error('Tu perfil aún no ha sido creado porque no has confirmado tu correo electrónico. Por favor verifica tu casilla de correo para activar tu cuenta.');
+        const resp = await fetch(`/api/auth/check-status?email=${encodeURIComponent(cleanEmail)}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status === 'pending_verification') isPending = true;
         }
-      }
+      } catch {}
+    }
+
+    if (isPending) {
+      await signOut(auth).catch(() => {});
+      throw new Error('Tu perfil aún no ha sido activado porque no has confirmado tu correo electrónico con el código que te enviamos. Por favor revisa tu correo para activar tu cuenta.');
     }
 
     // If user document is missing or deleted, strictly forbid login
@@ -717,11 +725,7 @@ class FirebaseService {
       throw new Error('Esta cuenta se encuentra temporalmente suspendida por un administrador.');
     }
 
-    // Check if emailVerified is satisfied
-    if (isEmailVerified) {
-      user.emailVerified = true;
-    }
-
+    // Strict email verification check - must be verified on profile or admin
     if (!user.emailVerified && !isOwnerAdmin && user.role !== 'admin') {
       await signOut(auth).catch(() => {});
       throw new Error('Debes confirmar tu correo electrónico antes de ingresar a la plataforma.');
@@ -794,19 +798,46 @@ class FirebaseService {
       };
     }
 
-    // 1. If Firebase Auth user is present, reload from Firebase Auth servers to check emailVerified status
-    let authIsVerified = false;
-    if (auth.currentUser) {
-      try {
-        await reload(auth.currentUser);
-        authIsVerified = auth.currentUser.emailVerified === true;
-      } catch (err) {
-        console.warn('[Firebase Auth] Error reloading auth user:', err);
-      }
+    // 1. Check if there is an active pending registration
+    let isPending = false;
+    try {
+      const pSnap = await getDoc(doc(db, 'pendingRegistrations', cleanEmail));
+      if (pSnap.exists()) isPending = true;
+    } catch {}
+    if (!isPending && localDb.getPendingRegistration(cleanEmail)) {
+      isPending = true;
     }
 
-    // 2. Fetch user profile or check pending registration
+    // Check server status (the source of truth for OTP verification)
+    let isServerVerified = false;
+    try {
+      const resp = await fetch(`/api/auth/check-status?email=${encodeURIComponent(cleanEmail)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.status === 'pending_verification') {
+          isPending = true;
+          isServerVerified = false;
+        } else if (data.status === 'active' && data.emailVerified) {
+          isPending = false;
+          isServerVerified = true;
+        }
+      }
+    } catch {}
+
+    // If still pending and not confirmed via server OTP, STRICTLY BLOCK ANY BYPASS
+    if (isPending && !isServerVerified) {
+      return {
+        isVerified: false,
+        user: null,
+        message: 'Tu correo todavía no ha sido verificado. Por favor ingresá el código de 6 dígitos que te enviamos o abrí el enlace de confirmación recibido por correo.'
+      };
+    }
+
+    // 2. If verified on server, activate pending user locally now
     let user = await this.getUserByEmail(cleanEmail);
+    if (!user && (isServerVerified || !isPending)) {
+      user = await this.activatePendingUser(cleanEmail);
+    }
     if (!user && auth.currentUser) {
       user = await this.getUserById(auth.currentUser.uid);
     }
@@ -814,9 +845,8 @@ class FirebaseService {
       user = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail) || null;
     }
 
-    // 3. If verified via Firebase link reload or document
-    if (authIsVerified || (user && user.emailVerified === true)) {
-      // If user was not yet created, activate from pending now!
+    // 3. If verified via server activation or active user record
+    if (isServerVerified || (user && user.emailVerified === true)) {
       if (!user) {
         user = await this.activatePendingUser(cleanEmail);
       }
@@ -1055,6 +1085,11 @@ class FirebaseService {
         }).catch(() => {});
       }
     }
+
+    // Clean up consumed OTP
+    try {
+      await deleteDoc(doc(db, 'otps', `${cleanEmail}_${type}`)).catch(() => {});
+    } catch {}
 
     return {
       success: true,

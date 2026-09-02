@@ -195,9 +195,11 @@ class LocalDatabaseStore {
   getUsers(): User[] {
     this.init();
     const deleted = new Set(this.getDeletedEmails());
+    const pendings = this.getPendingRegistrations();
+    const pendingEmails = new Set(Array.isArray(pendings) ? pendings.map(p => (p?.email || '').toLowerCase()) : []);
     const users = this.getStored<any>(STORAGE_KEY_USERS, INITIAL_SEED_USERS);
     const validUsers = Array.isArray(users) ? users : [INITIAL_ADMIN];
-    return validUsers.filter(u => u && !deleted.has((u.email || '').toLowerCase()));
+    return validUsers.filter(u => u && !deleted.has((u.email || '').toLowerCase()) && !pendingEmails.has((u.email || '').toLowerCase()));
   }
 
   saveUsers(users: User[]): void {
@@ -389,6 +391,15 @@ class LocalDatabaseStore {
     const current = Array.isArray(pendings) ? pendings.filter(p => p && p.email && p.email.toLowerCase() !== cleanEmail) : [];
     current.push({ ...pending, email: cleanEmail });
     this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, current);
+
+    // Ensure this email is purged from active users until verified
+    const users = this.getStored<any>(STORAGE_KEY_USERS, []);
+    if (Array.isArray(users)) {
+      const filtered = users.filter(u => u && (u.email || '').toLowerCase().trim() !== cleanEmail);
+      if (filtered.length !== users.length) {
+        this.setStored(STORAGE_KEY_USERS, filtered);
+      }
+    }
   }
 
   removePendingRegistration(email: string): void {

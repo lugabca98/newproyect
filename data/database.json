@@ -42,50 +42,7 @@
       }
     }
   ],
-  "pendingRegistrations": [
-    {
-      "id": "user-1788387022279-8f53cf72",
-      "email": "usuario_nuevo_prueba@ejemplo.com",
-      "user": {
-        "id": "user-1788387022279-8f53cf72",
-        "name": "Test User",
-        "email": "usuario_nuevo_prueba@ejemplo.com",
-        "passwordHash": "14a38bd5d60b9cc5beece850dd559fd5eb325a4b5c12b7d8f5affe3960d87f7a6699bf2e1aba7b0b562dbe37d63d4876fe653df50b1cbf082241ead33c465966",
-        "passwordSalt": "e55e744fd84e493117fb29a9e6ab9615",
-        "age": 25,
-        "gender": "other",
-        "bio": "¡Hola! Acabo de unirme a Vulnerable.",
-        "photos": [
-          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80"
-        ],
-        "location": "Buenos Aires, Argentina",
-        "distanceKm": 10,
-        "occupation": "Neurodivergente",
-        "interests": [
-          "Música",
-          "Café",
-          "Viajes"
-        ],
-        "verified": false,
-        "emailVerified": false,
-        "status": "active",
-        "role": "user",
-        "createdAt": "2026-09-02T22:10:22.279Z",
-        "lastActive": "2026-09-02T22:10:22.279Z",
-        "likesCount": 0,
-        "matchesCount": 0,
-        "preferences": {
-          "minAge": 18,
-          "maxAge": 45,
-          "interestedIn": [
-            "female"
-          ],
-          "maxDistanceKm": 50
-        }
-      },
-      "createdAt": "2026-09-02T22:10:22.279Z"
-    }
-  ],
+  "pendingRegistrations": [],
   "deletedAccounts": [],
   "swipes": [],
   "matches": [],
@@ -101,5 +58,5 @@
       "details": "Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero."
     }
   ],
-  "updatedAt": "2026-09-02T22:10:22.279Z"
+  "updatedAt": "2026-09-02T22:23:17.688Z"
 }
