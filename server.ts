@@ -534,6 +534,7 @@ function getDefaultSeedMessages(): Message[] {
 // In-Memory active database instances loaded from disk
 let users: ServerUser[] = [];
 let pendingRegistrations: { id: string; email: string; user: ServerUser; createdAt: string }[] = [];
+let deletedAccounts: { email: string; userId: string; deletedAt: string; deletedBy: string }[] = [];
 let swipes: SwipeRecord[] = [];
 let matches: Match[] = [];
 let messages: Message[] = [];
@@ -569,13 +570,18 @@ function loadDatabase() {
     if (fs.existsSync(DB_FILE)) {
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
       const data = JSON.parse(raw);
-      users = Array.isArray(data.users) && data.users.length > 0 ? data.users : getDefaultSeedUsers();
+      deletedAccounts = Array.isArray(data.deletedAccounts) ? data.deletedAccounts : [];
+      const deletedSet = new Set(deletedAccounts.map(d => d.email.toLowerCase()));
+      users = Array.isArray(data.users) && data.users.length > 0 
+        ? data.users.filter((u: ServerUser) => !deletedSet.has(u.email.toLowerCase()))
+        : getDefaultSeedUsers().filter(u => !deletedSet.has(u.email.toLowerCase()));
       pendingRegistrations = Array.isArray(data.pendingRegistrations) ? data.pendingRegistrations : [];
       swipes = Array.isArray(data.swipes) ? data.swipes : getDefaultSeedSwipes();
       matches = Array.isArray(data.matches) ? data.matches : getDefaultSeedMatches();
       messages = Array.isArray(data.messages) ? data.messages : getDefaultSeedMessages();
       auditLogs = Array.isArray(data.auditLogs) ? data.auditLogs : getDefaultSeedAuditLogs();
     } else {
+      deletedAccounts = [];
       users = getDefaultSeedUsers();
       pendingRegistrations = [];
       swipes = getDefaultSeedSwipes();
@@ -585,6 +591,7 @@ function loadDatabase() {
     }
   } catch (err) {
     console.error('Error reading database file from disk, using fallback defaults:', err);
+    deletedAccounts = [];
     users = getDefaultSeedUsers();
     pendingRegistrations = [];
     swipes = getDefaultSeedSwipes();
@@ -614,6 +621,7 @@ function saveDatabase() {
     const data = {
       users,
       pendingRegistrations,
+      deletedAccounts,
       swipes,
       matches,
       messages,
@@ -772,6 +780,17 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+
+  // Check if account has been deleted by an administrator
+  const isDeleted = deletedAccounts.find(d => d.email.toLowerCase() === normalizedEmail);
+  if (isDeleted) {
+    res.status(403).json({
+      error: 'Esta cuenta ha sido eliminada por el administrador. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.',
+      deleted: true
+    });
+    return;
+  }
+
   let user = users.find(u => u.email.toLowerCase() === normalizedEmail);
 
   // If logging in as administrator owner, ensure account is fully provisioned with admin role
@@ -847,6 +866,51 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
     token, 
     isAdmin: isOwner,
     emailVerified: isEmailVerified
+  });
+});
+
+// Check email status across all devices (active, blocked, deleted, pending, or not_found)
+app.get('/api/auth/check-status', (req, res) => {
+  const email = String(req.query.email || '').trim().toLowerCase();
+  if (!email || !isValidEmail(email)) {
+    res.status(400).json({ error: 'Email válido requerido.' });
+    return;
+  }
+
+  const isDeleted = deletedAccounts.find(d => d.email.toLowerCase() === email);
+  if (isDeleted) {
+    res.json({ 
+      status: 'deleted', 
+      message: 'Esta cuenta ha sido eliminada por el administrador. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.' 
+    });
+    return;
+  }
+
+  const user = users.find(u => u.email.toLowerCase() === email);
+  if (user) {
+    res.json({ 
+      status: user.status, 
+      role: user.role, 
+      emailVerified: Boolean((user as any).emailVerified),
+      userId: user.id 
+    });
+    return;
+  }
+
+  const isPending = pendingRegistrations.find(p => p.email.toLowerCase() === email);
+  if (isPending) {
+    res.json({ status: 'pending_verification' });
+    return;
+  }
+
+  res.json({ status: 'not_found' });
+});
+
+// Get all deleted accounts list for cross-device client synchronization
+app.get('/api/auth/deleted-accounts', (req, res) => {
+  res.json({ 
+    deletedEmails: deletedAccounts.map(d => d.email.toLowerCase()),
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -944,6 +1008,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   };
 
   // DO NOT add to active users array yet; store in pendingRegistrations until email is confirmed!
+  deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== normalizedEmail);
   pendingRegistrations = pendingRegistrations.filter(p => p.email !== normalizedEmail);
   pendingRegistrations.push({
     id: newUser.id,
@@ -1838,11 +1903,18 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   matches = matches.filter(m => !m.userIds.includes(id));
   messages = messages.filter(msg => msg.senderId !== id && msg.receiverId !== id);
 
-  // Clean up OTP store for target user's email
+  // Clean up OTP store for target user's email and track in deletedAccounts
   const targetEmail = (targetUser.email || '').toLowerCase().trim();
   if (targetEmail) {
     otpStore.delete(`${targetEmail}_verify_email`);
     otpStore.delete(`${targetEmail}_password_reset`);
+    deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== targetEmail);
+    deletedAccounts.push({
+      email: targetEmail,
+      userId: id,
+      deletedAt: new Date().toISOString(),
+      deletedBy: adminEmail
+    });
   }
 
   // Invalidate all active sessions for this deleted user

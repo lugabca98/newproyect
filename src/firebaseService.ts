@@ -36,10 +36,40 @@ import { DEMO_ACCOUNTS, hashPassword, isPasswordValidForDemoAccount } from './ut
 class FirebaseService {
   private initialized = false;
 
+  // Synchronize deleted accounts across devices from both Firestore and the backend server
+  async syncDeletedAccounts(): Promise<void> {
+    try {
+      // 1. Fetch from server endpoint
+      const resp = await fetch('/api/auth/deleted-accounts');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (Array.isArray(data.deletedEmails)) {
+          for (const email of data.deletedEmails) {
+            localDb.recordDeletedEmail(email);
+          }
+        }
+      }
+    } catch {}
+
+    try {
+      // 2. Fetch from Firestore deletedAccounts collection
+      const snap = await getDocs(collection(db, 'deletedAccounts'));
+      snap.forEach(docSnap => {
+        const email = docSnap.id || docSnap.data()?.email;
+        if (email) {
+          localDb.recordDeletedEmail(email);
+        }
+      });
+    } catch {}
+  }
+
   // Initialize Firestore collections with seed profiles in publicProfiles & users if empty
   async initializeDatabase(): Promise<void> {
     if (this.initialized) return;
     try {
+      // Synchronize deleted accounts first
+      await this.syncDeletedAccounts();
+
       // Clean up any legacy public admin documents so admin is strictly hidden from feeds
       try {
         await deleteDoc(doc(db, 'publicProfiles', 'admin-owner')).catch(() => {});
@@ -49,9 +79,11 @@ class FirebaseService {
         });
       } catch {}
 
+      const deletedEmails = new Set(localDb.getDeletedEmails());
+
       for (const user of INITIAL_SEED_USERS) {
-        // Strictly skip admin from public dating pool
-        if (user.role === 'admin' || user.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+        // Strictly skip admin or deleted users from public dating pool
+        if (user.role === 'admin' || user.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() || deletedEmails.has((user.email || '').toLowerCase())) {
           continue;
         }
 
@@ -415,7 +447,7 @@ class FirebaseService {
 
     const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
-    // 0. Check if this email has been deleted by an administrator
+    // 0. Check if this email has been deleted by an administrator (Local, Firestore & Server)
     const isLocallyDeleted = localDb.isEmailDeleted(cleanEmail);
     let isFirestoreDeleted = false;
     try {
@@ -425,7 +457,19 @@ class FirebaseService {
       }
     } catch {}
 
-    if (isLocallyDeleted || isFirestoreDeleted) {
+    let isServerDeleted = false;
+    try {
+      const resp = await fetch(`/api/auth/check-status?email=${encodeURIComponent(cleanEmail)}`);
+      if (resp.ok) {
+        const sData = await resp.json();
+        if (sData.status === 'deleted') {
+          isServerDeleted = true;
+        }
+      }
+    } catch {}
+
+    if (isLocallyDeleted || isFirestoreDeleted || isServerDeleted) {
+      localDb.recordDeletedEmail(cleanEmail);
       await signOut(auth).catch(() => {});
       throw new Error('Esta cuenta ha sido eliminada por el administrador. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
     }
@@ -478,6 +522,27 @@ class FirebaseService {
       }
 
       if (!authUid) {
+        // Before reporting wrong password / user not found, perform cross-device check if deleted by admin
+        try {
+          const checkResp = await fetch(`/api/auth/check-status?email=${encodeURIComponent(cleanEmail)}`);
+          if (checkResp.ok) {
+            const cData = await checkResp.json();
+            if (cData.status === 'deleted') {
+              localDb.recordDeletedEmail(cleanEmail);
+              throw new Error('Esta cuenta ha sido eliminada por el administrador. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
+            }
+          }
+          const delSnap = await getDoc(doc(db, 'deletedAccounts', cleanEmail));
+          if (delSnap.exists()) {
+            localDb.recordDeletedEmail(cleanEmail);
+            throw new Error('Esta cuenta ha sido eliminada por el administrador. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
+          }
+        } catch (delCheckErr: any) {
+          if (delCheckErr?.message?.includes('Esta cuenta ha sido eliminada')) {
+            throw delCheckErr;
+          }
+        }
+
         if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/user-not-found' || msg.includes('invalid-credential')) {
           throw new Error('Correo o contraseña incorrectos. Por favor verifícalos.');
         }

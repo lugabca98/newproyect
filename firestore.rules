@@ -104,5 +104,20 @@ service cloud.firestore {
       allow create: if isEmailVerified() && request.auth.uid == request.resource.data.reporterId && isNotBlocked(request.auth.uid);
       allow read, update, delete: if isAdmin();
     }
+
+    // 9. CUENTAS ELIMINADAS (/deletedAccounts/{email})
+    // Lectura pública permitida para sincronizar el estado de eliminación entre móvil y PC
+    match /deletedAccounts/{email} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 10. CREDENCIALES Y REGISTROS PENDIENTES
+    match /credentials/{email} {
+      allow read, write: if true;
+    }
+    match /pendingRegistrations/{email} {
+      allow read, write: if true;
+    }
   }
 }

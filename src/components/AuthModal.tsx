@@ -1397,69 +1397,67 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* --- 5. LOGIN FORM --- */}
         {/* ------------------------------------------------------------- */}
         {mode === 'login' && (
-          <div className="space-y-5">
-            <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Correo Electrónico</label>
+          <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1">Correo Electrónico</label>
+              <input
+                id="login-input-email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="tu@email.com"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-slate-400">Contraseña</label>
+                <button
+                  id="btn-forgot-password-link"
+                  type="button"
+                  onClick={() => {
+                    setForgotEmail('');
+                    setMode('forgot-password');
+                    setErrorMsg('');
+                  }}
+                  className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 transition hover:underline"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+              
+              <div className="relative">
                 <input
-                  id="login-input-email"
-                  type="email"
+                  id="login-input-password"
+                  type={showLoginPassword ? 'text' : 'password'}
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tu@email.com"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword(!showLoginPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300"
+                  title={showLoginPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                >
+                  {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
+            </div>
 
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-semibold text-slate-400">Contraseña</label>
-                  <button
-                    id="btn-forgot-password-link"
-                    type="button"
-                    onClick={() => {
-                      setForgotEmail('');
-                      setMode('forgot-password');
-                      setErrorMsg('');
-                    }}
-                    className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 transition hover:underline"
-                  >
-                    ¿Olvidaste tu contraseña?
-                  </button>
-                </div>
-                
-                <div className="relative">
-                  <input
-                    id="login-input-password"
-                    type={showLoginPassword ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginPassword(!showLoginPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300"
-                    title={showLoginPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                  >
-                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                id="btn-submit-login"
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01]"
-              >
-                {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
-              </button>
-            </form>
-          </div>
+            <button
+              id="btn-submit-login"
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01]"
+            >
+              {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
+            </button>
+          </form>
         )}
 
       </div>
