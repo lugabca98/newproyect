@@ -84,6 +84,14 @@ class LocalDatabaseStore {
       return;
     }
 
+    // Auto-heal pending registrations if corrupted by previous reset
+    try {
+      const rawPending = localStorage.getItem(STORAGE_KEY_PENDING_REGISTRATIONS);
+      if (!rawPending || rawPending === '{}' || rawPending === 'null') {
+        this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, []);
+      }
+    } catch {}
+
     const deletedEmails = new Set(this.getDeletedEmails());
     const creds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
     let credsModified = false;
@@ -155,7 +163,8 @@ class LocalDatabaseStore {
   }
 
   getDeletedEmails(): string[] {
-    return this.getStored<string[]>(STORAGE_KEY_DELETED_EMAILS, []);
+    const val = this.getStored<any>(STORAGE_KEY_DELETED_EMAILS, []);
+    return Array.isArray(val) ? val : [];
   }
 
   recordDeletedEmail(email: string): void {
@@ -186,8 +195,9 @@ class LocalDatabaseStore {
   getUsers(): User[] {
     this.init();
     const deleted = new Set(this.getDeletedEmails());
-    const users = this.getStored<User[]>(STORAGE_KEY_USERS, INITIAL_SEED_USERS);
-    return users.filter(u => !deleted.has((u.email || '').toLowerCase()));
+    const users = this.getStored<any>(STORAGE_KEY_USERS, INITIAL_SEED_USERS);
+    const validUsers = Array.isArray(users) ? users : [INITIAL_ADMIN];
+    return validUsers.filter(u => u && !deleted.has((u.email || '').toLowerCase()));
   }
 
   saveUsers(users: User[]): void {
@@ -223,7 +233,8 @@ class LocalDatabaseStore {
   }
 
   getSwipes(): SwipeRecord[] {
-    return this.getStored<SwipeRecord[]>(STORAGE_KEY_SWIPES, []);
+    const val = this.getStored<any>(STORAGE_KEY_SWIPES, []);
+    return Array.isArray(val) ? val : [];
   }
 
   saveSwipes(swipes: SwipeRecord[]): void {
@@ -231,7 +242,8 @@ class LocalDatabaseStore {
   }
 
   getMatches(): Match[] {
-    return this.getStored<Match[]>(STORAGE_KEY_MATCHES, INITIAL_MATCHES);
+    const val = this.getStored<any>(STORAGE_KEY_MATCHES, INITIAL_MATCHES);
+    return Array.isArray(val) ? val : [];
   }
 
   saveMatches(matches: Match[]): void {
@@ -239,7 +251,8 @@ class LocalDatabaseStore {
   }
 
   getMessages(): Message[] {
-    return this.getStored<Message[]>(STORAGE_KEY_MESSAGES, INITIAL_MESSAGES);
+    const val = this.getStored<any>(STORAGE_KEY_MESSAGES, INITIAL_MESSAGES);
+    return Array.isArray(val) ? val : [];
   }
 
   saveMessages(messages: Message[]): void {
@@ -247,7 +260,8 @@ class LocalDatabaseStore {
   }
 
   getAuditLogs(): AuditLog[] {
-    return this.getStored<AuditLog[]>(STORAGE_KEY_LOGS, INITIAL_LOGS);
+    const val = this.getStored<any>(STORAGE_KEY_LOGS, INITIAL_LOGS);
+    return Array.isArray(val) ? val : [];
   }
 
   addAuditLog(log: AuditLog): void {
@@ -288,7 +302,8 @@ class LocalDatabaseStore {
 
   // OTP 6-Digit Verification & Password Reset
   getOtps(): OtpRecord[] {
-    return this.getStored<OtpRecord[]>(STORAGE_KEY_OTPS, []);
+    const val = this.getStored<any>(STORAGE_KEY_OTPS, []);
+    return Array.isArray(val) ? val : [];
   }
 
   saveOtp(record: OtpRecord): void {
@@ -348,20 +363,30 @@ class LocalDatabaseStore {
 
   // Pending Registrations (Profiles are NOT created until email confirmation)
   getPendingRegistrations(): PendingRegistration[] {
-    return this.getStored<PendingRegistration[]>(STORAGE_KEY_PENDING_REGISTRATIONS, []);
+    const raw = this.getStored<any>(STORAGE_KEY_PENDING_REGISTRATIONS, []);
+    if (Array.isArray(raw)) return raw;
+    if (raw && typeof raw === 'object') {
+      const arr = Object.values(raw) as PendingRegistration[];
+      this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, arr);
+      return arr;
+    }
+    this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, []);
+    return [];
   }
 
   getPendingRegistration(email: string): PendingRegistration | null {
     if (!email) return null;
     const cleanEmail = email.trim().toLowerCase();
     const pendings = this.getPendingRegistrations();
-    return pendings.find(p => p.email.toLowerCase() === cleanEmail) || null;
+    if (!Array.isArray(pendings)) return null;
+    return pendings.find(p => p && p.email && p.email.toLowerCase() === cleanEmail) || null;
   }
 
   savePendingRegistration(pending: PendingRegistration): void {
     if (!pending || !pending.email) return;
     const cleanEmail = pending.email.trim().toLowerCase();
-    const current = this.getPendingRegistrations().filter(p => p.email.toLowerCase() !== cleanEmail);
+    const pendings = this.getPendingRegistrations();
+    const current = Array.isArray(pendings) ? pendings.filter(p => p && p.email && p.email.toLowerCase() !== cleanEmail) : [];
     current.push({ ...pending, email: cleanEmail });
     this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, current);
   }
@@ -369,7 +394,8 @@ class LocalDatabaseStore {
   removePendingRegistration(email: string): void {
     if (!email) return;
     const cleanEmail = email.trim().toLowerCase();
-    const current = this.getPendingRegistrations().filter(p => p.email.toLowerCase() !== cleanEmail);
+    const pendings = this.getPendingRegistrations();
+    const current = Array.isArray(pendings) ? pendings.filter(p => p && p.email && p.email.toLowerCase() !== cleanEmail) : [];
     this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, current);
   }
 
@@ -453,7 +479,7 @@ class LocalDatabaseStore {
       this.setStored(STORAGE_KEY_SWIPES, []);
       this.setStored(STORAGE_KEY_DELETED_EMAILS, []);
       this.setStored(STORAGE_KEY_CREDENTIALS, creds);
-      this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, {});
+      this.setStored(STORAGE_KEY_PENDING_REGISTRATIONS, []);
       this.setStored(STORAGE_KEY_LOGS, [
         {
           id: `log-${Date.now()}`,

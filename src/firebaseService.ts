@@ -341,6 +341,27 @@ class FirebaseService {
 
     localDb.savePendingRegistration(pendingRecord);
 
+    // Sync with backend to clear any previous deleted state and trigger server OTP email
+    try {
+      fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: pendingUserData.name,
+          email,
+          password: cleanPass,
+          age: pendingUserData.age,
+          gender: pendingUserData.gender,
+          bio: pendingUserData.bio,
+          photos: pendingUserData.photos,
+          location: pendingUserData.location,
+          occupation: pendingUserData.occupation,
+          interests: pendingUserData.interests,
+          preferences: pendingUserData.preferences
+        })
+      }).catch(() => {});
+    } catch {}
+
     // Return unconfirmed representation for UI flow (profile is NOT created yet)
     return {
       ...(pendingUserData as User),
