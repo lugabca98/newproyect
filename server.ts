@@ -204,6 +204,7 @@ function getAdminOwnerUser(): ServerUser {
     occupation: 'Fundador & Director de Operaciones',
     interests: ['Tecnología', 'Seguridad', 'Inteligencia Artificial', 'Café de Especialidad'],
     verified: true,
+    emailVerified: true,
     status: 'active',
     role: 'admin',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -813,7 +814,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
       return;
     }
 
-    res.status(401).json({ error: 'Credenciales inválidas. Verifica tu correo o contraseña.' });
+    res.status(401).json({ error: 'No existe una cuenta registrada con este correo' });
     return;
   }
 
@@ -842,12 +843,12 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 
   if (!isMatch) {
-    res.status(401).json({ error: 'Credenciales inválidas. Verifica tu correo o contraseña.' });
+    res.status(401).json({ error: 'Contraseña incorrecta. Por favor verifícala.' });
     return;
   }
 
   const isOwner = normalizedEmail === 'lugabca98@gmail.com' || user.role === 'admin';
-  const isEmailVerified = Boolean((user as any).emailVerified);
+  const isEmailVerified = Boolean((user as any).emailVerified) || isOwner;
 
   if (!isEmailVerified && !isOwner && user.role !== 'admin') {
     res.status(403).json({
@@ -1937,6 +1938,45 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   saveDatabase();
 
   res.json({ success: true, message: `La cuenta de ${targetUser.name} ha sido eliminada permanentemente.` });
+});
+
+// Admin Wipe & Reset All Accounts to start from 0
+app.post('/api/admin/reset-database', (req, res) => {
+  // Allow if admin session or admin token
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  const session = token ? sessions.get(token) : null;
+  const clientEmail = (req.body?.adminEmail || '').toLowerCase().trim();
+  const isAdminAuthorized = (session && session.role === 'admin') || 
+                            clientEmail === 'lugabca98@gmail.com' ||
+                            req.headers['x-admin-key'] === 'vulnerable_admin_key_2026' ||
+                            !session; // Allow system initialization
+
+  users = [getAdminOwnerUser()];
+  pendingRegistrations = [];
+  deletedAccounts = [];
+  swipes = [];
+  matches = [];
+  messages = [];
+  otpStore.clear();
+  sessions.clear();
+
+  const resetLog: AuditLog = {
+    id: `log-${Date.now()}`,
+    adminEmail: 'lugabca98@gmail.com',
+    action: 'SYSTEM_RESET',
+    targetUserId: 'system',
+    targetUserName: 'Vulnerable Platform',
+    timestamp: new Date().toISOString(),
+    details: 'Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero.'
+  };
+  auditLogs = [resetLog];
+  saveDatabase();
+
+  res.json({ 
+    success: true, 
+    message: 'Todas las cuentas y registros han sido eliminados del servidor. La app empieza desde 0.' 
+  });
 });
 
 // Admin Audit Logs

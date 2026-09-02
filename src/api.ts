@@ -135,8 +135,19 @@ class ApiService {
     const currentId = this.getToken();
     if (!currentId) throw new Error('No hay sesión activa.');
 
-    let user: User | null = await firebaseService.getUserById(currentId);
     const storedEmail = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_email') || '').trim().toLowerCase() : '';
+
+    // If marked as deleted locally or in deleted accounts, strictly terminate session
+    if (storedEmail && (localDb.isEmailDeleted(storedEmail))) {
+      this.setToken(null);
+      throw new Error('Esta cuenta ha sido eliminada por el administrador.');
+    }
+
+    let user: User | null = await firebaseService.getUserById(currentId);
+
+    if (!user && storedEmail) {
+      user = await firebaseService.getUserByEmail(storedEmail);
+    }
 
     if (!user) {
       if (storedEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || currentId === 'admin-owner') {
@@ -145,11 +156,16 @@ class ApiService {
           id: currentId
         };
       } else {
-        const localUser = localDb.getUsers().find(u => u.id === currentId || (storedEmail && (u.email || '').toLowerCase() === storedEmail));
-        if (localUser) {
-          user = localUser;
-        } else {
-          throw new Error('Usuario no encontrado.');
+        const isLocallyDeleted = storedEmail ? localDb.isEmailDeleted(storedEmail) : false;
+        if (!isLocallyDeleted) {
+          const localUser = localDb.getUsers().find(u => u.id === currentId || (storedEmail && (u.email || '').toLowerCase() === storedEmail));
+          if (localUser && localUser.status !== 'deleted' && !localDb.isEmailDeleted(localUser.email)) {
+            user = localUser;
+          }
+        }
+        if (!user) {
+          this.setToken(null);
+          throw new Error('Usuario no encontrado o cuenta eliminada.');
         }
       }
     }
@@ -158,8 +174,18 @@ class ApiService {
     const cleanEmail = (currentUserObj.email || storedEmail).trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, currentUserObj.id);
     
+    // Strict block if user was deleted or blocked
+    if (currentUserObj.status === 'deleted' || (cleanEmail && localDb.isEmailDeleted(cleanEmail))) {
+      this.setToken(null);
+      throw new Error('Esta cuenta ha sido eliminada por el administrador.');
+    }
+    if (currentUserObj.status === 'blocked') {
+      this.setToken(null);
+      throw new Error('Esta cuenta se encuentra suspendida.');
+    }
+
     // Strict block: unverified users cannot retain active sessions
-    if (!currentUserObj.emailVerified) {
+    if (!currentUserObj.emailVerified && !isOwner && currentUserObj.role !== 'admin') {
       this.setToken(null);
       throw new Error('Debes confirmar tu correo electrónico antes de ingresar a la plataforma.');
     }
@@ -519,6 +545,11 @@ class ApiService {
   async deleteUserAdmin(targetUserId: string, email?: string): Promise<{ success: boolean }> {
     await firebaseService.adminDeleteUser(targetUserId, email);
     return { success: true };
+  }
+
+  async resetDatabaseToZero(): Promise<{ success: boolean; message: string }> {
+    await firebaseService.wipeAllRegisteredAccounts();
+    return { success: true, message: 'La base de datos y todas las cuentas han sido eliminadas. La app empieza desde 0.' };
   }
 
   async getAuditLogs(): Promise<{ logs: AuditLog[] }> {

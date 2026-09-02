@@ -9,6 +9,7 @@ import { AuthModal } from './components/AuthModal';
 import { User, Match, SwipeType, Gender, UserPreferences } from './types';
 import { api } from './api';
 import { firebaseService } from './firebaseService';
+import { localDb } from './localStore';
 import { 
   Flame, 
   Sparkles, 
@@ -50,11 +51,20 @@ export function App() {
   // Initial Load: Check session or present Register screen first
   useEffect(() => {
     initAuth();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        firebaseService.syncDeletedAccounts().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
   const initAuth = async () => {
     try {
-      // Trigger cloud initialization in background
+      // Sync deleted accounts and cloud state first
+      await firebaseService.syncDeletedAccounts().catch(() => {});
       firebaseService.initializeDatabase().catch(() => {});
       
       // Check if arriving with a reset password or verify email link
@@ -112,22 +122,25 @@ export function App() {
     }
   }, [currentTab, currentUser]);
 
-  // Real-time listener for current user status (Disconnect instantly if blocked by Admin)
+  // Real-time listener for current user status (Disconnect instantly if blocked or deleted by Admin)
   useEffect(() => {
     if (!currentUser?.id) return;
     const unsub = firebaseService.onUserDocChange(currentUser.id, (updatedUser) => {
-      if (updatedUser && updatedUser.status === 'blocked') {
+      if (!updatedUser || updatedUser.status === 'deleted' || updatedUser.status === 'blocked') {
+        if (currentUser.email) {
+          localDb.recordDeletedEmail(currentUser.email);
+        }
         api.setToken(null);
         setCurrentUser(null);
         setAuthModalMode('login');
         setAuthModalOpen(true);
-      } else if (updatedUser) {
+      } else {
         setCurrentUser(prev => prev ? { ...prev, ...updatedUser } : updatedUser);
       }
     });
 
     return () => unsub();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.email]);
 
   // Reload feed whenever current user changes or preferences change
   useEffect(() => {

@@ -63,7 +63,7 @@ class FirebaseService {
     } catch {}
   }
 
-  // Initialize Firestore collections with seed profiles in publicProfiles & users if empty
+  // Initialize Firestore collections - ensure admin is clean and dating pool starts from 0
   async initializeDatabase(): Promise<void> {
     if (this.initialized) return;
     try {
@@ -79,57 +79,78 @@ class FirebaseService {
         });
       } catch {}
 
-      const deletedEmails = new Set(localDb.getDeletedEmails());
-
-      for (const user of INITIAL_SEED_USERS) {
-        // Strictly skip admin or deleted users from public dating pool
-        if (user.role === 'admin' || user.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() || deletedEmails.has((user.email || '').toLowerCase())) {
-          continue;
-        }
-
-        try {
-          const docRef = doc(db, 'publicProfiles', user.id);
-          const existingDoc = await getDoc(docRef);
-          if (!existingDoc.exists()) {
-            const publicProfile = {
-              id: user.id,
-              name: user.name,
-              age: user.age,
-              gender: user.gender,
-              bio: user.bio,
-              photos: user.photos,
-              location: user.location,
-              distanceKm: user.distanceKm || 5,
-              occupation: user.occupation,
-              interests: user.interests,
-              verified: user.verified || false,
-              status: user.status || 'active',
-              role: user.role || 'user',
-              createdAt: user.createdAt || new Date().toISOString(),
-              lastActive: new Date().toISOString(),
-              likesCount: user.likesCount || 0,
-              matchesCount: user.matchesCount || 0
-            };
-            await setDoc(docRef, publicProfile);
-            await setDoc(doc(db, 'users', user.id), {
-              ...publicProfile,
-              email: user.email,
-              preferences: user.preferences || {
-                minAge: 18,
-                maxAge: 60,
-                interestedIn: ['female', 'male', 'non-binary', 'other'],
-                maxDistanceKm: 50
-              }
-            });
-          }
-        } catch (seedErr) {
-          console.warn('[Firestore] Seed profile error for:', user.name, seedErr);
-        }
+      // If one-time factory zero reset has not been run in this client session, trigger complete wipe
+      if (typeof window !== 'undefined' && localStorage.getItem('vulnerable_firebase_wiped_v5') !== 'true') {
+        await this.wipeAllRegisteredAccounts().catch((e) => {
+          console.warn('[FirebaseService] Auto wipe note:', e);
+        });
+        localStorage.setItem('vulnerable_firebase_wiped_v5', 'true');
       }
+
       this.initialized = true;
     } catch (err) {
       console.warn('[Firestore] Initialization check:', err);
     }
+  }
+
+  // Wipes all registered accounts across Firestore, server database, and local cache
+  async wipeAllRegisteredAccounts(): Promise<{ success: boolean; deletedCount: number }> {
+    console.log('[FirebaseService] Initiating complete wipe of all registered accounts...');
+    let deletedCount = 0;
+
+    // 1. Reset server database
+    try {
+      await fetch('/api/admin/reset-database', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-key': 'vulnerable_admin_key_2026'
+        },
+        body: JSON.stringify({ adminEmail: DEFAULT_ADMIN_EMAIL })
+      });
+    } catch (e) {
+      console.warn('[Server Wipe] Error:', e);
+    }
+
+    // 2. Wipe Firestore collections
+    const collectionsToClean = [
+      'publicProfiles',
+      'users',
+      'credentials',
+      'pendingRegistrations',
+      'deletedAccounts',
+      'swipes',
+      'matches',
+      'messages',
+      'reports'
+    ];
+
+    for (const colName of collectionsToClean) {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        for (const docSnap of snap.docs) {
+          // Keep only admin-owner doc in users
+          if (colName === 'users' && docSnap.id === 'admin-owner') {
+            continue;
+          }
+          await deleteDoc(docSnap.ref).catch(() => {});
+          deletedCount++;
+        }
+      } catch (err) {
+        console.warn(`[Firestore Wipe] Collection ${colName} note:`, err);
+      }
+    }
+
+    // 3. Reset local database storage
+    localDb.resetToZero();
+
+    // 4. Ensure clean admin owner exists in Firestore users
+    try {
+      await setDoc(doc(db, 'users', INITIAL_ADMIN.id), INITIAL_ADMIN);
+      await deleteDoc(doc(db, 'publicProfiles', INITIAL_ADMIN.id)).catch(() => {});
+    } catch {}
+
+    return { success: true, deletedCount };
   }
 
   // -------------------------------------------------------------
@@ -543,8 +564,71 @@ class FirebaseService {
           }
         }
 
-        if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/user-not-found' || msg.includes('invalid-credential')) {
-          throw new Error('Correo o contraseña incorrectos. Por favor verifícalos.');
+        if (code === 'auth/user-not-found') {
+          throw new Error('No existe una cuenta registrada con este correo');
+        }
+
+        if (code === 'auth/wrong-password') {
+          throw new Error('Contraseña incorrecta. Por favor verifícala.');
+        }
+
+        if (code === 'auth/invalid-credential' || msg.includes('invalid-credential')) {
+          // Verify if an account with this email exists in server, Firestore, or local database
+          let isRegistered = false;
+          try {
+            const checkResp = await fetch(`/api/auth/check-status?email=${encodeURIComponent(cleanEmail)}`);
+            if (checkResp.ok) {
+              const cData = await checkResp.json();
+              if (cData.status === 'deleted') {
+                localDb.recordDeletedEmail(cleanEmail);
+                throw new Error('Esta cuenta ha sido eliminada por el administrador. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
+              }
+              if (cData.status === 'pending_verification') {
+                throw new Error('Tu perfil aún no ha sido creado porque no has confirmado tu correo electrónico. Por favor verifica tu casilla de correo para activar tu cuenta.');
+              }
+              if (cData.status === 'active' || cData.status === 'blocked') {
+                isRegistered = true;
+              }
+            }
+          } catch (statusCheckErr: any) {
+            if (statusCheckErr?.message && !statusCheckErr.message.includes('fetch')) {
+              throw statusCheckErr;
+            }
+          }
+
+          if (!isRegistered) {
+            const uObj = await this.getUserByEmail(cleanEmail);
+            if (uObj) {
+              isRegistered = true;
+            }
+          }
+
+          if (!isRegistered) {
+            const localUser = localDb.getUsers().find(u => (u.email || '').toLowerCase() === cleanEmail);
+            if (localUser) {
+              isRegistered = true;
+            }
+          }
+
+          if (!isRegistered) {
+            const cred = localDb.getCredential(cleanEmail);
+            if (cred) {
+              isRegistered = true;
+            }
+          }
+
+          if (!isRegistered) {
+            const pendingReg = localDb.getPendingRegistration(cleanEmail);
+            if (pendingReg) {
+              throw new Error('Tu perfil aún no ha sido creado porque no has confirmado tu correo electrónico. Por favor verifica tu casilla de correo para activar tu cuenta.');
+            }
+          }
+
+          if (!isRegistered) {
+            throw new Error('No existe una cuenta registrada con este correo');
+          }
+
+          throw new Error('Contraseña incorrecta. Por favor verifícala.');
         }
         if (code === 'auth/invalid-email') {
           throw new Error('El formato de correo electrónico no es válido.');
@@ -596,10 +680,15 @@ class FirebaseService {
       }
     }
 
-    // If user document is still missing or deleted, strictly forbid login and do not auto-create
-    if (!user || user.status === 'deleted') {
+    // If user document is missing or deleted, strictly forbid login
+    if (!user) {
       await signOut(auth).catch(() => {});
-      throw new Error('Esta cuenta ha sido eliminada por el administrador o no existe. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
+      throw new Error('No existe una cuenta registrada con este correo');
+    }
+
+    if (user.status === 'deleted') {
+      await signOut(auth).catch(() => {});
+      throw new Error('Esta cuenta ha sido eliminada por el administrador. Si deseas volver a acceder a la plataforma, por favor regístrate nuevamente.');
     }
 
     if (user.status === 'blocked') {
@@ -1140,18 +1229,31 @@ class FirebaseService {
 
   async getUserByEmail(email: string): Promise<User | null> {
     const cleanEmail = email.trim().toLowerCase();
-    const localUser = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail);
-    if (localUser) return localUser;
+    if (!cleanEmail) return null;
+
+    if (localDb.isEmailDeleted(cleanEmail)) {
+      return null;
+    }
 
     try {
       const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
       const snap = await getDocs(q);
       if (!snap.empty) {
-        return snap.docs[0].data() as User;
+        const u = snap.docs[0].data() as User;
+        if (u.status === 'deleted' || localDb.isEmailDeleted(u.email)) {
+          return null;
+        }
+        return u;
       }
     } catch (err) {
       console.warn('[Firestore] Error getting user by email:', err);
     }
+
+    const localUser = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail);
+    if (localUser && localUser.status !== 'deleted' && !localDb.isEmailDeleted(localUser.email)) {
+      return localUser;
+    }
+
     return null;
   }
 
@@ -1367,6 +1469,8 @@ class FirebaseService {
       return onSnapshot(doc(db, 'users', userId), (snap) => {
         if (snap.exists()) {
           callback(snap.data() as User);
+        } else {
+          callback(null);
         }
       }, (err) => {
         console.warn('[Firestore] onUserDocChange notice:', err);
@@ -1381,13 +1485,20 @@ class FirebaseService {
       const userRef = doc(db, 'users', userId);
       const userSnap = await getDoc(userRef);
       if (userSnap.exists()) {
-        return userSnap.data() as User;
+        const u = userSnap.data() as User;
+        if (u.status === 'deleted' || (u.email && localDb.isEmailDeleted(u.email))) {
+          return null;
+        }
+        return u;
       }
       // Fallback to public profile if querying other profile
       const pubRef = doc(db, 'publicProfiles', userId);
       const pubSnap = await getDoc(pubRef);
       if (pubSnap.exists()) {
-        const pub = pubSnap.data();
+        const pub = pubSnap.data() as User;
+        if (pub.status === 'deleted' || (pub.email && localDb.isEmailDeleted(pub.email))) {
+          return null;
+        }
         return {
           ...pub,
           email: '', // Never leak email of another user
@@ -1399,7 +1510,9 @@ class FirebaseService {
     }
     // Fallback to local cache store
     const localUser = localDb.getUsers().find(u => u.id === userId);
-    if (localUser) return localUser;
+    if (localUser && localUser.status !== 'deleted' && !localDb.isEmailDeleted(localUser.email)) {
+      return localUser;
+    }
     return null;
   }
 

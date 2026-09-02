@@ -1,0 +1,62 @@
+{
+  "users": [
+    {
+      "id": "admin-owner",
+      "name": "Admin Propietario",
+      "email": "lugabca98@gmail.com",
+      "passwordHash": "4f3e8659b64043d2f29f8ca1802fec2402ccc96635314e62171b5737b05ada5545c2b1301f2b645fc838f8f1a380917fdcc24b1588e3daf354018ac3acadfbe6",
+      "passwordSalt": "3844a18225db7b4bf73bda49398306b5",
+      "age": 28,
+      "gender": "other",
+      "bio": "Propietario y Administrador de Vulnerable. Panel de control global y moderación.",
+      "photos": [
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Buenos Aires, Argentina",
+      "distanceKm": 0,
+      "occupation": "Fundador & Director de Operaciones",
+      "interests": [
+        "Tecnología",
+        "Seguridad",
+        "Inteligencia Artificial",
+        "Café de Especialidad"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "admin",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "lastActive": "2026-09-02T21:54:14.657Z",
+      "likesCount": 142,
+      "matchesCount": 28,
+      "preferences": {
+        "minAge": 18,
+        "maxAge": 99,
+        "interestedIn": [
+          "female",
+          "male",
+          "non-binary",
+          "other"
+        ],
+        "maxDistanceKm": 500
+      }
+    }
+  ],
+  "pendingRegistrations": [],
+  "deletedAccounts": [],
+  "swipes": [],
+  "matches": [],
+  "messages": [],
+  "auditLogs": [
+    {
+      "id": "log-1788385595720",
+      "adminEmail": "lugabca98@gmail.com",
+      "action": "SYSTEM_RESET",
+      "targetUserId": "system",
+      "targetUserName": "Vulnerable Platform",
+      "timestamp": "2026-09-02T21:46:35.720Z",
+      "details": "Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero."
+    }
+  ],
+  "updatedAt": "2026-09-02T21:54:14.657Z"
+}

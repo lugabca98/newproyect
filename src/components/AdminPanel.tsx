@@ -73,6 +73,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Delete Confirmation Modal
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   // Notification message
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -193,6 +194,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  const handleResetPlatformToZero = async () => {
+    const confirm = window.confirm(
+      '¿Estás seguro de que deseas eliminar TODAS las cuentas registradas y reiniciar la app desde 0?\n\nEsta acción borrará permanentemente todos los usuarios, mensajes, matches y swipes tanto en Firebase como en el servidor.'
+    );
+    if (!confirm) return;
+
+    setResetting(true);
+    try {
+      const res = await api.resetDatabaseToZero();
+      showToast(res.message, 'success');
+      await fetchAdminData();
+    } catch (err: any) {
+      showToast('Error al reiniciar base de datos: ' + (err.message || err), 'error');
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 pb-16 animate-in fade-in duration-200">
       
@@ -219,9 +238,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
           <button
+            id="btn-admin-reset-zero"
+            onClick={handleResetPlatformToZero}
+            disabled={loading || resetting}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-950/80 hover:bg-red-900 text-red-200 text-xs font-bold border border-red-500/50 shadow-md transition"
+            title="Borrar todas las cuentas y reiniciar la base de datos desde 0"
+          >
+            <Trash2 className={`w-3.5 h-3.5 ${resetting ? 'animate-spin' : ''}`} />
+            <span>{resetting ? 'Reiniciando...' : 'Reiniciar desde 0'}</span>
+          </button>
+
+          <button
             id="btn-admin-refresh"
             onClick={fetchAdminData}
-            disabled={loading}
+            disabled={loading || resetting}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />

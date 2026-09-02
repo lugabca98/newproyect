@@ -15,55 +15,6 @@ export const DEMO_ACCOUNTS: DemoAccountConfig[] = [
     primaryPass: 'admin1234',
     role: 'admin',
     description: 'Cuenta Propietario (Acceso total al Panel de Control)'
-  },
-  {
-    email: 'valeria@ejemplo.com',
-    name: 'Valeria Rivas',
-    primaryPass: 'password123',
-    role: 'user',
-    description: 'TDAH creativa • Diseño & Café'
-  },
-  {
-    email: 'lucas@ejemplo.com',
-    name: 'Lucas Martínez',
-    primaryPass: 'password123',
-    role: 'user',
-    description: 'TEA / Autismo • Programación & Escalada'
-  },
-  {
-    email: 'camila@ejemplo.com',
-    name: 'Camila Rossi',
-    primaryPass: 'password123',
-    role: 'user',
-    description: 'Bipolaridad • Cine & Arquitectura'
-  },
-  {
-    email: 'mateo@ejemplo.com',
-    name: 'Mateo Fernández',
-    primaryPass: 'password123',
-    role: 'user',
-    description: 'Depresión & TDAH • Fotografía'
-  },
-  {
-    email: 'sofia@ejemplo.com',
-    name: 'Sofía Benítez',
-    primaryPass: 'password123',
-    role: 'user',
-    description: 'Altas Capacidades (AACC) • Running'
-  },
-  {
-    email: 'ignacio@ejemplo.com',
-    name: 'Ignacio Silva',
-    primaryPass: 'password123',
-    role: 'user',
-    description: 'TOC & Bipolaridad • Música Jazz'
-  },
-  {
-    email: 'elena@ejemplo.com',
-    name: 'Elena Gómez',
-    primaryPass: 'password123',
-    role: 'user',
-    description: 'Depresión & Ansiedad • Danza'
   }
 ];
 

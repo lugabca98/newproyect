@@ -303,10 +303,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (code === 'auth/email-already-in-use' || msg.includes('email-already-in-use')) {
       return 'Este correo electrónico ya está registrado. Por favor ve a la pestaña "Ingresar".';
     }
-    if (code === 'auth/wrong-password') {
-      return 'La contraseña ingresada no coincide con este correo electrónico. Por favor verifícala.';
+    if (code === 'auth/user-not-found' || msg.includes('user-not-found') || msg.toLowerCase().includes('no existe una cuenta')) {
+      return 'No existe una cuenta registrada con este correo';
     }
-    if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || msg.includes('invalid-credential')) {
+    if (code === 'auth/wrong-password') {
+      return 'Contraseña incorrecta. Por favor verifícala.';
+    }
+    if (code === 'auth/invalid-credential' || msg.includes('invalid-credential')) {
       return 'Correo o contraseña incorrectos. Verifica tus credenciales.';
     }
     if (code === 'auth/weak-password') {
