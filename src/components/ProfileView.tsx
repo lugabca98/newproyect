@@ -296,10 +296,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setVerificationFeedback('');
     try {
       const res = await api.sendVerificationEmail(currentUser.email, currentUser.name);
-      setShowOtpEntry(true);
-      setVerificationFeedback(res.message || `Código enviado a ${currentUser.email}. Revisá tu bandeja de entrada o Spam.`);
+      setVerificationFeedback(res.message || `Enlace de verificación enviado a ${currentUser.email}. Revisá tu bandeja de entrada o Spam.`);
     } catch (err: any) {
-      setVerificationFeedback(err.message || 'Error al enviar código de verificación al correo.');
+      setVerificationFeedback(err.message || 'Error al enviar enlace de verificación al correo.');
     } finally {
       setSendingVerificationEmail(false);
     }
@@ -865,7 +864,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   {currentUser.role === 'admin' || currentUser.emailVerified
                     ? 'Tu correo electrónico está confirmado y protegido.'
-                    : 'Confirma tu email con tu código de 6 dígitos para proteger tu cuenta.'}
+                    : 'Hacé clic en el enlace enviado a tu correo para activar y proteger tu cuenta.'}
                 </p>
               </div>
             </div>
@@ -893,28 +892,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             )}
           </div>
-
-          {/* OTP Entry Form if not verified */}
-          {!currentUser.emailVerified && currentUser.role !== 'admin' && showOtpEntry && (
-            <form onSubmit={handleVerifyProfileOtp} className="pt-2 border-t border-slate-850 flex flex-col sm:flex-row items-center gap-2.5">
-              <input
-                type="text"
-                maxLength={6}
-                value={profileOtpCode}
-                onChange={(e) => setProfileOtpCode(e.target.value.replace(/\D/g, ''))}
-                placeholder="Ingresar 6 dígitos de tu correo"
-                className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 font-mono tracking-wider text-center focus:outline-none focus:border-rose-500"
-              />
-              <button
-                type="submit"
-                disabled={verifyingProfileOtp || profileOtpCode.length !== 6}
-                className="py-1.5 px-3.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow"
-              >
-                {verifyingProfileOtp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                <span>Validar Código</span>
-              </button>
-            </form>
-          )}
         </div>
 
         {verificationFeedback && (

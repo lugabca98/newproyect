@@ -125,7 +125,7 @@ async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; 
 export async function sendOtpEmail({ email, code, type, name, actionUrl }: SendOtpMailParams): Promise<MailResult> {
   const isVerification = type === 'verify_email';
   const subject = isVerification 
-    ? `🔐 Confirma tu correo para activar tu cuenta en Vulnerable (${code})`
+    ? `🔐 Confirma tu correo para activar tu cuenta en Vulnerable`
     : `🔑 Restablece tu contraseña de Vulnerable`;
   
   const title = isVerification 
@@ -133,7 +133,7 @@ export async function sendOtpEmail({ email, code, type, name, actionUrl }: SendO
     : 'Recuperación de Contraseña';
 
   const subtitle = isVerification
-    ? 'Gracias por unirte a nuestra comunidad. Para activar tu cuenta y acceder a tu perfil, haz clic en el siguiente botón o ingresa tu código de verificación:'
+    ? 'Gracias por unirte a nuestra comunidad. Para activar tu cuenta y acceder a tu perfil, hacé clic en el siguiente botón de confirmación:'
     : 'Hemos recibido una solicitud para restablecer la contraseña de tu cuenta. Hacé clic en el siguiente botón para ingresar tu nueva clave de inmediato:';
 
   const buttonText = isVerification
@@ -188,11 +188,13 @@ export async function sendOtpEmail({ email, code, type, name, actionUrl }: SendO
       </div>
       ` : ''}
       
+      ${!isVerification ? `
       <div class="otp-box">
-        <div class="otp-label">${isVerification ? 'Código de Verificación' : 'O Código de Seguridad Directo'}</div>
+        <div class="otp-label">Código de Seguridad Directo</div>
         <div class="otp-code">${code}</div>
         <p class="validity">⏱ Válido durante los próximos 15 minutos</p>
       </div>
+      ` : ''}
 
       ${actionUrl ? `
       <div class="link-fallback">
@@ -213,7 +215,20 @@ export async function sendOtpEmail({ email, code, type, name, actionUrl }: SendO
 </html>
   `;
 
-  const textContent = `
+  const textContent = isVerification
+    ? `
+Vulnerable - Conexiones Auténticas
+
+${title}
+${name ? `Hola ${name},\n` : ''}
+${subtitle}
+
+Para confirmar tu correo y activar tu cuenta, hacé clic en el siguiente enlace:
+${actionUrl}
+
+Si no te registraste en Vulnerable, podés ignorar este mensaje de forma segura.
+    `.trim()
+    : `
 Vulnerable - Conexiones Auténticas
 
 ${title}
@@ -226,7 +241,7 @@ Tu código de seguridad de 6 dígitos es:
 
 Este código es válido durante 15 minutos.
 Si no solicitaste este cambio, puedes ignorar este mensaje de forma segura.
-  `.trim();
+    `.trim();
 
   // 1. Try Resend API first if key exists (https://resend.com)
   const resendApiKey = (process.env.RESEND_API_KEY || process.env.RESEND_KEY || '').trim();

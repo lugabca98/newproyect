@@ -706,7 +706,7 @@ class FirebaseService {
 
     if (isPending) {
       await signOut(auth).catch(() => {});
-      throw new Error('Tu perfil aún no ha sido activado porque no has confirmado tu correo electrónico con el código que te enviamos. Por favor revisa tu correo para activar tu cuenta.');
+      throw new Error('Tu perfil aún no ha sido activado porque no has confirmado tu correo electrónico con el enlace que te enviamos. Por favor revisa tu correo para activar tu cuenta.');
     }
 
     // If user document is missing or deleted, strictly forbid login
@@ -829,7 +829,7 @@ class FirebaseService {
       return {
         isVerified: false,
         user: null,
-        message: 'Tu correo todavía no ha sido verificado. Por favor ingresá el código de 6 dígitos que te enviamos o abrí el enlace de confirmación recibido por correo.'
+        message: 'Tu correo todavía no ha sido verificado. Por favor abrí el enlace de confirmación que te enviamos a tu correo electrónico para activar tu cuenta.'
       };
     }
 
@@ -914,7 +914,7 @@ class FirebaseService {
         return {
           isVerified: false,
           user: null,
-          message: 'Tu correo todavía no ha sido verificado. Por favor revisa el correo que te enviamos y haz clic en el enlace o ingresa el código de 6 dígitos para crear tu perfil.'
+          message: 'Tu correo todavía no ha sido verificado. Por favor revisa el correo que te enviamos y haz clic en el enlace de confirmación para crear tu perfil.'
         };
       }
 

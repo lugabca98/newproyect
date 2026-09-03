@@ -36,7 +36,7 @@ export function App() {
 
   // Auth modal state: starts open with 'register' mode if not logged in
   const [authModalOpen, setAuthModalOpen] = useState(true);
-  const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot-password' | 'enter-new-password'>('register');
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot-password' | 'enter-new-password' | 'verify-email-pending'>('register');
   const [, setAuthChecking] = useState(true);
 
   // Can rewind state
@@ -70,6 +70,27 @@ export function App() {
       // Check if arriving with a reset password or verify email link
       const searchParams = new URLSearchParams(window.location.search);
       const urlMode = searchParams.get('mode');
+      const isEmailVerifiedRedirect = searchParams.get('emailVerified') === 'true';
+      const verifyEmailParam = searchParams.get('email');
+
+      if (isEmailVerifiedRedirect && verifyEmailParam) {
+        try {
+          const res = await api.checkEmailVerification(verifyEmailParam);
+          if (res.isVerified && res.user) {
+            const isAdminUser = isUserAdmin(res.user);
+            api.setToken(res.user.id, res.user.id, res.user.email, isAdminUser ? 'admin' : 'user');
+            setCurrentUser(res.user);
+            setAuthModalOpen(false);
+            if (isAdminUser) setCurrentTab('admin');
+            else setCurrentTab('discover');
+            window.history.replaceState({}, '', window.location.pathname);
+            return;
+          }
+        } catch (vErr) {
+          console.warn('Error checking verified email redirect:', vErr);
+        }
+      }
+
       if (urlMode === 'reset-password' || urlMode === 'resetPassword') {
         setCurrentUser(null);
         setAuthModalMode('enter-new-password');
@@ -77,6 +98,7 @@ export function App() {
         return;
       } else if (urlMode === 'verify-email' || urlMode === 'verifyEmail') {
         setCurrentUser(null);
+        setAuthModalMode('verify-email-pending');
         setAuthModalOpen(true);
         return;
       }

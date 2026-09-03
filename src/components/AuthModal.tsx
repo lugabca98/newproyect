@@ -38,7 +38,7 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (user: User, isAdmin: boolean) => void;
-  initialMode?: 'login' | 'register' | 'forgot-password' | 'enter-new-password';
+  initialMode?: AuthMode;
   canClose?: boolean;
 }
 
@@ -441,7 +441,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           onClose();
         }, 800);
       } else {
-        setErrorMsg(res.message || 'Tu correo todavía no ha sido verificado. Por favor ingresá el código de 6 dígitos que te enviamos a tu casilla o abrí el enlace de confirmación.');
+        setErrorMsg(res.message || 'Tu correo todavía no ha sido verificado. Por favor abrí el enlace de confirmación que te enviamos a tu casilla de correo.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al comprobar el estado de verificación.');
@@ -505,7 +505,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const emailTarget = (regEmail || registeredUser?.email || '').trim().toLowerCase();
       const res = await api.sendVerificationEmail(emailTarget, registeredUser?.name);
-      setResendVerificationNotice(res.message || `Te enviamos un nuevo código de confirmación a ${emailTarget}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
+      setResendVerificationNotice(res.message || `Te enviamos un nuevo enlace de confirmación a ${emailTarget}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
       setResendVerificationCooldown(60);
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al reenviar el correo de verificación.');
@@ -671,17 +671,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 Verificá tu Correo Electrónico
               </h3>
               
-              <div className="p-3.5 bg-rose-950/40 border border-rose-500/30 rounded-2xl text-xs text-rose-200 leading-relaxed max-w-md mx-auto space-y-2">
+              <div className="p-4 bg-rose-950/40 border border-rose-500/30 rounded-2xl text-xs text-rose-200 leading-relaxed max-w-md mx-auto space-y-2.5">
                 <p>
-                  Te enviamos un correo con tu código de confirmación a <strong className="text-white font-mono">{regEmail || registeredUser?.email}</strong>.
+                  Te enviamos un enlace de confirmación a <strong className="text-white font-mono">{regEmail || registeredUser?.email}</strong>.
                 </p>
-                <p className="text-[11px] text-slate-300">
-                  Revisá tu bandeja de entrada o la carpeta de <strong>spam / correo no deseado</strong>.
+                <p className="text-[12px] text-slate-200">
+                  Para activar tu cuenta, hacé clic en el enlace o botón recibido en tu correo electrónico.
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  ¿No lo ves? Revisá tu bandeja de entrada y también tu carpeta de <strong>spam o correo no deseado</strong>.
                 </p>
               </div>
 
               {resendVerificationNotice && (
-                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-rose-300 text-xs text-center font-medium animate-in fade-in">
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-rose-300 text-xs text-center font-medium animate-in fade-in">
                   {resendVerificationNotice}
                 </div>
               )}
@@ -694,89 +697,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
             </div>
 
-            {/* 6-Digit Code Input Form */}
-            <form onSubmit={handleVerifyRegisterOtp} className="space-y-4 pt-1">
-              <div className="space-y-2 text-left">
-                <label htmlFor="input-register-otp" className="block text-xs font-semibold text-slate-300 text-center">
-                  Ingresá el código de 6 dígitos que te enviamos
-                </label>
-                <div className="relative max-w-xs mx-auto">
-                  <input
-                    id="input-register-otp"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={6}
-                    value={regOtpInput}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                      setRegOtpInput(val);
-                      setErrorMsg('');
-                    }}
-                    placeholder="123456"
-                    className="w-full bg-slate-950/90 border border-slate-700/80 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 text-white font-mono text-2xl tracking-[0.35em] text-center py-3.5 rounded-2xl outline-none placeholder:text-slate-600 transition shadow-inner"
-                    autoFocus
-                  />
-                </div>
-                <p className="text-[11px] text-slate-400 text-center">
-                  Es obligatorio verificar este código para que tu cuenta sea activada.
-                </p>
-              </div>
-
-              {/* Primary Action Button: "Verificar Código y Activar Cuenta" */}
-              <button
-                id="btn-verify-register-otp"
-                type="submit"
-                disabled={loading || otpVerifySuccess || regOtpInput.trim().length !== 6}
-                className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verificando código...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-5 h-5" />
-                    <span>Verificar Código y Activar Cuenta</span>
-                  </>
-                )}
-              </button>
-            </form>
-
-            {/* Secondary Action: Check if verified via email button/link */}
-            <div className="space-y-3 pt-1">
+            {/* Primary Action: Check if user clicked email verification link */}
+            <div className="space-y-3 pt-2">
               <button
                 id="btn-check-email-verification"
                 type="button"
                 onClick={handleCheckEmailVerification}
                 disabled={loading || otpVerifySuccess}
-                className="w-full py-2.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+                className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2 cursor-pointer"
               >
-                <CheckCircle2 className="w-4 h-4 text-slate-400" />
-                <span>Ya hice clic en el enlace del correo</span>
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Comprobando verificación...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-5 h-5" />
+                    <span>Ya hice clic en el enlace de mi correo</span>
+                  </>
+                )}
               </button>
 
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
                 <button
                   id="btn-resend-verification"
                   type="button"
                   onClick={handleResendVerification}
                   disabled={loading || resendVerificationCooldown > 0}
-                  className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                   <span>
                     {resendVerificationCooldown > 0
                       ? `Reenviar en (${resendVerificationCooldown}s)`
-                      : 'Reenviar código al correo'}
+                      : 'Reenviar enlace de verificación'}
                   </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => { setMode('login'); setErrorMsg(''); }}
-                  className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition"
+                  className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer"
                 >
                   Volver al Login
                 </button>

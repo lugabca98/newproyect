@@ -1033,7 +1033,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   const reqHost = req.get('host') || 'localhost:3000';
   const reqProto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
   const baseAppUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || `${reqProto}://${reqHost}`;
-  const registerVerifyUrl = `${baseAppUrl}/?mode=verify-email&email=${encodeURIComponent(normalizedEmail)}&code=${initialOtp}`;
+  const registerVerifyUrl = `${baseAppUrl}/api/auth/verify-link?email=${encodeURIComponent(normalizedEmail)}&token=${initialOtp}`;
 
   sendOtpEmail({
     email: normalizedEmail,
@@ -1050,15 +1050,58 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     token: '', 
     isAdmin: false,
     emailSent: true,
-    message: 'Hemos enviado un código de verificación a tu correo electrónico. Tu perfil será creado una vez confirmado el registro.'
+    message: 'Hemos enviado un enlace de verificación a tu correo electrónico. Tu perfil será activado una vez que hagas clic en el enlace.'
   });
 });
 
 // -------------------------------------------------------------
-// REAL EMAIL DELIVERY & OTP VERIFICATION ENDPOINTS
+// REAL EMAIL DELIVERY & VERIFICATION ENDPOINTS
 // -------------------------------------------------------------
 
-// Send / Resend OTP Email (for email verification or password reset)
+// Direct Email Verification Link (when user clicks confirmation link in email)
+app.get('/api/auth/verify-link', (req, res) => {
+  const email = (req.query.email as string || '').trim().toLowerCase();
+  const token = (req.query.token as string || req.query.code as string || '').trim();
+
+  if (!email) {
+    res.redirect('/?verifyError=missing_email');
+    return;
+  }
+
+  const key = `${email}_verify_email`;
+  const record = otpStore.get(key);
+  const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
+
+  // If already active in users, redirect smoothly
+  const existingUser = users.find(u => u.email.toLowerCase() === email && u.emailVerified);
+  if (existingUser) {
+    res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
+    return;
+  }
+
+  if (pendingIdx !== -1) {
+    const pending = pendingRegistrations[pendingIdx];
+    // If token provided and record exists, check token if present
+    if (record && token && record.code !== token && Date.now() <= record.expiresAt) {
+      res.redirect('/?verifyError=invalid_token');
+      return;
+    }
+    pending.user.emailVerified = true;
+    pending.user.verified = false;
+    pending.user.lastActive = new Date().toISOString();
+    users.push(pending.user);
+    pendingRegistrations.splice(pendingIdx, 1);
+    saveDatabase();
+    otpStore.delete(key);
+    console.log(`[Email Verified Link] User ${email} successfully activated via verification link.`);
+    res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
+    return;
+  }
+
+  res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
+});
+
+// Send / Resend Email Verification or Password Reset
 app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
   const { email, type, name } = req.body;
 
@@ -1080,7 +1123,7 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
     }
   }
 
-  // Generate 6-digit OTP code
+  // Generate secure code / token
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes TTL
 
@@ -1092,14 +1135,12 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
     expiresAt
   });
 
-  console.log(`[Mail OTP] Generated 6-digit code for ${cleanEmail} (${cleanType})`);
-
   const reqHost = req.get('host') || 'localhost:3000';
   const reqProto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
   const baseAppUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || `${reqProto}://${reqHost}`;
   const actionUrl = cleanType === 'password_reset'
     ? `${baseAppUrl}/?mode=reset-password&email=${encodeURIComponent(cleanEmail)}&code=${code}`
-    : `${baseAppUrl}/?mode=verify-email&email=${encodeURIComponent(cleanEmail)}&code=${code}`;
+    : `${baseAppUrl}/api/auth/verify-link?email=${encodeURIComponent(cleanEmail)}&token=${code}`;
 
   // Dispatch real email via SMTP / Resend / Brevo / SendGrid
   const mailResult = await sendOtpEmail({
@@ -1112,10 +1153,12 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
 
   res.json({
     success: true,
-    message: mailResult.message || `Código enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`,
+    message: mailResult.message || (cleanType === 'verify_email'
+      ? `Enlace de verificación enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`
+      : `Código de seguridad enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`),
     provider: mailResult.provider,
     isRealDelivery: mailResult.isRealDelivery,
-    code: !mailResult.isRealDelivery ? code : undefined,
+    code: (!mailResult.isRealDelivery && cleanType === 'password_reset') ? code : undefined,
     previewUrl: mailResult.previewUrl || undefined,
     expiresInSeconds: 900
   });
