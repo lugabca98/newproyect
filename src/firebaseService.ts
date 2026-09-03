@@ -798,126 +798,70 @@ class FirebaseService {
       };
     }
 
-    // 1. Check if there is an active pending registration
-    let isPending = false;
-    try {
-      const pSnap = await getDoc(doc(db, 'pendingRegistrations', cleanEmail));
-      if (pSnap.exists()) isPending = true;
-    } catch {}
-    if (!isPending && localDb.getPendingRegistration(cleanEmail)) {
-      isPending = true;
+    // 1. Check Firebase Auth if currentUser is available
+    let isFirebaseAuthVerified = false;
+    if (auth.currentUser) {
+      try {
+        await auth.currentUser.reload();
+        if (auth.currentUser.emailVerified) {
+          isFirebaseAuthVerified = true;
+        }
+      } catch (authErr) {
+        console.warn('[Firebase Auth] reload error:', authErr);
+      }
     }
 
-    // Check server status (the source of truth for OTP verification)
+    // 2. Check Server status (which gets updated when user clicks the verification link)
     let isServerVerified = false;
+    let serverUserData: any = null;
     try {
       const resp = await fetch(`/api/auth/check-status?email=${encodeURIComponent(cleanEmail)}`);
       if (resp.ok) {
         const data = await resp.json();
-        if (data.status === 'pending_verification') {
-          isPending = true;
-          isServerVerified = false;
-        } else if (data.status === 'active' && data.emailVerified) {
-          isPending = false;
+        if (data.status === 'active' && data.emailVerified) {
           isServerVerified = true;
+          if (data.user) serverUserData = data.user;
         }
       }
     } catch {}
 
-    // If still pending and not confirmed via server OTP, STRICTLY BLOCK ANY BYPASS
-    if (isPending && !isServerVerified) {
+    // 3. Check Firestore for existing active and verified user
+    let existingUser = await this.getUserByEmail(cleanEmail);
+    let isFirestoreVerified = Boolean(existingUser && existingUser.emailVerified);
+
+    // 4. Check local store
+    const localUser = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail);
+    if (localUser && localUser.emailVerified) {
+      isFirestoreVerified = true;
+    }
+
+    // Determine overall verification status
+    const isVerified = isFirebaseAuthVerified || isServerVerified || isFirestoreVerified;
+
+    if (!isVerified) {
       return {
         isVerified: false,
         user: null,
-        message: 'Tu correo todavía no ha sido verificado. Por favor abrí el enlace de confirmación que te enviamos a tu correo electrónico para activar tu cuenta.'
+        message: 'Tu correo todavía no figura como verificado. Por favor abrí el enlace de confirmación que te enviamos a tu correo electrónico.'
       };
     }
 
-    // 2. If verified on server, activate pending user locally now
-    let user = await this.getUserByEmail(cleanEmail);
-    if (!user && (isServerVerified || !isPending)) {
+    // Activated user assembly
+    let user = existingUser;
+    if (!user || !user.emailVerified) {
       user = await this.activatePendingUser(cleanEmail);
+    }
+    if (!user && serverUserData) {
+      user = serverUserData as User;
+    }
+    if (!user && localUser) {
+      user = localUser;
     }
     if (!user && auth.currentUser) {
       user = await this.getUserById(auth.currentUser.uid);
     }
-    if (!user) {
-      user = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail) || null;
-    }
-
-    // 3. If verified via server activation or active user record
-    if (isServerVerified || (user && user.emailVerified === true)) {
-      if (!user) {
-        user = await this.activatePendingUser(cleanEmail);
-      }
-
-      if (!user) {
-        return {
-          isVerified: false,
-          user: null,
-          message: 'No se encontró la cuenta de usuario.'
-        };
-      }
-
-      user.emailVerified = true;
-      user.lastActive = new Date().toISOString();
-
-      // Persist in Firestore
-      await updateDoc(doc(db, 'users', user.id), {
-        emailVerified: true,
-        lastActive: user.lastActive
-      }).catch(() => {});
-
-      // Sync public profile
-      if (user.role !== 'admin') {
-        await setDoc(doc(db, 'publicProfiles', user.id), {
-          id: user.id,
-          name: user.name,
-          age: user.age,
-          gender: user.gender,
-          bio: user.bio,
-          photos: user.photos,
-          location: user.location,
-          distanceKm: user.distanceKm,
-          occupation: user.occupation,
-          interests: user.interests,
-          verified: user.verified,
-          status: user.status,
-          role: user.role,
-          createdAt: user.createdAt,
-          lastActive: user.lastActive
-        }).catch(() => {});
-      }
-
-      const existingUsers = localDb.getUsers().filter(u => u.id !== user!.id);
-      localDb.saveUsers([user, ...existingUsers]);
-
-      return {
-        isVerified: true,
-        user,
-        message: '¡Tu correo electrónico ha sido verificado con éxito! Tu perfil ha sido creado.'
-      };
-    }
 
     if (!user) {
-      // Check if there is a pending registration
-      let hasPending = false;
-      try {
-        const pSnap = await getDoc(doc(db, 'pendingRegistrations', cleanEmail));
-        if (pSnap.exists()) hasPending = true;
-      } catch {}
-      if (!hasPending && localDb.getPendingRegistration(cleanEmail)) {
-        hasPending = true;
-      }
-
-      if (hasPending) {
-        return {
-          isVerified: false,
-          user: null,
-          message: 'Tu correo todavía no ha sido verificado. Por favor revisa el correo que te enviamos y haz clic en el enlace de confirmación para crear tu perfil.'
-        };
-      }
-
       return {
         isVerified: false,
         user: null,
@@ -925,11 +869,50 @@ class FirebaseService {
       };
     }
 
-    // If still unverified on Firebase Auth and Firestore
+    user.emailVerified = true;
+    user.status = 'active';
+    user.lastActive = new Date().toISOString();
+
+    // Persist in Firestore
+    await setDoc(doc(db, 'users', user.id), user, { merge: true }).catch(() => {});
+    if (user.role !== 'admin') {
+      await setDoc(doc(db, 'publicProfiles', user.id), {
+        id: user.id,
+        name: user.name,
+        age: user.age,
+        gender: user.gender,
+        bio: user.bio,
+        photos: user.photos,
+        location: user.location,
+        distanceKm: user.distanceKm,
+        occupation: user.occupation,
+        interests: user.interests,
+        verified: user.verified,
+        status: user.status,
+        role: user.role,
+        createdAt: user.createdAt,
+        lastActive: user.lastActive
+      }, { merge: true }).catch(() => {});
+    }
+
+    // Clean up pending registration
+    await deleteDoc(doc(db, 'pendingRegistrations', cleanEmail)).catch(() => {});
+    localDb.removePendingRegistration(cleanEmail);
+
+    const existingUsers = localDb.getUsers().filter(u => u.id !== user!.id && (u.email || '').trim().toLowerCase() !== cleanEmail);
+    localDb.saveUsers([user, ...existingUsers]);
+
+    // Ensure server backend is informed and active
+    fetch('/api/auth/mark-email-verified', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail })
+    }).catch(() => {});
+
     return {
-      isVerified: false,
-      user: null,
-      message: 'Tu correo todavía no ha sido verificado. Por favor abrí el correo que te enviamos y hacé clic en el enlace de confirmación.'
+      isVerified: true,
+      user,
+      message: '¡Tu correo electrónico ha sido verificado con éxito! Tu perfil ha sido activado.'
     };
   }
 

@@ -120,14 +120,11 @@ class ApiService {
     // Explicitly do not grant token for unverified registrations under any circumstances
     this.setToken(null);
 
-    // Trigger verification email to the user's email inbox
-    this.sendVerificationEmail(cleanEmail, newUser.name).catch(() => {});
-
     return { 
       user: sanitizedUser, 
       token: '', 
       isAdmin: isOwner,
-      message: `Cuenta creada. Hemos enviado un código de 6 dígitos a ${cleanEmail}.` 
+      message: `Cuenta creada. Hemos enviado un enlace de confirmación a ${cleanEmail}.` 
     };
   }
 

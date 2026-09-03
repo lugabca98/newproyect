@@ -349,6 +349,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setRegisteredUser(res.user);
         setRegisteredIsAdmin(res.isAdmin);
         setRegEmail(cleanEmail);
+        localStorage.setItem('pending_verification_email', cleanEmail);
         setResendVerificationNotice(`Tu correo no ha sido verificado aún. Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
         setMode('verify-email-pending');
         setResendVerificationCooldown(60);
@@ -410,6 +411,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setRegisteredUser(res.user);
       setRegisteredIsAdmin(res.isAdmin);
       setRegOtpInput('');
+      localStorage.setItem('pending_verification_email', regEmail.trim().toLowerCase());
 
       setResendVerificationNotice(`Te enviamos un correo de confirmación a ${regEmail.trim()}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
 
@@ -423,25 +425,70 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  // Automatically check verification status when on the pending screen or when returning to this tab
+  useEffect(() => {
+    if (mode !== 'verify-email-pending') return;
+
+    const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    let isMounted = true;
+    const pollStatus = async () => {
+      try {
+        const res = await api.checkEmailVerification(cleanEmail);
+        if (isMounted && res.isVerified && res.user) {
+          setOtpVerifySuccess(true);
+          setResendVerificationNotice('¡Correo verificado con éxito! Activando tu cuenta...');
+          localStorage.removeItem('pending_verification_email');
+          setTimeout(() => {
+            if (!isMounted) return;
+            const verifiedUser: User = { ...res.user!, emailVerified: true };
+            api.setToken(verifiedUser.id, verifiedUser.id, verifiedUser.email, registeredIsAdmin ? 'admin' : 'user');
+            onSuccess(verifiedUser, registeredIsAdmin);
+            resetAllFormInputs();
+            onClose();
+          }, 700);
+        }
+      } catch {}
+    };
+
+    // Auto-check periodically
+    const intervalId = setInterval(pollStatus, 3000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        pollStatus();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [mode, regEmail, registeredUser, registeredIsAdmin]);
+
   const handleCheckEmailVerification = async () => {
     setLoading(true);
     setErrorMsg('');
     setResendVerificationNotice('');
-    const cleanEmail = (regEmail || registeredUser?.email || '').trim().toLowerCase();
+    const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
     try {
       const res = await api.checkEmailVerification(cleanEmail);
       if (res.isVerified && res.user) {
         setOtpVerifySuccess(true);
         setResendVerificationNotice(res.message);
+        localStorage.removeItem('pending_verification_email');
         setTimeout(() => {
           const verifiedUser: User = { ...res.user!, emailVerified: true };
           api.setToken(verifiedUser.id, verifiedUser.id, verifiedUser.email, registeredIsAdmin ? 'admin' : 'user');
           onSuccess(verifiedUser, registeredIsAdmin);
           resetAllFormInputs();
           onClose();
-        }, 800);
+        }, 700);
       } else {
-        setErrorMsg(res.message || 'Tu correo todavía no ha sido verificado. Por favor abrí el enlace de confirmación que te enviamos a tu casilla de correo.');
+        setErrorMsg(res.message || 'Tu correo todavía no figura como verificado. Por favor abrí el enlace de confirmación que te enviamos a tu casilla de correo.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al comprobar el estado de verificación.');
@@ -714,7 +761,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 ) : (
                   <>
                     <Check className="w-5 h-5" />
-                    <span>Ya hice clic en el enlace de mi correo</span>
+                    <span>Ya confirmé el correo</span>
                   </>
                 )}
               </button>

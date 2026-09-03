@@ -308,7 +308,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setSendingVerificationEmail(true);
     setVerificationFeedback('');
     try {
-      const res = await api.checkEmailVerification();
+      const res = await api.checkEmailVerification(currentUser.email);
       if (res.isVerified && res.user) {
         onUpdateUser(res.user);
         setVerificationFeedback('¡Excelente! Tu correo ha sido verificado con éxito en Firebase Authentication.');

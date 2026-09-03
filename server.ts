@@ -893,14 +893,18 @@ app.get('/api/auth/check-status', (req, res) => {
       status: user.status, 
       role: user.role, 
       emailVerified: Boolean((user as any).emailVerified),
-      userId: user.id 
+      userId: user.id,
+      user: toPrivateUser(user)
     });
     return;
   }
 
   const isPending = pendingRegistrations.find(p => p.email.toLowerCase() === email);
   if (isPending) {
-    res.json({ status: 'pending_verification' });
+    res.json({ 
+      status: 'pending_verification',
+      user: toPrivateUser(isPending.user)
+    });
     return;
   }
 
@@ -1069,27 +1073,22 @@ app.get('/api/auth/verify-link', (req, res) => {
   }
 
   const key = `${email}_verify_email`;
-  const record = otpStore.get(key);
   const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
-
-  // If already active in users, redirect smoothly
-  const existingUser = users.find(u => u.email.toLowerCase() === email && u.emailVerified);
-  if (existingUser) {
-    res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
-    return;
-  }
 
   if (pendingIdx !== -1) {
     const pending = pendingRegistrations[pendingIdx];
-    // If token provided and record exists, check token if present
-    if (record && token && record.code !== token && Date.now() <= record.expiresAt) {
-      res.redirect('/?verifyError=invalid_token');
-      return;
-    }
     pending.user.emailVerified = true;
     pending.user.verified = false;
     pending.user.lastActive = new Date().toISOString();
-    users.push(pending.user);
+
+    const existingIdx = users.findIndex(u => u.email.toLowerCase() === email);
+    if (existingIdx !== -1) {
+      users[existingIdx].emailVerified = true;
+      users[existingIdx].lastActive = new Date().toISOString();
+    } else {
+      users.push(pending.user);
+    }
+
     pendingRegistrations.splice(pendingIdx, 1);
     saveDatabase();
     otpStore.delete(key);
@@ -1098,7 +1097,61 @@ app.get('/api/auth/verify-link', (req, res) => {
     return;
   }
 
+  // If already active in users, ensure emailVerified is true and redirect smoothly
+  const existingUser = users.find(u => u.email.toLowerCase() === email);
+  if (existingUser) {
+    existingUser.emailVerified = true;
+    existingUser.lastActive = new Date().toISOString();
+    saveDatabase();
+    res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
+    return;
+  }
+
   res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
+});
+
+// Explicit confirmation endpoint called by client when email verification succeeds
+app.post('/api/auth/mark-email-verified', (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!email || !isValidEmail(email)) {
+    res.status(400).json({ error: 'Email válido requerido.' });
+    return;
+  }
+
+  let activatedUser: ServerUser | null = null;
+  const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
+  if (pendingIdx !== -1) {
+    const pending = pendingRegistrations[pendingIdx];
+    pending.user.emailVerified = true;
+    pending.user.verified = false;
+    pending.user.lastActive = new Date().toISOString();
+    activatedUser = pending.user;
+
+    const existingIdx = users.findIndex(u => u.email.toLowerCase() === email);
+    if (existingIdx !== -1) {
+      users[existingIdx].emailVerified = true;
+      users[existingIdx].lastActive = new Date().toISOString();
+    } else {
+      users.push(pending.user);
+    }
+    pendingRegistrations.splice(pendingIdx, 1);
+    saveDatabase();
+  }
+
+  const existingUser = users.find(u => u.email.toLowerCase() === email);
+  if (existingUser) {
+    existingUser.emailVerified = true;
+    existingUser.lastActive = new Date().toISOString();
+    saveDatabase();
+    if (!activatedUser) activatedUser = existingUser;
+  }
+
+  otpStore.delete(`${email}_verify_email`);
+  res.json({
+    success: true,
+    message: 'Correo verificado y cuenta activada.',
+    user: activatedUser ? toPrivateUser(activatedUser) : null
+  });
 });
 
 // Send / Resend Email Verification or Password Reset
