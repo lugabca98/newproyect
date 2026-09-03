@@ -270,8 +270,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -427,7 +425,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Automatically check verification status when on the pending screen or when returning to this tab
   useEffect(() => {
-    if (mode !== 'verify-email-pending') return;
+    if (!isOpen || mode !== 'verify-email-pending') return;
 
     const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
     if (!cleanEmail) return;
@@ -467,7 +465,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [mode, regEmail, registeredUser, registeredIsAdmin]);
+  }, [isOpen, mode, regEmail, registeredUser, registeredIsAdmin]);
 
   const handleCheckEmailVerification = async () => {
     setLoading(true);
@@ -637,6 +635,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setLoading(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">

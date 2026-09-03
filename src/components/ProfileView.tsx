@@ -52,22 +52,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [showPhotoUrlInput, setShowPhotoUrlInput] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   
-  // Sync when currentUser changes
-  useEffect(() => {
-    setName(currentUser.name);
-    setBio(currentUser.bio || '');
-    setAge(currentUser.age);
-    setGender(currentUser.gender);
-    setOccupation(currentUser.occupation || '');
-    setLocation(currentUser.location || '');
-    setPhotos(currentUser.photos || []);
-    setInterests(currentUser.interests || []);
-    setMinAge(currentUser.preferences?.minAge || 18);
-    setMaxAge(currentUser.preferences?.maxAge || 45);
-    setMaxDistance(currentUser.preferences?.maxDistanceKm || 50);
-    setInterestedIn(currentUser.preferences?.interestedIn || ['female', 'male']);
-  }, [currentUser.id]);
-
   // Preferences
   const [minAge, setMinAge] = useState(currentUser.preferences?.minAge || 18);
   const [maxAge, setMaxAge] = useState(currentUser.preferences?.maxAge || 45);
@@ -101,6 +85,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteErrorMsg, setDeleteErrorMsg] = useState('');
+
+  // Sync when currentUser changes
+  useEffect(() => {
+    setName(currentUser.name);
+    setBio(currentUser.bio || '');
+    setAge(currentUser.age);
+    setGender(currentUser.gender);
+    setOccupation(currentUser.occupation || '');
+    setLocation(currentUser.location || '');
+    setPhotos(currentUser.photos || []);
+    setInterests(currentUser.interests || []);
+    setMinAge(currentUser.preferences?.minAge || 18);
+    setMaxAge(currentUser.preferences?.maxAge || 45);
+    setMaxDistance(currentUser.preferences?.maxDistanceKm || 50);
+    setInterestedIn(currentUser.preferences?.interestedIn || ['female', 'male']);
+  }, [currentUser.id]);
 
   const handleDeleteAccount = async () => {
     setDeletingAccount(true);

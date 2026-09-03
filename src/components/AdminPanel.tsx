@@ -39,17 +39,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onLogoutAdmin,
   onCloseAdmin
 }) => {
-  const isAuthorizedAdmin = (currentAdminUser?.email || '').toLowerCase().trim() === 'lugabca98@gmail.com' || currentAdminUser?.id === 'admin-owner';
+  const isAuthorizedAdmin = (currentAdminUser?.email || '').toLowerCase().trim() === 'lugabca98@gmail.com' || currentAdminUser?.id === 'admin-owner' || currentAdminUser?.role === 'admin';
 
   useEffect(() => {
     if (!isAuthorizedAdmin) {
       onCloseAdmin();
     }
   }, [isAuthorizedAdmin, onCloseAdmin]);
-
-  if (!isAuthorizedAdmin) {
-    return null;
-  }
 
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -88,6 +84,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }, [searchQuery, statusFilter, sortBy]);
 
   const fetchAdminData = async () => {
+    if (!isAuthorizedAdmin) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       // Parallel fetch metrics, users, and audit logs with resilient fallbacks
@@ -211,6 +211,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setResetting(false);
     }
   };
+
+  if (!isAuthorizedAdmin) {
+    return null;
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 pb-16 animate-in fade-in duration-200">
