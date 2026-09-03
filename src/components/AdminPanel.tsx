@@ -464,8 +464,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <div className="flex items-center gap-3">
                     <div className="relative shrink-0">
                       <img
-                        src={user.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
-                        alt={user.name}
+                        src={user.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                        alt={user.name || 'Usuario'}
                         className="w-12 h-12 rounded-2xl object-cover border border-slate-700 shadow-md"
                       />
                       {user.verified && (
@@ -616,8 +616,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div className="flex items-center gap-3">
                           <div className="relative">
                             <img
-                              src={user.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
-                              alt={user.name}
+                              src={user.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                              alt={user.name || 'Usuario'}
                               className="w-10 h-10 rounded-full object-cover border border-slate-700"
                             />
                             {user.verified && (
@@ -884,7 +884,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
             {/* Photos Gallery */}
             <div className="grid grid-cols-3 gap-2">
-              {inspectedUser.photos.map((p, i) => (
+              {(inspectedUser.photos && inspectedUser.photos.length > 0 ? inspectedUser.photos : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80']).map((p, i) => (
                 <img
                   key={i}
                   src={p}

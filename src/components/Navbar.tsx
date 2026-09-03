@@ -135,14 +135,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 ) : (
                   <img
-                    src={currentUser.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
-                    alt={currentUser.name}
+                    src={currentUser.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                    alt={currentUser.name || 'Usuario'}
                     className="w-8 h-8 rounded-full object-cover border-2 border-rose-500/50"
                   />
                 )}
                 <div className="hidden sm:flex flex-col">
                   <span className="text-xs font-semibold text-slate-200 max-w-[90px] truncate leading-tight">
-                    {currentUser.name.split(' ')[0]}
+                    {currentUser.name ? currentUser.name.split(' ')[0] : 'Usuario'}
                   </span>
                   {isAdmin && (
                     <span className="text-[9px] font-bold text-amber-400 leading-none">Admin</span>

@@ -45,7 +45,7 @@ export function App() {
   const isUserAdmin = (user: User | null): boolean => {
     if (!user) return false;
     const email = (user.email || '').toLowerCase().trim();
-    return email === 'lugabca98@gmail.com' || user.id === 'admin-owner';
+    return email === 'lugabca98@gmail.com' || user.id === 'admin-owner' || user.role === 'admin';
   };
 
   // Initial Load: Check session or present Register screen first
@@ -78,8 +78,16 @@ export function App() {
           const res = await api.checkEmailVerification(verifyEmailParam);
           if (res.isVerified && res.user) {
             const isAdminUser = isUserAdmin(res.user);
-            api.setToken(res.user.id, res.user.id, res.user.email, isAdminUser ? 'admin' : 'user');
-            setCurrentUser(res.user);
+            const safeUser: User = {
+              ...res.user,
+              photos: (res.user.photos && res.user.photos.length > 0)
+                ? res.user.photos
+                : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+              name: res.user.name || 'Usuario',
+              emailVerified: true
+            };
+            api.setToken(safeUser.id, safeUser.id, safeUser.email, isAdminUser ? 'admin' : 'user');
+            setCurrentUser(safeUser);
             setAuthModalOpen(false);
             if (isAdminUser) setCurrentTab('admin');
             else setCurrentTab('discover');
@@ -113,9 +121,17 @@ export function App() {
           setAuthModalOpen(true);
           return;
         }
-        setCurrentUser(me.user);
+        const safeUser: User = {
+          ...me.user,
+          photos: (me.user.photos && me.user.photos.length > 0)
+            ? me.user.photos
+            : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+          name: me.user.name || 'Usuario',
+          emailVerified: true
+        };
+        setCurrentUser(safeUser);
         setAuthModalOpen(false);
-        if (me.isAdmin && isUserAdmin(me.user)) {
+        if (me.isAdmin && isUserAdmin(safeUser)) {
           setCurrentTab('admin');
         } else {
           setCurrentTab('discover');
@@ -144,21 +160,31 @@ export function App() {
     }
   }, [currentTab, currentUser]);
 
-  // Real-time listener for current user status (Disconnect instantly if blocked or deleted by Admin)
+  // Real-time listener for current user status (Disconnect ONLY if explicitly blocked or deleted by Admin)
   useEffect(() => {
     if (!currentUser?.id) return;
     const unsub = firebaseService.onUserDocChange(currentUser.id, (updatedUser) => {
-      if (!updatedUser || updatedUser.status === 'deleted' || updatedUser.status === 'blocked') {
-        if (currentUser.email) {
+      // ONLY disconnect if an actual document is returned with status deleted or blocked
+      if (updatedUser && (updatedUser.status === 'deleted' || updatedUser.status === 'blocked')) {
+        if (currentUser.email && updatedUser.status === 'deleted' && currentUser.email.toLowerCase() !== 'lugabca98@gmail.com') {
           localDb.recordDeletedEmail(currentUser.email);
         }
         api.setToken(null);
         setCurrentUser(null);
         setAuthModalMode('login');
         setAuthModalOpen(true);
-      } else {
-        setCurrentUser(prev => prev ? { ...prev, ...updatedUser } : updatedUser);
+      } else if (updatedUser) {
+        // Safe update with photo and name defaults
+        setCurrentUser(prev => {
+          if (!prev) return updatedUser;
+          return {
+            ...prev,
+            ...updatedUser,
+            photos: (updatedUser.photos && updatedUser.photos.length > 0) ? updatedUser.photos : prev.photos
+          };
+        });
       }
+      // If updatedUser is null, do NOT disconnect or delete the user
     });
 
     return () => unsub();
@@ -180,7 +206,15 @@ export function App() {
     setFeedLoading(true);
     try {
       const data = await api.getFeed();
-      setFeedProfiles(data.profiles);
+      const safeProfiles = (data.profiles || []).map(p => ({
+        ...p,
+        photos: (p.photos && p.photos.length > 0)
+          ? p.photos
+          : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+        name: p.name || 'Usuario',
+        interests: p.interests || []
+      }));
+      setFeedProfiles(safeProfiles);
     } catch (err) {
       console.error('Error loading feed:', err);
     } finally {
@@ -301,7 +335,15 @@ export function App() {
       return;
     }
     const isOwner = isAdmin || isUserAdmin(user);
-    setCurrentUser(user);
+    const safeUser: User = {
+      ...user,
+      photos: (user.photos && user.photos.length > 0)
+        ? user.photos
+        : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+      name: user.name || 'Usuario',
+      emailVerified: true
+    };
+    setCurrentUser(safeUser);
     setAuthModalOpen(false);
     if (isOwner) {
       setCurrentTab('admin');

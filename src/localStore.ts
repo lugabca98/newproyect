@@ -92,9 +92,29 @@ class LocalDatabaseStore {
       }
     } catch {}
 
-    const deletedEmails = new Set(this.getDeletedEmails());
+    // Ensure admin email is never in deleted emails
+    const rawDeleted = this.getDeletedEmails().filter(e => e.toLowerCase() !== DEFAULT_ADMIN_EMAIL.toLowerCase());
+    if (rawDeleted.length !== this.getDeletedEmails().length) {
+      this.setStored(STORAGE_KEY_DELETED_EMAILS, rawDeleted);
+    }
+
+    const deletedEmails = new Set(rawDeleted);
     const creds = this.getStored<Record<string, UserCredential>>(STORAGE_KEY_CREDENTIALS, {});
     let credsModified = false;
+
+    // Ensure admin credentials always exist
+    const adminEmailLower = DEFAULT_ADMIN_EMAIL.toLowerCase();
+    if (!creds[adminEmailLower]) {
+      const adminAcc = DEMO_ACCOUNTS.find(a => a.role === 'admin');
+      const syncHash = hashPasswordSync(adminAcc?.primaryPass || 'admin123456');
+      creds[adminEmailLower] = {
+        email: adminEmailLower,
+        passwordHash: syncHash,
+        userId: 'admin-owner',
+        updatedAt: new Date().toISOString()
+      };
+      credsModified = true;
+    }
 
     // Seed default credentials for demo accounts ONLY if not deleted and not already saved
     DEMO_ACCOUNTS.forEach((acc) => {
@@ -170,6 +190,7 @@ class LocalDatabaseStore {
   recordDeletedEmail(email: string): void {
     if (!email) return;
     const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) return; // Admin can never be deleted
     const deleted = this.getDeletedEmails();
     if (!deleted.includes(cleanEmail)) {
       deleted.push(cleanEmail);
@@ -181,6 +202,7 @@ class LocalDatabaseStore {
   isEmailDeleted(email: string): boolean {
     if (!email) return false;
     const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) return false;
     const deleted = this.getDeletedEmails();
     return deleted.includes(cleanEmail);
   }

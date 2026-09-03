@@ -57,7 +57,8 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
 
   const nextPhoto = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (photoIndex < (profile.photos.length || 1) - 1) {
+    const photoCount = profile?.photos?.length || 1;
+    if (photoIndex < photoCount - 1) {
       setPhotoIndex(prev => prev + 1);
     } else {
       setPhotoIndex(0);
@@ -71,7 +72,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
     }
   };
 
-  const photos = profile.photos && profile.photos.length > 0
+  const photos = profile?.photos && profile.photos.length > 0
     ? profile.photos
     : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'];
 

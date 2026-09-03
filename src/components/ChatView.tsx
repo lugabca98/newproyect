@@ -195,13 +195,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     : 'bg-slate-700/60'
                 }`}>
                   <img
-                    src={m.partner?.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
-                    alt={m.partner?.name}
+                    src={m.partner?.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                    alt={m.partner?.name || 'Match'}
                     className="w-full h-full rounded-full object-cover"
                   />
                 </div>
                 <span className="text-[10px] font-medium text-slate-300 max-w-[56px] truncate text-center">
-                  {m.partner?.name.split(' ')[0]}
+                  {m.partner?.name ? m.partner.name.split(' ')[0] : 'Match'}
                 </span>
               </div>
             ))}
@@ -228,8 +228,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
             >
               <div className="relative">
                 <img
-                  src={m.partner?.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
-                  alt={m.partner?.name}
+                  src={m.partner?.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                  alt={m.partner?.name || 'Match'}
                   className="w-12 h-12 rounded-full object-cover border border-slate-700"
                 />
                 {m.partner?.status === 'active' && (
@@ -290,8 +290,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
                 <div className="relative">
                   <img
-                    src={partner.photos[0]}
-                    alt={partner.name}
+                    src={partner.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                    alt={partner.name || 'Match'}
                     className="w-10 h-10 rounded-full object-cover border border-rose-500/40"
                   />
                   <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border border-slate-950" />
@@ -325,14 +325,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
               {/* Profile Bio Reminder Card */}
               <div className="max-w-sm mx-auto my-3 p-3.5 rounded-2xl bg-slate-800/40 border border-slate-800 text-center flex flex-col items-center gap-1.5">
                 <img
-                  src={partner.photos[0]}
-                  alt={partner.name}
+                  src={partner.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                  alt={partner.name || 'Match'}
                   className="w-16 h-16 rounded-full object-cover border-2 border-rose-500 shadow-md mb-1"
                 />
                 <span className="text-xs font-bold text-white">¡Hiciste match con {partner.name}!</span>
                 <p className="text-[11px] text-slate-400 leading-snug">{partner.bio}</p>
                 <div className="flex flex-wrap justify-center gap-1 mt-1">
-                  {partner.interests.map((it, i) => (
+                  {(partner.interests || []).map((it, i) => (
                     <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                       {it}
                     </span>

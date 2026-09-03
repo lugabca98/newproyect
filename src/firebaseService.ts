@@ -1666,6 +1666,9 @@ class FirebaseService {
         if (matchesPreference(u)) {
           users.push({
             ...u,
+            photos: (u.photos && u.photos.length > 0) ? u.photos : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+            interests: u.interests || [],
+            name: u.name || 'Usuario',
             email: '' // Strictly stripped for privacy
           });
         }
@@ -1684,7 +1687,13 @@ class FirebaseService {
     
     combinedCandidates.forEach(u => {
       if (matchesPreference(u)) {
-        uniqueMap.set(u.id, { ...u, email: '' });
+        uniqueMap.set(u.id, {
+          ...u,
+          photos: (u.photos && u.photos.length > 0) ? u.photos : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+          interests: u.interests || [],
+          name: u.name || 'Usuario',
+          email: ''
+        });
       }
     });
 
@@ -1977,7 +1986,16 @@ class FirebaseService {
       console.warn('[Firestore] Error fetching users in admin:', err);
     }
 
-    const allUsers = Array.from(userMap.values()).filter(u => !locallyDeleted.has((u.email || '').toLowerCase()) && u.status !== 'deleted');
+    const allUsers = Array.from(userMap.values())
+      .filter(u => !locallyDeleted.has((u.email || '').toLowerCase()) && u.status !== 'deleted')
+      .map(u => ({
+        ...u,
+        photos: (u.photos && u.photos.length > 0)
+          ? u.photos
+          : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'],
+        name: u.name || 'Usuario',
+        interests: u.interests || []
+      }));
     return allUsers;
   }
 

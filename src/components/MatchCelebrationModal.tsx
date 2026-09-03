@@ -95,8 +95,8 @@ export const MatchCelebrationModal: React.FC<MatchCelebrationModalProps> = ({
             className="w-24 h-24 sm:w-28 sm:h-28 rounded-full border-4 border-slate-900 shadow-2xl overflow-hidden bg-slate-800"
           >
             <img
-              src={currentUser.photos[0]}
-              alt={currentUser.name}
+              src={currentUser.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'}
+              alt={currentUser.name || 'Usuario'}
               className="w-full h-full object-cover"
             />
           </motion.div>
@@ -113,8 +113,8 @@ export const MatchCelebrationModal: React.FC<MatchCelebrationModalProps> = ({
             className="w-24 h-24 sm:w-28 sm:h-28 rounded-full border-4 border-slate-900 shadow-2xl overflow-hidden bg-slate-800"
           >
             <img
-              src={partner.photos[0]}
-              alt={partner.name}
+              src={partner.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'}
+              alt={partner.name || 'Match'}
               className="w-full h-full object-cover"
             />
           </motion.div>
