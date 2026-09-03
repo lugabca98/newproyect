@@ -229,7 +229,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const searchParams = new URLSearchParams(window.location.search);
         const urlMode = searchParams.get('mode');
         const urlEmail = searchParams.get('email');
-        const urlCode = searchParams.get('code');
+        const urlCode = searchParams.get('code') || searchParams.get('token');
 
         if (urlMode === 'reset-password' || urlMode === 'resetPassword') {
           setMode('enter-new-password');
@@ -596,17 +596,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = forgotEmail.trim().toLowerCase();
-    const cleanCode = resetOtpInput.trim().replace(/\s+/g, '');
+    const cleanToken = resetOtpInput.trim().replace(/\s+/g, '');
     const cleanNewPass = newPassword.trim();
     const cleanConfirm = newPasswordConfirm.trim();
 
     if (!cleanEmail) {
       setErrorMsg('Por favor ingresá tu correo electrónico.');
-      return;
-    }
-
-    if (!cleanCode || cleanCode.length < 6) {
-      setErrorMsg('Por favor ingresá el código de 6 dígitos que te enviamos por correo.');
       return;
     }
 
@@ -624,7 +619,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg('');
 
     try {
-      const res = await api.resetPasswordWithOtp(cleanEmail, cleanCode, cleanNewPass);
+      const res = await api.resetPassword(cleanEmail, cleanNewPass, cleanToken);
       setResetPasswordCompleted(true);
       setRecoverySuccessMsg(res.message || '¡Tu contraseña ha sido actualizada con éxito!');
       setEmail(cleanEmail);
@@ -910,25 +905,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="space-y-2.5 pt-2">
               <button
                 type="button"
-                onClick={() => { setMode('enter-new-password'); setErrorMsg(''); }}
-                className="w-full py-3.5 bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl text-xs font-bold shadow-lg shadow-rose-500/25 transition hover:scale-[1.01] flex items-center justify-center gap-2"
-              >
-                <Key className="w-4 h-4" />
-                <span>Ingresar Código y Crear Nueva Contraseña</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={() => handleSendForgotPassword()}
                 disabled={loading || resendVerificationCooldown > 0}
-                className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 border border-slate-700/80 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                 <span>
                   {resendVerificationCooldown > 0
-                    ? `Reenviar nuevo enlace en (${resendVerificationCooldown}s)`
-                    : 'Reenviar enlace al correo'}
+                    ? `Reenviar correo en (${resendVerificationCooldown}s)`
+                    : 'Reenviar correo con el enlace'}
                 </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setMode('enter-new-password'); setErrorMsg(''); }}
+                className="w-full py-2.5 bg-transparent hover:bg-slate-900 border border-slate-800/80 text-slate-300 hover:text-white rounded-xl text-xs font-medium transition flex items-center justify-center gap-2"
+              >
+                <Key className="w-3.5 h-3.5 text-rose-400" />
+                <span>¿Ya abriste el enlace? Definir contraseña aquí</span>
               </button>
 
               <button
@@ -978,7 +973,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
                   <h3 className="text-lg font-bold text-white">Definir Nueva Contraseña</h3>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Ingresá el código de 6 dígitos que te enviamos al correo y escribí tu nueva contraseña.
+                    Escribí tu nueva contraseña para acceder a tu cuenta.
                   </p>
                 </div>
 
@@ -1002,19 +997,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition"
                       />
                     </div>
-                  </div>
-
-                  {/* 6-Digit Code */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1 text-center">
-                      Código de 6 dígitos del correo
-                    </label>
-                    <OtpBoxes
-                      idPrefix="reset-otp"
-                      value={resetOtpInput}
-                      onChange={setResetOtpInput}
-                      disabled={loading}
-                    />
                   </div>
 
                   {/* New Password */}
@@ -1076,7 +1058,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <button
                     id="btn-save-new-password"
                     type="submit"
-                    disabled={loading || !forgotEmail || resetOtpInput.length < 6 || !newPassword}
+                    disabled={loading || !forgotEmail || newPassword.length < 6 || newPassword !== newPasswordConfirm}
                     className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2 mt-2"
                   >
                     {loading ? (
@@ -1100,8 +1082,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       className="text-xs text-rose-400 hover:text-rose-300 font-medium transition"
                     >
                       {resendVerificationCooldown > 0
-                        ? `Reenviar código (${resendVerificationCooldown}s)`
-                        : 'Reenviar código'}
+                        ? `Reenviar enlace (${resendVerificationCooldown}s)`
+                        : 'Reenviar enlace'}
                     </button>
 
                     <button

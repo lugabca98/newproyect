@@ -187,14 +187,6 @@ export async function sendOtpEmail({ email, code, type, name, actionUrl }: SendO
         <a href="${actionUrl}" class="btn" target="_blank">${buttonText}</a>
       </div>
       ` : ''}
-      
-      ${!isVerification ? `
-      <div class="otp-box">
-        <div class="otp-label">Código de Seguridad Directo</div>
-        <div class="otp-code">${code}</div>
-        <p class="validity">⏱ Válido durante los próximos 15 minutos</p>
-      </div>
-      ` : ''}
 
       ${actionUrl ? `
       <div class="link-fallback">
@@ -235,12 +227,10 @@ ${title}
 ${name ? `Hola ${name},\n` : ''}
 ${subtitle}
 
-${actionUrl ? `Enlace directo:\n${actionUrl}\n\n` : ''}
-Tu código de seguridad de 6 dígitos es:
->>> ${code} <<<
+Para restablecer y cambiar tu contraseña, hacé clic en el siguiente enlace:
+${actionUrl}
 
-Este código es válido durante 15 minutos.
-Si no solicitaste este cambio, puedes ignorar este mensaje de forma segura.
+Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu cuenta sigue protegida.
     `.trim();
 
   // 1. Try Resend API first if key exists (https://resend.com)
@@ -278,7 +268,9 @@ Si no solicitaste este cambio, puedes ignorar este mensaje de forma segura.
         console.log(`[Resend] Email successfully dispatched to ${email} (ID: ${resendData.id})`);
         return {
           success: true,
-          message: `Código enviado con éxito a tu correo (${email}). Revisá tu bandeja de entrada o la carpeta de Spam.`,
+          message: isVerification
+            ? `Código de verificación enviado a tu correo (${email}). Revisá tu bandeja de entrada o Spam.`
+            : `Enlace para cambiar tu contraseña enviado con éxito a ${email}. Revisá tu bandeja de entrada o Spam.`,
           provider: 'resend',
           isRealDelivery: true
         };
@@ -320,7 +312,9 @@ Si no solicitaste este cambio, puedes ignorar este mensaje de forma segura.
         console.log(`[Brevo] Email successfully delivered to ${email}`);
         return {
           success: true,
-          message: `Código enviado con éxito a tu correo (${email}) vía Brevo. Revisa tu bandeja y Spam.`,
+          message: isVerification
+            ? `Código enviado con éxito a tu correo (${email}) vía Brevo. Revisa tu bandeja y Spam.`
+            : `Enlace para restablecer contraseña enviado a tu correo (${email}) vía Brevo. Revisa tu bandeja y Spam.`,
           provider: 'brevo',
           isRealDelivery: true
         };
@@ -358,7 +352,9 @@ Si no solicitaste este cambio, puedes ignorar este mensaje de forma segura.
         console.log(`[SendGrid] Email sent to ${email}`);
         return {
           success: true,
-          message: `Código enviado con éxito a ${email} vía SendGrid.`,
+          message: isVerification
+            ? `Código enviado con éxito a ${email} vía SendGrid.`
+            : `Enlace de restablecimiento enviado a ${email} vía SendGrid.`,
           provider: 'sendgrid',
           isRealDelivery: true
         };
@@ -393,11 +389,15 @@ Si no solicitaste este cambio, puedes ignorar este mensaje de forma segura.
     return {
       success: true,
       message: isReal
-        ? `Código enviado a ${email}. Revisa tu bandeja de entrada y la carpeta de correo no deseado (Spam).`
-        : `Código de seguridad generado para ${email}.`,
+        ? (isVerification
+            ? `Código enviado a ${email}. Revisa tu bandeja de entrada y la carpeta de correo no deseado (Spam).`
+            : `Enlace para cambiar contraseña enviado a ${email}. Revisa tu bandeja de entrada y Spam.`)
+        : (isVerification
+            ? `Código de verificación generado para ${email}.`
+            : `Enlace de restablecimiento generado para ${email}.`),
       provider,
       isRealDelivery: isReal,
-      code: !isReal ? code : undefined,
+      code: !isReal && isVerification ? code : undefined,
       previewUrl
     };
   } catch (mailErr: any) {

@@ -369,20 +369,20 @@ class ApiService {
     return { isConfigured: false, activeProvider: 'sandbox', providers: {} };
   }
 
-  async resetPasswordWithOtp(email: string, code: string, newPass: string): Promise<{ success: boolean; message: string }> {
+  async resetPassword(email: string, newPass: string, token?: string): Promise<{ success: boolean; message: string }> {
     const cleanEmail = (email || '').trim().toLowerCase();
-    const cleanCode = (code || '').trim().replace(/\s+/g, '');
+    const cleanToken = (token || '').trim();
 
     // 1. Try server password reset
     try {
       const response = await fetch('/api/mail/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, code: cleanCode, newPassword: newPass })
+        body: JSON.stringify({ email: cleanEmail, token: cleanToken, code: cleanToken, newPassword: newPass })
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        await firebaseService.resetPasswordWithOtp(cleanEmail, cleanCode, newPass).catch(() => {});
+        await firebaseService.resetPasswordDirect(cleanEmail, newPass).catch(() => {});
         return { success: true, message: data.message };
       } else if (!response.ok && data.error) {
         throw new Error(data.error);
@@ -393,8 +393,12 @@ class ApiService {
       }
     }
 
-    // 2. Fallback to Firebase
-    return firebaseService.resetPasswordWithOtp(cleanEmail, cleanCode, newPass);
+    // 2. Direct password update
+    return firebaseService.resetPasswordDirect(cleanEmail, newPass);
+  }
+
+  async resetPasswordWithOtp(email: string, code: string, newPass: string): Promise<{ success: boolean; message: string }> {
+    return this.resetPassword(email, newPass, code);
   }
 
   async resetPasswordDirect(email: string, newPass: string): Promise<{ success: boolean; message: string }> {

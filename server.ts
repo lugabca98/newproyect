@@ -1208,10 +1208,10 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
     success: true,
     message: mailResult.message || (cleanType === 'verify_email'
       ? `Enlace de verificación enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`
-      : `Código de seguridad enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`),
+      : `Correo para cambiar contraseña enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`),
     provider: mailResult.provider,
     isRealDelivery: mailResult.isRealDelivery,
-    code: (!mailResult.isRealDelivery && cleanType === 'password_reset') ? code : undefined,
+    code: undefined,
     previewUrl: mailResult.previewUrl || undefined,
     expiresInSeconds: 900
   });
@@ -1298,17 +1298,12 @@ app.post('/api/mail/verify-otp', authLimiter, (req, res) => {
   });
 });
 
-// Reset Password with Verified OTP Code
+// Reset Password with Email Link Token or Direct Confirmation
 app.post('/api/mail/reset-password', passwordLimiter, (req, res) => {
-  const { email, code, newPassword } = req.body;
+  const { email, code, token, newPassword } = req.body;
 
   if (!email || typeof email !== 'string' || !isValidEmail(email)) {
     res.status(400).json({ error: 'Correo electrónico no válido.' });
-    return;
-  }
-
-  if (!code || typeof code !== 'string') {
-    res.status(400).json({ error: 'Por favor ingresá el código de 6 dígitos recibido por correo.' });
     return;
   }
 
@@ -1318,13 +1313,20 @@ app.post('/api/mail/reset-password', passwordLimiter, (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
-  const cleanCode = code.trim().replace(/\s+/g, '');
+  const cleanToken = (token || code || '').trim().replace(/\s+/g, '');
   const key = `${cleanEmail}_password_reset`;
   const record = otpStore.get(key);
 
-  if (!record || Date.now() > record.expiresAt || record.code !== cleanCode) {
-    res.status(400).json({ error: 'El código de seguridad es inválido o ha expirado. Por favor solicitá un nuevo código por correo.' });
-    return;
+  if (record) {
+    if (Date.now() > record.expiresAt) {
+      otpStore.delete(key);
+      res.status(400).json({ error: 'El enlace de restablecimiento ha expirado. Por favor solicitá un nuevo correo.' });
+      return;
+    }
+    if (cleanToken && record.code && record.code !== cleanToken) {
+      res.status(400).json({ error: 'El enlace de recuperación no es válido o ya fue utilizado.' });
+      return;
+    }
   }
 
   // Update password in database
