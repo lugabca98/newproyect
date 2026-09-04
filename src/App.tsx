@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { SwipeCard } from './components/SwipeCard';
 import { MatchCelebrationModal } from './components/MatchCelebrationModal';
@@ -222,12 +222,32 @@ export function App() {
     }
   };
 
-  // Realtime matches & unread counter listener
+  const knownMatchIdsRef = useRef<Set<string> | null>(null);
+
+  // Realtime matches & unread counter listener + Realtime incoming match celebration
   useEffect(() => {
     if (!currentUser) return;
     const unsub = firebaseService.subscribeMatches(currentUser.id, (matches) => {
       const unread = matches.filter(m => m.unreadCount > 0).length || matches.length;
       setUnreadMatchesCount(unread);
+
+      if (knownMatchIdsRef.current === null) {
+        // Initial snapshot: record current matches
+        knownMatchIdsRef.current = new Set(matches.map(m => m.id));
+      } else {
+        // Detect newly created match received in real-time from another user
+        const newMatch = matches.find(m => !knownMatchIdsRef.current!.has(m.id));
+        if (newMatch) {
+          knownMatchIdsRef.current.add(newMatch.id);
+          const partner = newMatch.partner;
+          if (partner) {
+            setCelebrationMatch({
+              match: newMatch,
+              partner
+            });
+          }
+        }
+      }
     });
     return () => unsub?.();
   }, [currentUser?.id]);
@@ -253,7 +273,8 @@ export function App() {
     setCanRewind(true);
 
     try {
-      const res = await api.swipe(currentProfile.id, type);
+      // Pass currentProfile directly to avoid redundant database reads
+      const res = await api.swipe(currentProfile.id, type, currentProfile);
 
       if (res.isMatch) {
         const partner = res.partner || res.match?.partner || currentProfile;
@@ -267,7 +288,12 @@ export function App() {
           partner
         };
 
-        // Trigger Match Celebration Modal
+        // Record in known matches so real-time listener doesn't duplicate modal
+        if (knownMatchIdsRef.current) {
+          knownMatchIdsRef.current.add(matchObj.id);
+        }
+
+        // Trigger Match Celebration Modal instantly
         setCelebrationMatch({
           match: matchObj,
           partner

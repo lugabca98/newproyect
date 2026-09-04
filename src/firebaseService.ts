@@ -35,6 +35,21 @@ import { DEMO_ACCOUNTS, hashPassword, isPasswordValidForDemoAccount } from './ut
 
 class FirebaseService {
   private initialized = false;
+  private userCache = new Map<string, { user: User; cachedAt: number }>();
+
+  cacheUser(user: User | null | undefined): void {
+    if (!user || !user.id) return;
+    this.userCache.set(user.id, { user, cachedAt: Date.now() });
+  }
+
+  getCachedUser(userId: string): User | null {
+    if (!userId) return null;
+    const item = this.userCache.get(userId);
+    if (item && (Date.now() - item.cachedAt < 300000)) { // 5 minutes TTL
+      return item.user;
+    }
+    return null;
+  }
 
   // Synchronize deleted accounts across devices from both Firestore and the backend server
   async syncDeletedAccounts(): Promise<void> {
@@ -1520,17 +1535,29 @@ class FirebaseService {
   }
 
   async getUserById(userId: string): Promise<User | null> {
+    if (!userId) return null;
+
+    // 0. In-memory hot cache
+    const cached = this.getCachedUser(userId);
+    if (cached) return cached;
+
+    const isCurrentAuthUser = auth.currentUser?.uid === userId;
+
     try {
-      const userRef = doc(db, 'users', userId);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const u = userSnap.data() as User;
-        if (u.status === 'deleted' || (u.email && localDb.isEmailDeleted(u.email))) {
-          return null;
+      if (isCurrentAuthUser) {
+        const userRef = doc(db, 'users', userId);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const u = userSnap.data() as User;
+          if (u.status === 'deleted' || (u.email && localDb.isEmailDeleted(u.email))) {
+            return null;
+          }
+          this.cacheUser(u);
+          return u;
         }
-        return u;
       }
-      // Fallback to public profile if querying other profile
+
+      // Direct public profile query for other users (fast, avoids permission rejection)
       const pubRef = doc(db, 'publicProfiles', userId);
       const pubSnap = await getDoc(pubRef);
       if (pubSnap.exists()) {
@@ -1538,20 +1565,31 @@ class FirebaseService {
         if (pub.status === 'deleted' || (pub.email && localDb.isEmailDeleted(pub.email))) {
           return null;
         }
-        return {
+        const userObj: User = {
           ...pub,
-          email: '', // Never leak email of another user
-          preferences: { minAge: 18, maxAge: 65, interestedIn: ['female', 'male', 'non-binary', 'other'], maxDistanceKm: 50 }
-        } as User;
+          email: pub.email || '',
+          preferences: pub.preferences || { minAge: 18, maxAge: 99, interestedIn: ['female', 'male', 'non-binary', 'other'], maxDistanceKm: 100 }
+        };
+        this.cacheUser(userObj);
+        return userObj;
       }
     } catch (err) {
       console.warn('[Firestore] Error getting user:', err);
     }
+
     // Fallback to local cache store
     const localUser = localDb.getUsers().find(u => u.id === userId);
     if (localUser && localUser.status !== 'deleted' && !localDb.isEmailDeleted(localUser.email)) {
+      this.cacheUser(localUser);
       return localUser;
     }
+
+    const seedUser = INITIAL_SEED_USERS.find(u => u.id === userId);
+    if (seedUser) {
+      this.cacheUser(seedUser);
+      return seedUser;
+    }
+
     return null;
   }
 
@@ -1675,6 +1713,7 @@ class FirebaseService {
       });
 
       if (users.length > 0) {
+        users.forEach(u => this.cacheUser(u));
         return users;
       }
     } catch (err) {
@@ -1697,10 +1736,17 @@ class FirebaseService {
       }
     });
 
-    return Array.from(uniqueMap.values());
+    const candidateList = Array.from(uniqueMap.values());
+    candidateList.forEach(u => this.cacheUser(u));
+    return candidateList;
   }
 
-  async recordSwipe(swiperId: string, targetId: string, type: 'like' | 'pass' | 'superlike'): Promise<{
+  async recordSwipe(
+    swiperId: string, 
+    targetId: string, 
+    type: 'like' | 'pass' | 'superlike',
+    cachedTarget?: User | null
+  ): Promise<{
     isMatch: boolean;
     match: Match | null;
     partner: User | null;
@@ -1719,27 +1765,18 @@ class FirebaseService {
       timestamp: new Date().toISOString()
     };
 
-    // 1. Record the swipe in Firestore
-    try {
-      await setDoc(doc(db, 'swipes', swipeId), swipeRecord, { merge: true });
-    } catch (err) {
-      console.warn('[Firestore] Error saving swipe:', err);
-    }
-
-    // 2. Also record in local store cache
-    try {
-      const currentSwipes = localDb.getSwipes();
-      const filtered = currentSwipes.filter(s => !(s.swiperId === swiperId && s.targetId === targetId));
-      localDb.saveSwipes([swipeRecord, ...filtered]);
-    } catch (e) {}
-
-    // Resolve target profile with comprehensive fallbacks
-    let targetUser: User | null = await this.getUserById(targetId);
+    // 1. Resolve target profile instantly with zero delay
+    let targetUser: User | null = cachedTarget || this.getCachedUser(targetId);
     if (!targetUser) {
       targetUser = localDb.getUsers().find(u => u.id === targetId) || 
                    INITIAL_SEED_USERS.find(u => u.id === targetId) || null;
     }
     if (!targetUser) {
+      targetUser = await this.getUserById(targetId);
+    }
+    if (targetUser) {
+      this.cacheUser(targetUser);
+    } else {
       targetUser = {
         id: targetId,
         name: 'Usuario',
@@ -1766,41 +1803,56 @@ class FirebaseService {
           maxDistanceKm: 100
         }
       };
+      this.cacheUser(targetUser);
     }
 
+    // 2. Instant local cache persistence
+    try {
+      const currentSwipes = localDb.getSwipes();
+      const filtered = currentSwipes.filter(s => !(s.swiperId === swiperId && s.targetId === targetId));
+      localDb.saveSwipes([swipeRecord, ...filtered]);
+    } catch (e) {}
+
+    // If 'pass', save asynchronously and return immediately
     if (type === 'pass') {
+      setDoc(doc(db, 'swipes', swipeId), swipeRecord, { merge: true }).catch(() => {});
       return { isMatch: false, match: null, partner: targetUser };
     }
 
-    // 3. Increment target's likesCount in public profile & localDb
-    try {
-      const currentLikes = targetUser ? (targetUser.likesCount || 0) : 0;
-      await updateDoc(doc(db, 'publicProfiles', targetId), {
-        likesCount: currentLikes + 1
-      }).catch(() => {});
-      await updateDoc(doc(db, 'users', targetId), {
-        likesCount: currentLikes + 1
-      }).catch(() => {});
-    } catch (e) {}
+    // 3. Increment target's likesCount in background
+    const currentLikes = targetUser ? (targetUser.likesCount || 0) : 0;
+    updateDoc(doc(db, 'publicProfiles', targetId), { likesCount: currentLikes + 1 }).catch(() => {});
+    updateDoc(doc(db, 'users', targetId), { likesCount: currentLikes + 1 }).catch(() => {});
 
-    // 4. MUTUAL MATCH CHECK:
-    // Check if the other user already liked/superliked this user
+    // 4. FAST MUTUAL MATCH CHECK:
+    // Check if target already liked current user
     let hasTargetLikedSwiper = false;
 
-    // A) Direct Firestore Document Check (sw_{targetId}_{swiperId})
-    try {
-      const reciprocalSwipeDoc = await getDoc(doc(db, 'swipes', `sw_${targetId}_${swiperId}`));
-      if (reciprocalSwipeDoc.exists()) {
-        const swData = reciprocalSwipeDoc.data();
-        if (swData?.type === 'like' || swData?.type === 'superlike') {
-          hasTargetLikedSwiper = true;
-        }
-      }
-    } catch (err) {
-      console.warn('[Firestore] Direct reciprocal check note:', err);
+    // Check local store first (instant 0ms)
+    const localReciprocal = localDb.getSwipes().find(
+      s => s.swiperId === targetId && s.targetId === swiperId && (s.type === 'like' || s.type === 'superlike')
+    );
+    if (localReciprocal) {
+      hasTargetLikedSwiper = true;
     }
 
-    // B) Query Firestore collection 'swipes' where swiperId == targetId and targetId == swiperId
+    // Execute Firestore write of current swipe AND check of target's reciprocal swipe IN PARALLEL
+    const swipeDocRef = doc(db, 'swipes', swipeId);
+    const reciprocalDocRef = doc(db, 'swipes', `sw_${targetId}_${swiperId}`);
+
+    const [_, reciprocalSnap] = await Promise.allSettled([
+      setDoc(swipeDocRef, swipeRecord, { merge: true }),
+      getDoc(reciprocalDocRef)
+    ]);
+
+    if (!hasTargetLikedSwiper && reciprocalSnap.status === 'fulfilled' && reciprocalSnap.value.exists()) {
+      const swData = reciprocalSnap.value.data();
+      if (swData?.type === 'like' || swData?.type === 'superlike') {
+        hasTargetLikedSwiper = true;
+      }
+    }
+
+    // Secondary fallback query check if not found yet
     if (!hasTargetLikedSwiper) {
       try {
         const qReciprocal = query(
@@ -1820,35 +1872,27 @@ class FirebaseService {
       }
     }
 
-    // C) Check Local Cache Swipes
-    if (!hasTargetLikedSwiper) {
-      const localSwipes = localDb.getSwipes();
-      const localReciprocal = localSwipes.find(
-        s => s.swiperId === targetId && s.targetId === swiperId && (s.type === 'like' || s.type === 'superlike')
-      );
-      if (localReciprocal) {
-        hasTargetLikedSwiper = true;
+    // Synchronize with server backend swipe endpoint
+    const token = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_token') || swiperId) : swiperId;
+    const serverSwipePromise = fetch('/api/profiles/swipe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ targetId, type })
+    }).then(async r => {
+      if (r.ok) {
+        const d = await r.json();
+        return Boolean(d.isMatch);
       }
-    }
+      return false;
+    }).catch(() => false);
 
-    // D) Synchronize with server backend swipe endpoint
-    try {
-      const token = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_token') || swiperId) : swiperId;
-      const resp = await fetch('/api/profiles/swipe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ targetId, type })
-      });
-      if (resp.ok) {
-        const serverData = await resp.json();
-        if (serverData.isMatch) {
-          hasTargetLikedSwiper = true;
-        }
-      }
-    } catch (e) {}
+    if (!hasTargetLikedSwiper) {
+      const serverMatch = await serverSwipePromise;
+      if (serverMatch) hasTargetLikedSwiper = true;
+    }
 
     let isMatch = false;
     let createdMatch: Match | null = null;
@@ -1869,21 +1913,6 @@ class FirebaseService {
         partner: targetUser || undefined
       };
 
-      // Save match document to Firestore
-      try {
-        await setDoc(doc(db, 'matches', matchId), {
-          id: matchId,
-          userIds: [firstId, secondId],
-          matchedAt: createdMatch.matchedAt,
-          lastMessage: createdMatch.lastMessage,
-          lastMessageTime: createdMatch.lastMessageTime,
-          unreadCount: 0
-        }, { merge: true });
-      } catch (err) {
-        console.warn('[Firestore] Error creating match in Firestore:', err);
-      }
-
-      // Create welcoming greeting message
       const msgId = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const welcomeMsg: Message = {
         id: msgId,
@@ -1895,32 +1924,32 @@ class FirebaseService {
         read: false
       };
 
-      try {
-        await setDoc(doc(db, 'messages', msgId), welcomeMsg);
-      } catch (err) {
-        console.warn('[Firestore] Error creating initial greeting message:', err);
-      }
+      // Save match document & initial greeting in Firestore simultaneously
+      await Promise.allSettled([
+        setDoc(doc(db, 'matches', matchId), {
+          id: matchId,
+          userIds: [firstId, secondId],
+          matchedAt: createdMatch.matchedAt,
+          lastMessage: createdMatch.lastMessage,
+          lastMessageTime: createdMatch.lastMessageTime,
+          unreadCount: 0
+        }, { merge: true }),
+        setDoc(doc(db, 'messages', msgId), welcomeMsg)
+      ]);
 
-      // Persist in local database cache
+      // Persist in local database cache immediately
       try {
-        const existingLocalMatches = localDb.getMatches();
-        const filteredMatches = existingLocalMatches.filter(m => m.id !== matchId);
-        localDb.saveMatches([createdMatch, ...filteredMatches]);
+        const existingLocalMatches = localDb.getMatches().filter(m => m.id !== matchId);
+        localDb.saveMatches([createdMatch, ...existingLocalMatches]);
 
         const existingLocalMsgs = localDb.getMessages();
         localDb.saveMessages([...existingLocalMsgs, welcomeMsg]);
       } catch (e) {}
 
-      // Increment matches count for both users
-      try {
-        await updateDoc(doc(db, 'publicProfiles', swiperId), {
-          matchesCount: (this.getCurrentAuthUser() ? 1 : 1)
-        }).catch(() => {});
-        const currentTargetMatches = targetUser ? (targetUser.matchesCount || 0) : 0;
-        await updateDoc(doc(db, 'publicProfiles', targetId), {
-          matchesCount: currentTargetMatches + 1
-        }).catch(() => {});
-      } catch (e) {}
+      // Increment matches count in background
+      updateDoc(doc(db, 'publicProfiles', swiperId), { matchesCount: 1 }).catch(() => {});
+      const currentTargetMatches = targetUser ? (targetUser.matchesCount || 0) : 0;
+      updateDoc(doc(db, 'publicProfiles', targetId), { matchesCount: currentTargetMatches + 1 }).catch(() => {});
 
       try {
         const allUsers = localDb.getUsers();
@@ -1949,7 +1978,7 @@ class FirebaseService {
       const q = query(matchesCol, where('userIds', 'array-contains', currentUserId));
       const snap = await getDocs(q);
       
-      for (const d of snap.docs) {
+      await Promise.all(snap.docs.map(async (d) => {
         const m = d.data() as Match;
         const partnerId = m.userIds.find(id => id !== currentUserId);
         let partner: User | null = null;
@@ -1961,7 +1990,7 @@ class FirebaseService {
           }
         }
         matchesMap.set(m.id, { ...m, partner: partner || undefined });
-      }
+      }));
     } catch (err) {
       console.warn('[Firestore] Error getting matches from Firestore:', err);
     }
@@ -1994,7 +2023,8 @@ class FirebaseService {
     
     return onSnapshot(q, async (snap) => {
       const matchesMap = new Map<string, Match>();
-      for (const d of snap.docs) {
+
+      await Promise.all(snap.docs.map(async (d) => {
         const m = d.data() as Match;
         const partnerId = m.userIds.find(id => id !== currentUserId);
         let partner: User | null = null;
@@ -2006,7 +2036,7 @@ class FirebaseService {
           }
         }
         matchesMap.set(m.id, { ...m, partner: partner || undefined });
-      }
+      }));
 
       // Merge local matches
       const localMatches = localDb.getMatches().filter(m => m.userIds && m.userIds.includes(currentUserId));

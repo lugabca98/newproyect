@@ -418,13 +418,13 @@ class ApiService {
     return { profiles };
   }
 
-  async swipe(targetId: string, type: 'like' | 'pass' | 'superlike'): Promise<{
+  async swipe(targetId: string, type: 'like' | 'pass' | 'superlike', targetUser?: User): Promise<{
     isMatch: boolean;
     match: Match | null;
     partner: User | null;
   }> {
     const currentId = this.getCurrentUserId();
-    return await firebaseService.recordSwipe(currentId, targetId, type);
+    return await firebaseService.recordSwipe(currentId, targetId, type, targetUser);
   }
 
   async rewind(): Promise<{ success: boolean; restoredUser: User | null }> {

@@ -42,8 +42,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     loadMatches();
     const unsub = firebaseService.subscribeMatches(currentUser.id, (realtimeMatches) => {
-      if (realtimeMatches && realtimeMatches.length > 0) {
+      if (Array.isArray(realtimeMatches)) {
         setMatches(realtimeMatches);
+        setSelectedMatchId(prev => {
+          if (!prev && realtimeMatches.length > 0) {
+            return realtimeMatches[0].id;
+          }
+          return prev;
+        });
       }
     });
     return () => unsub?.();
