@@ -43,11 +43,36 @@
     }
   ],
   "pendingRegistrations": [],
-  "deletedAccounts": [],
+  "deletedAccounts": [
+    {
+      "email": "testdel@example.com",
+      "userId": "testdel@example.com",
+      "deletedAt": "2026-09-04T20:35:42.508Z",
+      "deletedBy": "lugabca98@gmail.com"
+    }
+  ],
   "swipes": [],
   "matches": [],
   "messages": [],
   "auditLogs": [
+    {
+      "id": "log-1788554142508",
+      "adminEmail": "lugabca98@gmail.com",
+      "action": "DELETE_USER",
+      "targetUserId": "testdel@example.com",
+      "targetUserName": "Test User Reborn",
+      "timestamp": "2026-09-04T20:35:42.508Z",
+      "details": "Eliminación definitiva de cuenta y registros asociados (testdel@example.com)."
+    },
+    {
+      "id": "log-1788554136087",
+      "adminEmail": "lugabca98@gmail.com",
+      "action": "DELETE_USER",
+      "targetUserId": "testdel@example.com",
+      "targetUserName": "Test User",
+      "timestamp": "2026-09-04T20:35:36.087Z",
+      "details": "Eliminación definitiva de cuenta y registros asociados (testdel@example.com)."
+    },
     {
       "id": "log-1788385595720",
       "adminEmail": "lugabca98@gmail.com",
@@ -58,5 +83,5 @@
       "details": "Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero."
     }
   ],
-  "updatedAt": "2026-09-03T18:34:34.342Z"
+  "updatedAt": "2026-09-04T20:35:42.508Z"
 }

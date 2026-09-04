@@ -322,7 +322,7 @@ class FirebaseService {
       }
     };
 
-    // Save credentials in localDb & Firestore
+    // Clean up any prior deleted record in Firestore and localDb
     localDb.removeDeletedEmail(email);
     try {
       await deleteDoc(doc(db, 'deletedAccounts', email)).catch(() => {});
@@ -362,9 +362,9 @@ class FirebaseService {
 
     localDb.savePendingRegistration(pendingRecord);
 
-    // Sync with backend to clear any previous deleted state and trigger server OTP email
+    // Sync with backend to clear any previous deleted state and trigger server confirmation email
     try {
-      fetch('/api/auth/register', {
+      await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -380,8 +380,10 @@ class FirebaseService {
           interests: pendingUserData.interests,
           preferences: pendingUserData.preferences
         })
-      }).catch(() => {});
-    } catch {}
+      });
+    } catch (syncErr) {
+      console.warn('[Register Server Sync] Error note:', syncErr);
+    }
 
     // Return unconfirmed representation for UI flow (profile is NOT created yet)
     return {
@@ -494,8 +496,12 @@ class FirebaseService {
       console.warn('[Firestore] Error activating user in Firestore:', err);
     }
 
-    // Activate in localDb
+    // Activate in localDb and clear deleted flags
     localDb.activatePendingRegistration(cleanEmail);
+    localDb.removeDeletedEmail(cleanEmail);
+    try {
+      await deleteDoc(doc(db, 'deletedAccounts', cleanEmail)).catch(() => {});
+    } catch {}
 
     return finalUser;
   }
@@ -2386,22 +2392,26 @@ class FirebaseService {
     // 1. Call server-side admin delete
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('vulnerable_auth_token') : null;
-      if (token) {
-        await fetch(`/api/admin/users/${targetUserId}${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ''}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-      }
+      const adminEmail = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_email') || DEFAULT_ADMIN_EMAIL) : DEFAULT_ADMIN_EMAIL;
+      await fetch(`/api/admin/users/${targetUserId}${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ''}`, {
+        method: 'DELETE',
+        headers: { 
+          'Authorization': `Bearer ${token || DEFAULT_ADMIN_EMAIL}`,
+          'X-Admin-Email': adminEmail,
+          'X-Admin-Key': 'vulnerable_admin_key_2026'
+        }
+      });
     } catch (err) {
       console.warn('[Server Admin Delete] Notice:', err);
     }
 
     // 2. Delete in Firestore
     try {
-      await deleteDoc(doc(db, 'users', targetUserId));
+      await deleteDoc(doc(db, 'users', targetUserId)).catch(() => {});
       await deleteDoc(doc(db, 'publicProfiles', targetUserId)).catch(() => {});
       if (userEmail) {
         await deleteDoc(doc(db, 'credentials', userEmail)).catch(() => {});
+        await deleteDoc(doc(db, 'pendingRegistrations', userEmail)).catch(() => {});
         // Add to deletedAccounts collection so logins are blocked
         await setDoc(doc(db, 'deletedAccounts', userEmail), {
           email: userEmail,
@@ -2417,6 +2427,7 @@ class FirebaseService {
     // 3. Delete in local storage & credentials & record deleted email
     localDb.removeUser(targetUserId, userEmail);
     if (userEmail) {
+      localDb.removePendingRegistration(userEmail);
       localDb.recordDeletedEmail(userEmail);
     }
 

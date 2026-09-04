@@ -120,6 +120,11 @@ class ApiService {
     // Explicitly do not grant token for unverified registrations under any circumstances
     this.setToken(null);
 
+    // Ensure confirmation email with verification link is sent
+    await this.sendVerificationEmail(cleanEmail, newUser.name).catch(err => {
+      console.warn('[Register] Verification email trigger note:', err);
+    });
+
     return { 
       user: sanitizedUser, 
       token: '', 

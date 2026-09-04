@@ -409,6 +409,7 @@ class LocalDatabaseStore {
   savePendingRegistration(pending: PendingRegistration): void {
     if (!pending || !pending.email) return;
     const cleanEmail = pending.email.trim().toLowerCase();
+    this.removeDeletedEmail(cleanEmail);
     const pendings = this.getPendingRegistrations();
     const current = Array.isArray(pendings) ? pendings.filter(p => p && p.email && p.email.toLowerCase() !== cleanEmail) : [];
     current.push({ ...pending, email: cleanEmail });
@@ -435,6 +436,7 @@ class LocalDatabaseStore {
   activatePendingRegistration(email: string): User | null {
     if (!email) return null;
     const cleanEmail = email.trim().toLowerCase();
+    this.removeDeletedEmail(cleanEmail);
     const pending = this.getPendingRegistration(cleanEmail);
     if (!pending) return null;
 
