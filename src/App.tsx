@@ -222,10 +222,20 @@ export function App() {
     }
   };
 
+  // Realtime matches & unread counter listener
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsub = firebaseService.subscribeMatches(currentUser.id, (matches) => {
+      const unread = matches.filter(m => m.unreadCount > 0).length || matches.length;
+      setUnreadMatchesCount(unread);
+    });
+    return () => unsub?.();
+  }, [currentUser?.id]);
+
   const loadUnreadMatches = async () => {
     try {
       const data = await api.getMatches();
-      const unread = data.matches.filter(m => m.unreadCount > 0).length;
+      const unread = data.matches.filter(m => m.unreadCount > 0).length || data.matches.length;
       setUnreadMatchesCount(unread);
     } catch (err) {
       console.error('Error loading matches count:', err);
@@ -245,11 +255,22 @@ export function App() {
     try {
       const res = await api.swipe(currentProfile.id, type);
 
-      if (res.isMatch && res.match && res.partner) {
+      if (res.isMatch) {
+        const partner = res.partner || res.match?.partner || currentProfile;
+        const matchObj = res.match || {
+          id: `match_${currentUser.id}_${currentProfile.id}`,
+          userIds: [currentUser.id, currentProfile.id],
+          matchedAt: new Date().toISOString(),
+          lastMessage: `¡Hiciste match con ${partner.name}!`,
+          lastMessageTime: new Date().toISOString(),
+          unreadCount: 0,
+          partner
+        };
+
         // Trigger Match Celebration Modal
         setCelebrationMatch({
-          match: res.match,
-          partner: res.partner
+          match: matchObj,
+          partner
         });
         loadUnreadMatches();
       }

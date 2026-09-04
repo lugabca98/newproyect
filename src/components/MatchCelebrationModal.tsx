@@ -54,10 +54,14 @@ export const MatchCelebrationModal: React.FC<MatchCelebrationModalProps> = ({
     onOpenChat(match.id, quickMsg.trim() || undefined);
   };
 
+  const partnerFirstName = (partner.name || 'Hola').trim().split(' ')[0] || 'Hola';
+  const partnerCity = (partner.location || 'tu ciudad').split(',')[0].trim() || 'tu ciudad';
+  const partnerInterest = (partner.interests && partner.interests.length > 0) ? partner.interests[0] : 'conversar';
+
   const sampleIcebreakers = [
-    `¡Hola ${partner.name.split(' ')[0]}! Me encantó tu foto ✨`,
-    `¡Hola! ¿Cuál es tu lugar favorito en ${partner.location.split(',')[0]}?`,
-    `¡Hola! Veo que te gusta ${partner.interests[0] || 'la música'} 🙌`
+    `¡Hola ${partnerFirstName}! Me encantó tu foto ✨`,
+    `¡Hola! ¿Cuál es tu lugar favorito en ${partnerCity}?`,
+    `¡Hola! Veo que te gusta ${partnerInterest} 🙌`
   ];
 
   return (

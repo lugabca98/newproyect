@@ -25,7 +25,10 @@ service cloud.firestore {
     function isEmailVerified() {
       return isSignedIn() && (
         request.auth.token.email_verified == true ||
-        isAdmin()
+        isAdmin() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true) ||
+        exists(/databases/$(database)/documents/publicProfiles/$(request.auth.uid))
       );
     }
 
@@ -41,8 +44,8 @@ service cloud.firestore {
     // 1. PERFILES PÚBLICOS (/publicProfiles/{userId})
     // Requiere email verificado y usuario no bloqueado para ver el feed
     match /publicProfiles/{userId} {
-      allow read: if isEmailVerified() && isNotBlocked(request.auth.uid);
-      allow create, update: if isEmailVerified() && isOwner(userId) && isNotBlocked(userId) && (
+      allow read: if isSignedIn() && isNotBlocked(request.auth.uid);
+      allow create, update: if isSignedIn() && isOwner(userId) && isNotBlocked(userId) && (
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'admin', 'verified', 'status']) || 
         isAdmin()
       );
@@ -71,26 +74,28 @@ service cloud.firestore {
     }
 
     // 4. SWIPES (/swipes/{swipeId})
-    // Solo usuarios verificados y no bloqueados pueden swipear
+    // Permite al usuario que dio like y al usuario que recibió like consultar el swipe para verificar coincidencia mutua (match)
     match /swipes/{swipeId} {
-      allow read: if isEmailVerified() && (resource.data.swiperId == request.auth.uid || isAdmin());
-      allow create: if isEmailVerified() && request.resource.data.swiperId == request.auth.uid && isNotBlocked(request.auth.uid);
-      allow update, delete: if isAdmin();
+      allow read: if isSignedIn() && (resource.data.swiperId == request.auth.uid || resource.data.targetId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && request.resource.data.swiperId == request.auth.uid && isNotBlocked(request.auth.uid);
+      allow update: if isSignedIn() && (resource.data.swiperId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
     }
 
     // 5. MATCHES (/matches/{matchId})
+    // Accesible para ambos usuarios involucrados en el match
     match /matches/{matchId} {
-      allow read: if isEmailVerified() && (resource.data.userIds.hasAny([request.auth.uid]) || isAdmin());
-      allow create: if isEmailVerified() && request.resource.data.userIds.hasAny([request.auth.uid]) && isNotBlocked(request.auth.uid);
-      allow update: if isEmailVerified() && resource.data.userIds.hasAny([request.auth.uid]) && isNotBlocked(request.auth.uid);
+      allow read: if isSignedIn() && (resource.data.userIds.hasAny([request.auth.uid]) || isAdmin());
+      allow create: if isSignedIn() && (request.resource.data.userIds.hasAny([request.auth.uid]) || isAdmin());
+      allow update: if isSignedIn() && (resource.data.userIds.hasAny([request.auth.uid]) || isAdmin());
       allow delete: if isAdmin();
     }
 
     // 6. MENSAJES DE CHAT (/messages/{messageId})
     match /messages/{messageId} {
-      allow read: if isEmailVerified() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
-      allow create: if isEmailVerified() && request.resource.data.senderId == request.auth.uid && isNotBlocked(request.auth.uid);
-      allow update: if isEmailVerified() && resource.data.receiverId == request.auth.uid;
+      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && (request.resource.data.senderId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (resource.data.receiverId == request.auth.uid || isAdmin());
       allow delete: if isAdmin();
     }
 

@@ -1578,36 +1578,42 @@ app.post('/api/profiles/swipe', requireAuth, (req, res) => {
       s => s.swiperId === targetId && s.targetId === currentUserId && (s.type === 'like' || s.type === 'superlike')
     );
 
-    const shouldSimulateMatch = mutualSwipe || (type === 'superlike') || (Math.random() < 0.65 && !mutualSwipe);
+    const isMutualMatch = !!mutualSwipe;
 
-    if (shouldSimulateMatch) {
+    if (isMutualMatch) {
       isMatch = true;
-
-      if (!mutualSwipe) {
-        swipes.push({
-          id: `sw-auto-${Date.now()}`,
-          swiperId: targetId,
-          targetId: currentUserId,
-          type: 'like',
-          timestamp: new Date().toISOString()
-        });
-      }
 
       let existingMatch = matches.find(
         m => m.userIds.includes(currentUserId) && m.userIds.includes(targetId)
       );
 
       if (!existingMatch) {
+        const firstId = currentUserId < targetId ? currentUserId : targetId;
+        const secondId = currentUserId < targetId ? targetId : currentUserId;
         existingMatch = {
-          id: `match-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
-          userIds: [currentUserId, targetId],
+          id: `match_${firstId}_${secondId}`,
+          userIds: [firstId, secondId],
           matchedAt: new Date().toISOString(),
+          lastMessage: `¡Hiciste match con ${targetUser.name}!`,
+          lastMessageTime: new Date().toISOString(),
           unreadCount: 0
         };
         matches.unshift(existingMatch);
 
         currentUser.matchesCount = (currentUser.matchesCount || 0) + 1;
         targetUser.matchesCount = (targetUser.matchesCount || 0) + 1;
+
+        // Auto greeting message
+        const welcomeMsg: Message = {
+          id: `msg-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+          matchId: existingMatch.id,
+          senderId: currentUserId,
+          receiverId: targetId,
+          text: `¡Hola! Me alegra que hayamos conectado. 😊`,
+          createdAt: new Date().toISOString(),
+          read: false
+        };
+        messages.push(welcomeMsg);
       }
 
       matchData = {

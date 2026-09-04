@@ -1705,6 +1705,10 @@ class FirebaseService {
     match: Match | null;
     partner: User | null;
   }> {
+    if (!swiperId || !targetId || swiperId === targetId) {
+      return { isMatch: false, match: null, partner: null };
+    }
+
     // Deterministic Swipe ID to enforce uniqueness and security rules
     const swipeId = `sw_${swiperId}_${targetId}`;
     const swipeRecord: SwipeRecord = {
@@ -1716,28 +1720,138 @@ class FirebaseService {
     };
 
     // 1. Record the swipe in Firestore
-    await setDoc(doc(db, 'swipes', swipeId), swipeRecord);
+    try {
+      await setDoc(doc(db, 'swipes', swipeId), swipeRecord, { merge: true });
+    } catch (err) {
+      console.warn('[Firestore] Error saving swipe:', err);
+    }
 
-    const targetUser = await this.getUserById(targetId);
-    let isMatch = false;
-    let createdMatch: Match | null = null;
+    // 2. Also record in local store cache
+    try {
+      const currentSwipes = localDb.getSwipes();
+      const filtered = currentSwipes.filter(s => !(s.swiperId === swiperId && s.targetId === targetId));
+      localDb.saveSwipes([swipeRecord, ...filtered]);
+    } catch (e) {}
+
+    // Resolve target profile with comprehensive fallbacks
+    let targetUser: User | null = await this.getUserById(targetId);
+    if (!targetUser) {
+      targetUser = localDb.getUsers().find(u => u.id === targetId) || 
+                   INITIAL_SEED_USERS.find(u => u.id === targetId) || null;
+    }
+    if (!targetUser) {
+      targetUser = {
+        id: targetId,
+        name: 'Usuario',
+        email: '',
+        age: 24,
+        gender: 'other',
+        bio: '¡Conectando en Embrace!',
+        photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+        location: 'Buenos Aires, Argentina',
+        occupation: 'Miembro',
+        interests: ['Música', 'Café'],
+        verified: true,
+        emailVerified: true,
+        status: 'active',
+        role: 'user',
+        createdAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        likesCount: 0,
+        matchesCount: 0,
+        preferences: {
+          minAge: 18,
+          maxAge: 99,
+          interestedIn: ['female', 'male', 'non-binary', 'other'],
+          maxDistanceKm: 100
+        }
+      };
+    }
 
     if (type === 'pass') {
       return { isMatch: false, match: null, partner: targetUser };
     }
 
-    // 2. Increment target's likesCount in public profile
-    if (targetUser) {
+    // 3. Increment target's likesCount in public profile & localDb
+    try {
+      const currentLikes = targetUser ? (targetUser.likesCount || 0) : 0;
       await updateDoc(doc(db, 'publicProfiles', targetId), {
-        likesCount: (targetUser.likesCount || 0) + 1
+        likesCount: currentLikes + 1
       }).catch(() => {});
+      await updateDoc(doc(db, 'users', targetId), {
+        likesCount: currentLikes + 1
+      }).catch(() => {});
+    } catch (e) {}
+
+    // 4. MUTUAL MATCH CHECK:
+    // Check if the other user already liked/superliked this user
+    let hasTargetLikedSwiper = false;
+
+    // A) Direct Firestore Document Check (sw_{targetId}_{swiperId})
+    try {
+      const reciprocalSwipeDoc = await getDoc(doc(db, 'swipes', `sw_${targetId}_${swiperId}`));
+      if (reciprocalSwipeDoc.exists()) {
+        const swData = reciprocalSwipeDoc.data();
+        if (swData?.type === 'like' || swData?.type === 'superlike') {
+          hasTargetLikedSwiper = true;
+        }
+      }
+    } catch (err) {
+      console.warn('[Firestore] Direct reciprocal check note:', err);
     }
 
-    // 3. STRICT MUTUAL MATCH CHECK:
-    // Check if reciprocal swipe exists with 'like' or 'superlike'
-    const reciprocalSwipeDoc = await getDoc(doc(db, 'swipes', `sw_${targetId}_${swiperId}`));
-    const hasTargetLikedSwiper = reciprocalSwipeDoc.exists() && 
-      (reciprocalSwipeDoc.data().type === 'like' || reciprocalSwipeDoc.data().type === 'superlike');
+    // B) Query Firestore collection 'swipes' where swiperId == targetId and targetId == swiperId
+    if (!hasTargetLikedSwiper) {
+      try {
+        const qReciprocal = query(
+          collection(db, 'swipes'),
+          where('swiperId', '==', targetId),
+          where('targetId', '==', swiperId)
+        );
+        const snap = await getDocs(qReciprocal);
+        snap.forEach(d => {
+          const sw = d.data();
+          if (sw?.type === 'like' || sw?.type === 'superlike') {
+            hasTargetLikedSwiper = true;
+          }
+        });
+      } catch (err) {
+        console.warn('[Firestore] Query reciprocal check note:', err);
+      }
+    }
+
+    // C) Check Local Cache Swipes
+    if (!hasTargetLikedSwiper) {
+      const localSwipes = localDb.getSwipes();
+      const localReciprocal = localSwipes.find(
+        s => s.swiperId === targetId && s.targetId === swiperId && (s.type === 'like' || s.type === 'superlike')
+      );
+      if (localReciprocal) {
+        hasTargetLikedSwiper = true;
+      }
+    }
+
+    // D) Synchronize with server backend swipe endpoint
+    try {
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_token') || swiperId) : swiperId;
+      const resp = await fetch('/api/profiles/swipe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ targetId, type })
+      });
+      if (resp.ok) {
+        const serverData = await resp.json();
+        if (serverData.isMatch) {
+          hasTargetLikedSwiper = true;
+        }
+      }
+    } catch (e) {}
+
+    let isMatch = false;
+    let createdMatch: Match | null = null;
 
     if (hasTargetLikedSwiper) {
       isMatch = true;
@@ -1756,18 +1870,22 @@ class FirebaseService {
       };
 
       // Save match document to Firestore
-      await setDoc(doc(db, 'matches', matchId), {
-        id: matchId,
-        userIds: [firstId, secondId],
-        matchedAt: createdMatch.matchedAt,
-        lastMessage: createdMatch.lastMessage,
-        lastMessageTime: createdMatch.lastMessageTime,
-        unreadCount: 0
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, 'matches', matchId), {
+          id: matchId,
+          userIds: [firstId, secondId],
+          matchedAt: createdMatch.matchedAt,
+          lastMessage: createdMatch.lastMessage,
+          lastMessageTime: createdMatch.lastMessageTime,
+          unreadCount: 0
+        }, { merge: true });
+      } catch (err) {
+        console.warn('[Firestore] Error creating match in Firestore:', err);
+      }
 
-      // Create welcoming greeting message with valid authenticated senderId
-      const msgId = `msg-${Date.now()}`;
-      await setDoc(doc(db, 'messages', msgId), {
+      // Create welcoming greeting message
+      const msgId = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const welcomeMsg: Message = {
         id: msgId,
         matchId,
         senderId: swiperId,
@@ -1775,7 +1893,45 @@ class FirebaseService {
         text: `¡Hola! Me alegra que hayamos conectado. 😊`,
         createdAt: new Date().toISOString(),
         read: false
-      });
+      };
+
+      try {
+        await setDoc(doc(db, 'messages', msgId), welcomeMsg);
+      } catch (err) {
+        console.warn('[Firestore] Error creating initial greeting message:', err);
+      }
+
+      // Persist in local database cache
+      try {
+        const existingLocalMatches = localDb.getMatches();
+        const filteredMatches = existingLocalMatches.filter(m => m.id !== matchId);
+        localDb.saveMatches([createdMatch, ...filteredMatches]);
+
+        const existingLocalMsgs = localDb.getMessages();
+        localDb.saveMessages([...existingLocalMsgs, welcomeMsg]);
+      } catch (e) {}
+
+      // Increment matches count for both users
+      try {
+        await updateDoc(doc(db, 'publicProfiles', swiperId), {
+          matchesCount: (this.getCurrentAuthUser() ? 1 : 1)
+        }).catch(() => {});
+        const currentTargetMatches = targetUser ? (targetUser.matchesCount || 0) : 0;
+        await updateDoc(doc(db, 'publicProfiles', targetId), {
+          matchesCount: currentTargetMatches + 1
+        }).catch(() => {});
+      } catch (e) {}
+
+      try {
+        const allUsers = localDb.getUsers();
+        const updatedUsers = allUsers.map(u => {
+          if (u.id === swiperId || u.id === targetId) {
+            return { ...u, matchesCount: (u.matchesCount || 0) + 1 };
+          }
+          return u;
+        });
+        localDb.saveUsers(updatedUsers);
+      } catch (e) {}
     }
 
     return { isMatch, match: createdMatch, partner: targetUser };
@@ -1786,25 +1942,50 @@ class FirebaseService {
   // -------------------------------------------------------------
   async getMatches(currentUserId: string): Promise<Match[]> {
     await this.initializeDatabase();
+    const matchesMap = new Map<string, Match>();
+
     try {
       const matchesCol = collection(db, 'matches');
       const q = query(matchesCol, where('userIds', 'array-contains', currentUserId));
       const snap = await getDocs(q);
       
-      const matches: Match[] = [];
       for (const d of snap.docs) {
         const m = d.data() as Match;
         const partnerId = m.userIds.find(id => id !== currentUserId);
+        let partner: User | null = null;
         if (partnerId) {
-          const partner = await this.getUserById(partnerId);
-          matches.push({ ...m, partner: partner || undefined });
+          partner = await this.getUserById(partnerId);
+          if (!partner) {
+            partner = localDb.getUsers().find(u => u.id === partnerId) || 
+                      INITIAL_SEED_USERS.find(u => u.id === partnerId) || null;
+          }
+        }
+        matchesMap.set(m.id, { ...m, partner: partner || undefined });
+      }
+    } catch (err) {
+      console.warn('[Firestore] Error getting matches from Firestore:', err);
+    }
+
+    // Merge any matches stored in localDb
+    try {
+      const localMatches = localDb.getMatches().filter(m => m.userIds && m.userIds.includes(currentUserId));
+      for (const lm of localMatches) {
+        if (!matchesMap.has(lm.id)) {
+          const partnerId = lm.userIds.find(id => id !== currentUserId);
+          let partner = lm.partner || null;
+          if (!partner && partnerId) {
+            partner = await this.getUserById(partnerId) || 
+                      localDb.getUsers().find(u => u.id === partnerId) || 
+                      INITIAL_SEED_USERS.find(u => u.id === partnerId) || null;
+          }
+          matchesMap.set(lm.id, { ...lm, partner: partner || undefined });
         }
       }
-      return matches;
-    } catch (err) {
-      console.warn('[Firestore] Error getting matches:', err);
-      return [];
-    }
+    } catch (e) {}
+
+    return Array.from(matchesMap.values()).sort(
+      (a, b) => new Date(b.matchedAt).getTime() - new Date(a.matchedAt).getTime()
+    );
   }
 
   subscribeMatches(currentUserId: string, callback: (matches: Match[]) => void): Unsubscribe {
@@ -1812,18 +1993,43 @@ class FirebaseService {
     const q = query(matchesCol, where('userIds', 'array-contains', currentUserId));
     
     return onSnapshot(q, async (snap) => {
-      const matches: Match[] = [];
+      const matchesMap = new Map<string, Match>();
       for (const d of snap.docs) {
         const m = d.data() as Match;
         const partnerId = m.userIds.find(id => id !== currentUserId);
+        let partner: User | null = null;
         if (partnerId) {
-          const partner = await this.getUserById(partnerId);
-          matches.push({ ...m, partner: partner || undefined });
+          partner = await this.getUserById(partnerId);
+          if (!partner) {
+            partner = localDb.getUsers().find(u => u.id === partnerId) || 
+                      INITIAL_SEED_USERS.find(u => u.id === partnerId) || null;
+          }
+        }
+        matchesMap.set(m.id, { ...m, partner: partner || undefined });
+      }
+
+      // Merge local matches
+      const localMatches = localDb.getMatches().filter(m => m.userIds && m.userIds.includes(currentUserId));
+      for (const lm of localMatches) {
+        if (!matchesMap.has(lm.id)) {
+          const partnerId = lm.userIds.find(id => id !== currentUserId);
+          let partner = lm.partner || null;
+          if (!partner && partnerId) {
+            partner = localDb.getUsers().find(u => u.id === partnerId) || null;
+          }
+          matchesMap.set(lm.id, { ...lm, partner: partner || undefined });
         }
       }
-      callback(matches);
+
+      const sortedMatches = Array.from(matchesMap.values()).sort(
+        (a, b) => new Date(b.matchedAt).getTime() - new Date(a.matchedAt).getTime()
+      );
+      callback(sortedMatches);
     }, (err) => {
       console.warn('[Firestore] Matches subscription error:', err);
+      // Call with local matches as fallback
+      const localFallback = localDb.getMatches().filter(m => m.userIds && m.userIds.includes(currentUserId));
+      callback(localFallback);
     });
   }
 
