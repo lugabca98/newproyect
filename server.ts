@@ -1078,10 +1078,11 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     expiresAt: Date.now() + 15 * 60 * 1000
   });
 
-  const reqProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || req.protocol || 'https';
+  const reqProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || (req.get('host')?.includes('run.app') ? 'https' : req.protocol) || 'https';
   const reqHost = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim() || req.get('host') || 'localhost:3000';
   const baseAppUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || `${reqProto}://${reqHost}`;
   const registerVerifyUrl = `${baseAppUrl}/api/auth/verify-link?email=${encodeURIComponent(normalizedEmail)}&token=${initialOtp}`;
+  const mailStatus = getMailConfigStatus();
 
   console.log(`[Register Email] Dispatching account confirmation email with link to ${normalizedEmail}... Action URL: ${registerVerifyUrl}`);
   sendOtpEmail({
@@ -1101,7 +1102,13 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     token: '', 
     isAdmin: false,
     emailSent: true,
-    message: 'Hemos enviado un enlace de verificación a tu correo electrónico. Tu perfil será activado una vez que hagas clic en el enlace.'
+    actionUrl: registerVerifyUrl,
+    code: initialOtp,
+    isRealDelivery: mailStatus.isConfigured,
+    provider: mailStatus.activeProvider,
+    message: mailStatus.isConfigured
+      ? 'Hemos enviado un enlace de verificación a tu correo electrónico. Revisa tu bandeja de entrada y Spam.'
+      : 'Enlace de verificación generado. Puedes activarlo directamente o hacer clic en el enlace de confirmación.'
   });
 });
 
@@ -1118,6 +1125,9 @@ app.get('/api/auth/verify-link', (req, res) => {
     res.redirect('/?verifyError=missing_email');
     return;
   }
+
+  // Ensure unblocked from deleted accounts
+  deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
 
   const key = `${email}_verify_email`;
   const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
@@ -1165,6 +1175,9 @@ app.post('/api/auth/mark-email-verified', (req, res) => {
     return;
   }
 
+  // Clean from deletedAccounts
+  deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
+
   let activatedUser: ServerUser | null = null;
   const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
   if (pendingIdx !== -1) {
@@ -1196,8 +1209,35 @@ app.post('/api/auth/mark-email-verified', (req, res) => {
   otpStore.delete(`${email}_verify_email`);
   res.json({
     success: true,
-    message: 'Correo verificado y cuenta activada.',
+    message: 'Correo verificado y cuenta activada con éxito.',
     user: activatedUser ? toPrivateUser(activatedUser) : null
+  });
+});
+
+// Get current verification link / code for pending registration
+app.get('/api/auth/verification-info', (req, res) => {
+  const email = String(req.query.email || '').trim().toLowerCase();
+  if (!email || !isValidEmail(email)) {
+    res.status(400).json({ error: 'Email válido requerido.' });
+    return;
+  }
+
+  const otpData = otpStore.get(`${email}_verify_email`);
+  const reqProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || (req.get('host')?.includes('run.app') ? 'https' : req.protocol) || 'https';
+  const reqHost = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim() || req.get('host') || 'localhost:3000';
+  const baseAppUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || `${reqProto}://${reqHost}`;
+  
+  const token = otpData?.code || '123456';
+  const actionUrl = `${baseAppUrl}/api/auth/verify-link?email=${encodeURIComponent(email)}&token=${token}`;
+  const mailStatus = getMailConfigStatus();
+
+  res.json({
+    email,
+    actionUrl,
+    code: otpData?.code || null,
+    isRealDelivery: mailStatus.isConfigured,
+    provider: mailStatus.activeProvider,
+    expiresAt: otpData?.expiresAt || null
   });
 });
 
@@ -1241,14 +1281,14 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
     expiresAt
   });
 
-  const reqProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || req.protocol || 'https';
+  const reqProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || (req.get('host')?.includes('run.app') ? 'https' : req.protocol) || 'https';
   const reqHost = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim() || req.get('host') || 'localhost:3000';
   const baseAppUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || `${reqProto}://${reqHost}`;
   const actionUrl = cleanType === 'password_reset'
     ? `${baseAppUrl}/?mode=reset-password&email=${encodeURIComponent(cleanEmail)}&code=${code}`
     : `${baseAppUrl}/api/auth/verify-link?email=${encodeURIComponent(cleanEmail)}&token=${code}`;
 
-  // Dispatch real email via SMTP / Resend / Brevo / SendGrid / Ethereal
+  // Dispatch email via SMTP / Resend / Brevo / SendGrid / Ethereal
   const mailResult = await sendOtpEmail({
     email: cleanEmail,
     code,
@@ -1264,7 +1304,8 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
       : `Correo para cambiar contraseña enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`),
     provider: mailResult.provider,
     isRealDelivery: mailResult.isRealDelivery,
-    code: undefined,
+    code,
+    actionUrl,
     previewUrl: mailResult.previewUrl || undefined,
     expiresInSeconds: 900
   });

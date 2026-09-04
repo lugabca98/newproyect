@@ -108,7 +108,17 @@ class ApiService {
     return { user: { ...user, role: 'user', emailVerified: true }, token: user.id, isAdmin: false };
   }
 
-  async register(userData: Partial<User>, password?: string): Promise<{ user: User; token: string; isAdmin: boolean; message?: string }> {
+  async register(userData: Partial<User>, password?: string): Promise<{ 
+    user: User; 
+    token: string; 
+    isAdmin: boolean; 
+    message?: string;
+    actionUrl?: string;
+    code?: string;
+    isRealDelivery?: boolean;
+    provider?: string;
+    previewUrl?: string;
+  }> {
     if (!password) {
       throw new Error('La contraseña es requerida para el registro.');
     }
@@ -121,15 +131,23 @@ class ApiService {
     this.setToken(null);
 
     // Ensure confirmation email with verification link is sent
-    await this.sendVerificationEmail(cleanEmail, newUser.name).catch(err => {
+    let mailDetails: any = null;
+    try {
+      mailDetails = await this.sendVerificationEmail(cleanEmail, newUser.name);
+    } catch (err) {
       console.warn('[Register] Verification email trigger note:', err);
-    });
+    }
 
     return { 
       user: sanitizedUser, 
       token: '', 
       isAdmin: isOwner,
-      message: `Cuenta creada. Hemos enviado un enlace de confirmación a ${cleanEmail}.` 
+      message: mailDetails?.message || `Cuenta creada. Hemos generado el enlace de confirmación para ${cleanEmail}.`,
+      actionUrl: mailDetails?.actionUrl,
+      code: mailDetails?.code,
+      isRealDelivery: mailDetails?.isRealDelivery,
+      provider: mailDetails?.provider,
+      previewUrl: mailDetails?.previewUrl
     };
   }
 
@@ -208,7 +226,15 @@ class ApiService {
     this.setToken(null);
   }
 
-  async sendVerificationEmail(email?: string, name?: string): Promise<{ success: boolean; code?: string; message: string; previewUrl?: string; isRealDelivery?: boolean; provider?: string }> {
+  async sendVerificationEmail(email?: string, name?: string): Promise<{ 
+    success: boolean; 
+    code?: string; 
+    message: string; 
+    previewUrl?: string; 
+    actionUrl?: string;
+    isRealDelivery?: boolean; 
+    provider?: string 
+  }> {
     const targetEmail = (email || '').trim().toLowerCase();
     
     // 1. Try server mailer endpoint first (delivers actual email to user's inbox)
@@ -224,8 +250,9 @@ class ApiService {
         firebaseService.sendVerificationEmail(targetEmail).catch(() => {});
         return {
           success: true,
-          message: data.message || `Hemos enviado un código de 6 dígitos a ${targetEmail}.`,
+          message: data.message || `Hemos enviado un enlace de confirmación a ${targetEmail}.`,
           code: data.code,
+          actionUrl: data.actionUrl,
           isRealDelivery: data.isRealDelivery,
           provider: data.provider,
           previewUrl: data.previewUrl
@@ -241,6 +268,54 @@ class ApiService {
       success: fbRes.success,
       message: fbRes.message,
       isRealDelivery: false
+    };
+  }
+
+  async getVerificationInfo(email: string): Promise<{
+    email: string;
+    actionUrl?: string;
+    code?: string;
+    isRealDelivery?: boolean;
+    provider?: string;
+  } | null> {
+    try {
+      const response = await fetch(`/api/auth/verification-info?email=${encodeURIComponent(email.trim().toLowerCase())}`);
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (err) {
+      console.warn('[Api] getVerificationInfo error:', err);
+    }
+    return null;
+  }
+
+  async markEmailVerified(email: string): Promise<{ success: boolean; message: string; user?: User }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    try {
+      const response = await fetch('/api/auth/mark-email-verified', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        // Also activate in Firebase local/store
+        const activated = await firebaseService.activatePendingUser(cleanEmail);
+        return {
+          success: true,
+          message: data.message || 'Correo verificado y cuenta activada.',
+          user: activated || (data.user as User) || undefined
+        };
+      }
+    } catch (err) {
+      console.warn('[Api] markEmailVerified server error, falling back to client:', err);
+    }
+
+    const activated = await firebaseService.activatePendingUser(cleanEmail);
+    return {
+      success: true,
+      message: 'Cuenta activada exitosamente.',
+      user: activated || undefined
     };
   }
 

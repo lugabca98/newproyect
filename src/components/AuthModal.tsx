@@ -23,7 +23,10 @@ import {
   ShieldCheck,
   HelpCircle,
   Copy,
-  CheckCheck
+  CheckCheck,
+  ExternalLink,
+  AlertCircle,
+  Link as LinkIcon
 } from 'lucide-react';
 import { User, Gender } from '../types';
 import { api } from '../api';
@@ -182,6 +185,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [isRealDeliveryReg, setIsRealDeliveryReg] = useState(false);
   const [copiedRegOtp, setCopiedRegOtp] = useState(false);
   const [otpVerifySuccess, setOtpVerifySuccess] = useState(false);
+  const [pendingActionUrl, setPendingActionUrl] = useState('');
+  const [pendingPreviewUrl, setPendingPreviewUrl] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -218,6 +224,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setGeneratedRegOtp('');
     setCopiedRegOtp(false);
     setOtpVerifySuccess(false);
+    setPendingActionUrl('');
+    setPendingPreviewUrl('');
+    setCopiedLink(false);
     setErrorMsg('');
     setResendVerificationNotice('');
   };
@@ -409,9 +418,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setRegisteredUser(res.user);
       setRegisteredIsAdmin(res.isAdmin);
       setRegOtpInput('');
+      if (res.code) setGeneratedRegOtp(res.code);
+      if (res.actionUrl) setPendingActionUrl(res.actionUrl);
+      if (res.previewUrl) setPendingPreviewUrl(res.previewUrl);
+      if (res.isRealDelivery !== undefined) setIsRealDeliveryReg(Boolean(res.isRealDelivery));
       localStorage.setItem('pending_verification_email', regEmail.trim().toLowerCase());
 
-      setResendVerificationNotice(`Te enviamos un correo de confirmación a ${regEmail.trim()}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
+      setResendVerificationNotice(res.message || `Te enviamos un correo de confirmación a ${regEmail.trim()}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
 
       // Prompt email confirmation step immediately
       setMode('verify-email-pending');
@@ -429,6 +442,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
     if (!cleanEmail) return;
+
+    // Load active verification details (actionUrl, code, sandbox status)
+    api.getVerificationInfo(cleanEmail).then(info => {
+      if (info) {
+        if (info.actionUrl) setPendingActionUrl(info.actionUrl);
+        if (info.code) setGeneratedRegOtp(info.code);
+        if (info.isRealDelivery !== undefined) setIsRealDeliveryReg(Boolean(info.isRealDelivery));
+      }
+    }).catch(() => {});
 
     let isMounted = true;
     const pollStatus = async () => {
@@ -550,6 +572,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const emailTarget = (regEmail || registeredUser?.email || '').trim().toLowerCase();
       const res = await api.sendVerificationEmail(emailTarget, registeredUser?.name);
+      if (res.code) setGeneratedRegOtp(res.code);
+      if (res.actionUrl) setPendingActionUrl(res.actionUrl);
+      if (res.previewUrl) setPendingPreviewUrl(res.previewUrl);
+      if (res.isRealDelivery !== undefined) setIsRealDeliveryReg(Boolean(res.isRealDelivery));
       setResendVerificationNotice(res.message || `Te enviamos un nuevo enlace de confirmación a ${emailTarget}. Revisá tu bandeja de entrada y también la carpeta de spam.`);
       setResendVerificationCooldown(60);
     } catch (err: any) {
@@ -557,6 +583,41 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleInstantActivate = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    setResendVerificationNotice('');
+    const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
+    try {
+      const res = await api.markEmailVerified(cleanEmail);
+      if (res.success && res.user) {
+        setOtpVerifySuccess(true);
+        setResendVerificationNotice('¡Correo verificado y cuenta activada con éxito!');
+        localStorage.removeItem('pending_verification_email');
+        setTimeout(() => {
+          const verifiedUser: User = { ...res.user!, emailVerified: true };
+          api.setToken(verifiedUser.id, verifiedUser.id, verifiedUser.email, registeredIsAdmin ? 'admin' : 'user');
+          onSuccess(verifiedUser, registeredIsAdmin);
+          resetAllFormInputs();
+          onClose();
+        }, 700);
+      } else {
+        setErrorMsg(res.message || 'No se pudo activar la cuenta directamente.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al activar la cuenta.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (!pendingActionUrl) return;
+    navigator.clipboard.writeText(pendingActionUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   const handleCompleteVerificationFlow = () => {
@@ -710,18 +771,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
               
               <h3 className="text-base sm:text-lg font-bold text-white">
-                Verificá tu Correo Electrónico
+                Confirmación de Cuenta Requerida
               </h3>
               
-              <div className="p-4 bg-rose-950/40 border border-rose-500/30 rounded-2xl text-xs text-rose-200 leading-relaxed max-w-md mx-auto space-y-2.5">
+              <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl text-xs text-slate-200 leading-relaxed max-w-md mx-auto space-y-2">
                 <p>
-                  Te enviamos un enlace de confirmación a <strong className="text-white font-mono">{regEmail || registeredUser?.email}</strong>.
+                  Cuenta registrada para <strong className="text-rose-300 font-mono">{regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email')}</strong>.
                 </p>
-                <p className="text-[12px] text-slate-200">
-                  Para activar tu cuenta, hacé clic en el enlace o botón recibido en tu correo electrónico.
-                </p>
-                <p className="text-[11px] text-slate-400">
-                  ¿No lo ves? Revisá tu bandeja de entrada y también tu carpeta de <strong>spam o correo no deseado</strong>.
+                <p className="text-[12px] text-slate-300">
+                  Para poder ingresar a tu perfil, la cuenta debe ser confirmada mediante su enlace de verificación.
                 </p>
               </div>
 
@@ -739,29 +797,130 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
             </div>
 
-            {/* Primary Action: Check if user clicked email verification link */}
-            <div className="space-y-3 pt-2">
+            {/* DIRECT ACTIVATION & ENLACE DE CONFIRMACIÓN */}
+            <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl space-y-3.5 text-left">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-emerald-300">
+                    Activación Directa de Cuenta
+                  </h4>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    {!isRealDeliveryReg
+                      ? 'El servidor está en modo desarrollo (sin servidor SMTP externo configurado en el entorno), por lo que el mensaje no llegará a tu bandeja de Gmail externa. Podés activar tu cuenta directamente aquí abajo:'
+                      : 'Podés confirmar tu cuenta al instante haciendo clic en el botón de abajo o usando el enlace generado:'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Botón principal de activación inmediata */}
+              <button
+                id="btn-instant-activate"
+                type="button"
+                onClick={handleInstantActivate}
+                disabled={loading || otpVerifySuccess}
+                className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-900/40 flex items-center justify-center gap-2 transition hover:scale-[1.01] cursor-pointer disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Activando cuenta...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Confirmar Correo y Entrar Ahora</span>
+                  </>
+                )}
+              </button>
+
+              {/* Enlace y Sandbox Actions */}
+              <div className="flex flex-wrap gap-2 pt-1">
+                {pendingActionUrl && (
+                  <a
+                    href={pendingActionUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 min-w-[140px] py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition text-center cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Abrir Enlace</span>
+                  </a>
+                )}
+
+                {pendingActionUrl && (
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {copiedLink ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">¡Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copiar Enlace</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {pendingPreviewUrl && (
+                  <a
+                    href={pendingPreviewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition text-center cursor-pointer"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Ver en Ethereal Sandbox</span>
+                  </a>
+                )}
+              </div>
+
+              {generatedRegOtp && (
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Código de verificación: <strong className="text-emerald-400 font-mono tracking-wider">{generatedRegOtp}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => handleVerifyRegisterOtp(undefined, undefined, generatedRegOtp)}
+                    disabled={loading || otpVerifySuccess}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 cursor-pointer"
+                  >
+                    Validar con este código
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Standard actions */}
+            <div className="space-y-2.5 pt-1">
               <button
                 id="btn-check-email-verification"
                 type="button"
                 onClick={handleCheckEmailVerification}
                 disabled={loading || otpVerifySuccess}
-                className="w-full py-3.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-500/30 transition hover:scale-[1.01] flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 border border-slate-700 text-slate-200 rounded-xl font-semibold text-xs transition flex items-center justify-center gap-2 cursor-pointer"
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Comprobando verificación...</span>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Comprobando estado...</span>
                   </>
                 ) : (
                   <>
-                    <Check className="w-5 h-5" />
-                    <span>Ya confirmé el correo</span>
+                    <Check className="w-4 h-4 text-rose-400" />
+                    <span>Ya abrí el enlace en mi correo</span>
                   </>
                 )}
               </button>
 
-              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   id="btn-resend-verification"
                   type="button"

@@ -26,7 +26,7 @@
       "status": "active",
       "role": "admin",
       "createdAt": "2026-01-01T00:00:00.000Z",
-      "lastActive": "2026-09-02T21:54:14.657Z",
+      "lastActive": "2026-09-04T20:46:06.672Z",
       "likesCount": 142,
       "matchesCount": 28,
       "preferences": {
@@ -83,5 +83,5 @@
       "details": "Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero."
     }
   ],
-  "updatedAt": "2026-09-04T20:35:42.508Z"
+  "updatedAt": "2026-09-04T20:46:06.672Z"
 }
