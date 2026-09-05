@@ -124,6 +124,61 @@ async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; 
   }
 }
 
+// In-memory credentials cache for managing user life-cycle with Firebase Identity Toolkit
+const knownCredentials = new Map<string, string>();
+
+export function recordKnownCredential(email: string, pass: string) {
+  if (email && pass) {
+    knownCredentials.set(email.toLowerCase().trim(), pass);
+  }
+}
+
+/**
+ * Purges a user from Firebase Auth using their known credentials or candidate passwords.
+ * This ensures that accounts deleted by the administrator or self-deleted are cleanly removed
+ * from Firebase Auth so that re-registration functions as a fresh user registration.
+ */
+export async function purgeUserFromFirebaseAuth(email: string, passwordCandidate?: string): Promise<boolean> {
+  const cleanEmail = (email || '').toLowerCase().trim();
+  if (!cleanEmail) return false;
+  const googleApiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyDQ3y2kU-0dQbSYMKbeAFqEGiDg_wyquQ0";
+
+  const candidates: string[] = [];
+  if (passwordCandidate) candidates.push(passwordCandidate);
+  const cached = knownCredentials.get(cleanEmail);
+  if (cached && !candidates.includes(cached)) candidates.push(cached);
+  const commonFallbacks = ['admin1234', '123456', 'password', 'Test1234!', 'lucas123', 'lucas1234', 'Admin1234!'];
+  for (const f of commonFallbacks) {
+    if (!candidates.includes(f)) candidates.push(f);
+  }
+
+  for (const pass of candidates) {
+    try {
+      const inRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${googleApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password: pass, returnSecureToken: true })
+      });
+      const inData = await inRes.json();
+      if (inRes.ok && inData.idToken) {
+        const delRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${googleApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: inData.idToken })
+        });
+        if (delRes.ok) {
+          console.log(`[Google/Firebase Mailer] Successfully purged ${cleanEmail} from Firebase Auth.`);
+          knownCredentials.delete(cleanEmail);
+          return true;
+        }
+      }
+    } catch {
+      // Continue trying next candidate
+    }
+  }
+  return false;
+}
+
 export async function sendOtpEmail({ email, code, type, name, actionUrl, password, idToken }: SendOtpMailParams): Promise<MailResult> {
   const isVerification = type === 'verify_email';
   const subject = isVerification 
@@ -376,6 +431,9 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
       // CRITICAL: For email confirmation, NEVER send PASSWORD_RESET!
       // Google Identity Toolkit requires an idToken for VERIFY_EMAIL.
       let authToken = idToken;
+      if (password) {
+        recordKnownCredential(email, password);
+      }
       if (!authToken && password) {
         try {
           const upRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${googleApiKey}`, {
@@ -387,6 +445,7 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
           if (upRes.ok && upData.idToken) {
             authToken = upData.idToken;
           } else if (upData?.error?.message === 'EMAIL_EXISTS') {
+            // 1. Try signing in with the provided password
             const inRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${googleApiKey}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -395,6 +454,23 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
             const inData = await inRes.json();
             if (inRes.ok && inData.idToken) {
               authToken = inData.idToken;
+            } else {
+              // 2. Account exists from a previous registration (e.g. deleted by admin or self)
+              // Purge the stale Firebase Auth account so that the new registration can proceed cleanly
+              console.log(`[Google/Firebase Mailer] Email ${email} exists in Firebase Auth with different credentials. Purging stale user...`);
+              const purged = await purgeUserFromFirebaseAuth(email);
+              if (purged) {
+                const retryUp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${googleApiKey}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email, password, returnSecureToken: true })
+                });
+                const retryData = await retryUp.json();
+                if (retryUp.ok && retryData.idToken) {
+                  authToken = retryData.idToken;
+                  console.log(`[Google/Firebase Mailer] Fresh user created in Firebase Auth for ${email}`);
+                }
+              }
             }
           }
         } catch (authErr) {

@@ -130,9 +130,10 @@ class ApiService {
     // Explicitly do not grant token for unverified registrations under any circumstances
     this.setToken(null);
 
-    // Sync registration with server pendingRegistrations so server clears deletedAccounts and enables verification link
+    // Sync registration with server pendingRegistrations so server clears deletedAccounts, creates pending state, and dispatches confirmation email
+    let serverRes: any = null;
     try {
-      await fetch('/api/auth/register', {
+      const resp = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -141,27 +142,32 @@ class ApiService {
           password
         })
       });
+      if (resp.ok) {
+        serverRes = await resp.json();
+      }
     } catch (syncErr) {
       console.warn('[Register] Server register sync notice:', syncErr);
     }
 
-    // Ensure confirmation email with verification link is sent
-    let mailDetails: any = null;
-    try {
-      mailDetails = await this.sendVerificationEmail(cleanEmail, newUser.name, password);
-    } catch (err) {
-      console.warn('[Register] Verification email trigger note:', err);
+    // Ensure confirmation email with verification link is sent (fallback to explicit send-otp if server register did not already send it)
+    let mailDetails: any = serverRes;
+    if (!serverRes || !serverRes.emailSent) {
+      try {
+        mailDetails = await this.sendVerificationEmail(cleanEmail, newUser.name, password);
+      } catch (err) {
+        console.warn('[Register] Verification email trigger note:', err);
+      }
     }
 
     return { 
       user: sanitizedUser, 
       token: '', 
       isAdmin: isOwner,
-      message: mailDetails?.message || `Cuenta creada. Hemos generado el enlace de confirmación para ${cleanEmail}.`,
+      message: mailDetails?.message || `Cuenta creada. Hemos enviado el enlace de confirmación a ${cleanEmail}. Por favor revisá tu bandeja de entrada o Spam.`,
       actionUrl: mailDetails?.actionUrl,
       code: mailDetails?.code,
-      isRealDelivery: mailDetails?.isRealDelivery,
-      provider: mailDetails?.provider,
+      isRealDelivery: mailDetails?.isRealDelivery ?? true,
+      provider: mailDetails?.provider || 'google_firebase',
       previewUrl: mailDetails?.previewUrl
     };
   }

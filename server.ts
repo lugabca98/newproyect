@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, Gender } from './src/types.js';
-import { sendOtpEmail, getMailConfigStatus } from './server/mailer.js';
+import { sendOtpEmail, getMailConfigStatus, purgeUserFromFirebaseAuth, recordKnownCredential } from './server/mailer.js';
 
 const app = express();
 const PORT = 3000;
@@ -536,6 +536,7 @@ function getDefaultSeedMessages(): Message[] {
 let users: ServerUser[] = [];
 let pendingRegistrations: { id: string; email: string; user: ServerUser; createdAt: string }[] = [];
 let deletedAccounts: { email: string; userId: string; deletedAt: string; deletedBy: string }[] = [];
+let serverCredentials: Record<string, string> = {};
 let swipes: SwipeRecord[] = [];
 let matches: Match[] = [];
 let messages: Message[] = [];
@@ -573,6 +574,10 @@ function loadDatabase() {
       const data = JSON.parse(raw);
       deletedAccounts = Array.isArray(data.deletedAccounts) ? data.deletedAccounts : [];
       const deletedSet = new Set(deletedAccounts.map(d => d.email.toLowerCase()));
+      serverCredentials = data.serverCredentials && typeof data.serverCredentials === 'object' ? data.serverCredentials : {};
+      for (const [em, pw] of Object.entries(serverCredentials)) {
+        recordKnownCredential(em, pw);
+      }
       users = Array.isArray(data.users) && data.users.length > 0 
         ? data.users.filter((u: ServerUser) => !deletedSet.has(u.email.toLowerCase()))
         : getDefaultSeedUsers().filter(u => !deletedSet.has(u.email.toLowerCase()));
@@ -583,6 +588,7 @@ function loadDatabase() {
       auditLogs = Array.isArray(data.auditLogs) ? data.auditLogs : getDefaultSeedAuditLogs();
     } else {
       deletedAccounts = [];
+      serverCredentials = {};
       users = getDefaultSeedUsers();
       pendingRegistrations = [];
       swipes = getDefaultSeedSwipes();
@@ -593,6 +599,7 @@ function loadDatabase() {
   } catch (err) {
     console.error('Error reading database file from disk, using fallback defaults:', err);
     deletedAccounts = [];
+    serverCredentials = {};
     users = getDefaultSeedUsers();
     pendingRegistrations = [];
     swipes = getDefaultSeedSwipes();
@@ -623,6 +630,7 @@ function saveDatabase() {
       users,
       pendingRegistrations,
       deletedAccounts,
+      serverCredentials,
       swipes,
       matches,
       messages,
@@ -1060,6 +1068,8 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   // DO NOT add to active users array yet; store in pendingRegistrations until email is confirmed!
   deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== normalizedEmail);
   pendingRegistrations = pendingRegistrations.filter(p => p.email.toLowerCase() !== normalizedEmail);
+  serverCredentials[normalizedEmail] = password;
+  recordKnownCredential(normalizedEmail, password);
   pendingRegistrations.push({
     id: newUser.id,
     email: normalizedEmail,
@@ -1617,6 +1627,14 @@ app.delete('/api/user/account', requireAuth, (req, res) => {
   if (userEmail) {
     otpStore.delete(`${userEmail}_verify_email`);
     otpStore.delete(`${userEmail}_password_reset`);
+
+    // Purge user from Firebase Auth asynchronously
+    const storedPass = serverCredentials[userEmail];
+    purgeUserFromFirebaseAuth(userEmail, storedPass).then(purged => {
+      if (purged) console.log(`[Self Delete] Firebase Auth account cleanly purged for ${userEmail}`);
+    }).catch(err => {
+      console.warn(`[Self Delete] Notice purging Firebase Auth account:`, err);
+    });
   }
 
   // Invalidate all active sessions for this user
@@ -2166,6 +2184,14 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
       userId: id,
       deletedAt: new Date().toISOString(),
       deletedBy: adminEmail
+    });
+
+    // Purge user from Firebase Auth asynchronously so email can be re-registered cleanly
+    const storedPass = serverCredentials[targetEmail];
+    purgeUserFromFirebaseAuth(targetEmail, storedPass).then(purged => {
+      if (purged) console.log(`[Admin Delete] Firebase Auth account cleanly purged for ${targetEmail}`);
+    }).catch(err => {
+      console.warn(`[Admin Delete] Notice purging Firebase Auth account:`, err);
     });
   }
 

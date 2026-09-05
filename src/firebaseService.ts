@@ -2440,6 +2440,20 @@ class FirebaseService {
     // 4. Delete Firebase Auth User record (releases email in Firebase Auth!)
     if (auth.currentUser) {
       try {
+        const idToken = await auth.currentUser.getIdToken(true);
+        if (idToken) {
+          const apiKey = (firebaseConfig as any).apiKey || "AIzaSyDQ3y2kU-0dQbSYMKbeAFqEGiDg_wyquQ0";
+          await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken })
+          });
+          console.log('[Firebase Auth] User completely purged from Firebase Auth via Identity Toolkit.');
+        }
+      } catch (tokenDelErr) {
+        console.warn('[Firebase Auth] Token delete notice:', tokenDelErr);
+      }
+      try {
         await deleteUser(auth.currentUser);
       } catch (authDelErr: any) {
         console.warn('[Firebase Auth] deleteUser notice:', authDelErr);

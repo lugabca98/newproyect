@@ -42,7 +42,92 @@
       }
     }
   ],
-  "pendingRegistrations": [],
+  "pendingRegistrations": [
+    {
+      "id": "user-1788632649505-2f581884",
+      "email": "test_verify_1788632649242@example.com",
+      "user": {
+        "id": "user-1788632649505-2f581884",
+        "name": "Test User Re-registered",
+        "email": "test_verify_1788632649242@example.com",
+        "passwordHash": "f212e829b9db2416e8b3f4a4bd5152a094e1e953bd18e8e0b70e498c80fe070e4394fe94e58e64040b6dda635bc757da9ac0a1d1d3a47d948fa66a96cf348395",
+        "passwordSalt": "34b3ab37ec3558fa131ea6478078c8e0",
+        "age": 25,
+        "gender": "female",
+        "bio": "¡Hola! Acabo de unirme a Vulnerable.",
+        "photos": [
+          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+        ],
+        "location": "Buenos Aires, Argentina",
+        "distanceKm": 12,
+        "occupation": "Neurodivergente",
+        "interests": [
+          "Música",
+          "Café",
+          "Viajes"
+        ],
+        "verified": false,
+        "emailVerified": false,
+        "status": "active",
+        "role": "user",
+        "createdAt": "2026-09-05T18:24:09.505Z",
+        "lastActive": "2026-09-05T18:24:09.505Z",
+        "likesCount": 0,
+        "matchesCount": 0,
+        "preferences": {
+          "minAge": 18,
+          "maxAge": 45,
+          "interestedIn": [
+            "male"
+          ],
+          "maxDistanceKm": 50
+        }
+      },
+      "createdAt": "2026-09-05T18:24:09.505Z"
+    },
+    {
+      "id": "user-1788632654385-4933211a",
+      "email": "test_selfdel_1788632653693@example.com",
+      "user": {
+        "id": "user-1788632654385-4933211a",
+        "name": "Reborn User",
+        "email": "test_selfdel_1788632653693@example.com",
+        "passwordHash": "2b766a92a9c84c05c3ad46407c0732e65bad2f1605b41ac48a3cb51f45e3768c1709ab3a49218db89719ec0443be6ba2915bdda6bef477ac273bf3530836e9b9",
+        "passwordSalt": "fc48a4e89a15c46a2d72060d4041ed14",
+        "age": 26,
+        "gender": "male",
+        "bio": "¡Hola! Acabo de unirme a Vulnerable.",
+        "photos": [
+          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80"
+        ],
+        "location": "Buenos Aires, Argentina",
+        "distanceKm": 2,
+        "occupation": "Neurodivergente",
+        "interests": [
+          "Música",
+          "Café",
+          "Viajes"
+        ],
+        "verified": false,
+        "emailVerified": false,
+        "status": "active",
+        "role": "user",
+        "createdAt": "2026-09-05T18:24:14.385Z",
+        "lastActive": "2026-09-05T18:24:14.385Z",
+        "likesCount": 0,
+        "matchesCount": 0,
+        "preferences": {
+          "minAge": 18,
+          "maxAge": 45,
+          "interestedIn": [
+            "female"
+          ],
+          "maxDistanceKm": 50
+        }
+      },
+      "createdAt": "2026-09-05T18:24:14.385Z"
+    }
+  ],
   "deletedAccounts": [
     {
       "email": "testdel@example.com",
@@ -57,10 +142,23 @@
       "deletedBy": "lugabca98@gmail.com"
     }
   ],
+  "serverCredentials": {
+    "test_verify_1788632649242@example.com": "newpassword456",
+    "test_selfdel_1788632653693@example.com": "brandnewpassword789"
+  },
   "swipes": [],
   "matches": [],
   "messages": [],
   "auditLogs": [
+    {
+      "id": "log-1788632649440",
+      "adminEmail": "lugabca98@gmail.com",
+      "action": "DELETE_USER",
+      "targetUserId": "user-1788632649411-e1f5789e",
+      "targetUserName": "Test User",
+      "timestamp": "2026-09-05T18:24:09.440Z",
+      "details": "Eliminación definitiva de cuenta y registros asociados (test_verify_1788632649242@example.com)."
+    },
     {
       "id": "log-1788630983408",
       "adminEmail": "lugabca98@gmail.com",
@@ -98,5 +196,5 @@
       "details": "Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero."
     }
   ],
-  "updatedAt": "2026-09-05T17:56:23.408Z"
+  "updatedAt": "2026-09-05T18:24:14.385Z"
 }
