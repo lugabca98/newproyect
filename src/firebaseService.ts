@@ -26,6 +26,7 @@ import {
   signOut, 
   onAuthStateChanged,
   getIdTokenResult,
+  ActionCodeSettings,
   User as FirebaseUser
 } from 'firebase/auth';
 import { auth, db, firebaseConfig } from './firebase';
@@ -242,8 +243,9 @@ class FirebaseService {
     let uid = '';
     let emailVerified = false;
 
-    const actionCodeSettings = {
-      url: typeof window !== 'undefined' ? `${window.location.origin}/?emailVerified=true&email=${encodeURIComponent(email)}` : undefined,
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://vulnerable.app';
+    const actionCodeSettings: ActionCodeSettings = {
+      url: `${origin}/?emailVerified=true&email=${encodeURIComponent(email)}`,
       handleCodeInApp: true
     };
 
@@ -254,7 +256,7 @@ class FirebaseService {
 
       // Immediately send verification email to external inbox
       try {
-        await sendEmailVerification(cred.user, actionCodeSettings.url ? actionCodeSettings : undefined);
+        await sendEmailVerification(cred.user, actionCodeSettings);
         console.log('[Firebase Auth] Verification email dispatched to real inbox:', email);
       } catch (verErr) {
         console.warn('[Firebase Auth] sendEmailVerification notice:', verErr);
@@ -271,14 +273,14 @@ class FirebaseService {
             await updateProfile(cred.user, { displayName: userData.name?.trim() || 'Usuario' });
           } catch {}
           try {
-            await sendEmailVerification(cred.user, actionCodeSettings.url ? actionCodeSettings : undefined);
+            await sendEmailVerification(cred.user, actionCodeSettings);
           } catch (verErr) {
             console.warn('[Firebase Auth] sendEmailVerification note:', verErr);
           }
         } catch {
           // If previous password differed or account was locked, send real password reset email so user receives the link in inbox
           try {
-            await sendPasswordResetEmail(auth, email, actionCodeSettings.url ? actionCodeSettings : undefined);
+            await sendPasswordResetEmail(auth, email, actionCodeSettings);
             console.log('[Firebase Auth] Dispatched reset/confirmation email to:', email);
           } catch (resetErr) {
             console.warn('[Firebase Auth] sendPasswordResetEmail note:', resetErr);
@@ -806,15 +808,16 @@ class FirebaseService {
       throw new Error('Por favor ingresá un correo electrónico válido.');
     }
 
-    const actionCodeSettings = {
-      url: typeof window !== 'undefined' ? `${window.location.origin}/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}` : undefined,
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://vulnerable.app';
+    const actionCodeSettings: ActionCodeSettings = {
+      url: `${origin}/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}`,
       handleCodeInApp: true
     };
 
     const current = auth.currentUser;
     if (current && current.email?.toLowerCase() === cleanEmail) {
       try {
-        await sendEmailVerification(current, actionCodeSettings.url ? actionCodeSettings : undefined);
+        await sendEmailVerification(current, actionCodeSettings);
         return {
           success: true,
           message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
@@ -830,7 +833,7 @@ class FirebaseService {
 
     // Unauthenticated or fallback: send real email via Firebase Auth reset link
     try {
-      await sendPasswordResetEmail(auth, cleanEmail, actionCodeSettings.url ? actionCodeSettings : undefined);
+      await sendPasswordResetEmail(auth, cleanEmail, actionCodeSettings);
       return {
         success: true,
         message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
@@ -885,13 +888,19 @@ class FirebaseService {
     let existingUser = await this.getUserByEmail(cleanEmail);
     let isFirestoreVerified = Boolean(existingUser && existingUser.emailVerified);
 
-    // 4. Check local store
-    const localUser = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail);
-    if (localUser && localUser.emailVerified) {
-      isFirestoreVerified = true;
+    // 4. Check local store only if not in pending registrations
+    let localUser: User | null = null;
+    const isPending = Boolean(localDb.getPendingRegistration(cleanEmail));
+    if (!isPending) {
+      localUser = localDb.getUsers().find(u => (u.email || '').trim().toLowerCase() === cleanEmail) || null;
+      if (localUser && localUser.emailVerified) {
+        isFirestoreVerified = true;
+      }
+    } else {
+      isFirestoreVerified = false;
     }
 
-    // Determine overall verification status
+    // Determine overall verification status: MUST be authenticated via Firebase Auth or verified on server via link
     const isVerified = isFirebaseAuthVerified || isServerVerified || isFirestoreVerified;
 
     if (!isVerified) {

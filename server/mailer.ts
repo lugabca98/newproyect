@@ -26,6 +26,7 @@ export interface MailConfigStatus {
     sendgrid: boolean;
     gmail: boolean;
     smtp: boolean;
+    google_firebase?: boolean;
   };
 }
 

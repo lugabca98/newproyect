@@ -1102,13 +1102,9 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     token: '', 
     isAdmin: false,
     emailSent: true,
-    actionUrl: registerVerifyUrl,
-    code: initialOtp,
-    isRealDelivery: mailStatus.isConfigured,
+    isRealDelivery: true,
     provider: mailStatus.activeProvider,
-    message: mailStatus.isConfigured
-      ? 'Hemos enviado un enlace de verificación a tu correo electrónico. Revisa tu bandeja de entrada y Spam.'
-      : 'Enlace de verificación generado. Puedes activarlo directamente o hacer clic en el enlace de confirmación.'
+    message: 'Hemos enviado un enlace de confirmación a tu correo electrónico. Es obligatorio abrir dicho enlace para activar tu cuenta antes de ingresar.'
   });
 });
 
@@ -1132,7 +1128,15 @@ app.get('/api/auth/verify-link', (req, res) => {
   const key = `${email}_verify_email`;
   const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
 
+  // If pending registration, STRICTLY validate token from email link!
   if (pendingIdx !== -1) {
+    const record = otpStore.get(key);
+    if (!token || !record || record.code !== token || Date.now() > record.expiresAt) {
+      console.warn(`[Email Verified Link] Invalid or expired verification token for ${email}`);
+      res.redirect(`/?verifyError=invalid_or_expired_link&email=${encodeURIComponent(email)}`);
+      return;
+    }
+
     const pending = pendingRegistrations[pendingIdx];
     pending.user.emailVerified = true;
     pending.user.verified = false;
@@ -1154,22 +1158,33 @@ app.get('/api/auth/verify-link', (req, res) => {
     return;
   }
 
-  // If already active in users, ensure emailVerified is true and redirect smoothly
+  // If already active in users, verify if token matches (or if user is already verified)
   const existingUser = users.find(u => u.email.toLowerCase() === email);
   if (existingUser) {
-    existingUser.emailVerified = true;
-    existingUser.lastActive = new Date().toISOString();
-    saveDatabase();
+    if (!existingUser.emailVerified) {
+      const record = otpStore.get(key);
+      if (!token || !record || record.code !== token || Date.now() > record.expiresAt) {
+        console.warn(`[Email Verified Link] Invalid or expired verification token for unverified existing user ${email}`);
+        res.redirect(`/?verifyError=invalid_or_expired_link&email=${encodeURIComponent(email)}`);
+        return;
+      }
+      existingUser.emailVerified = true;
+      existingUser.lastActive = new Date().toISOString();
+      saveDatabase();
+      otpStore.delete(key);
+    }
     res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
     return;
   }
 
-  res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
+  res.redirect(`/?verifyError=user_not_found&email=${encodeURIComponent(email)}`);
 });
 
-// Explicit confirmation endpoint called by client when email verification succeeds
+// Explicit confirmation endpoint: CANNOT activate unverified users without valid link token
 app.post('/api/auth/mark-email-verified', (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
+  const token = String(req.body?.token || req.body?.code || '').trim();
+
   if (!email || !isValidEmail(email)) {
     res.status(400).json({ error: 'Email válido requerido.' });
     return;
@@ -1178,14 +1193,22 @@ app.post('/api/auth/mark-email-verified', (req, res) => {
   // Clean from deletedAccounts
   deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
 
-  let activatedUser: ServerUser | null = null;
   const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
   if (pendingIdx !== -1) {
+    const key = `${email}_verify_email`;
+    const record = otpStore.get(key);
+    // STRICT: Must provide matching token to activate pending user
+    if (!token || !record || record.code !== token || Date.now() > record.expiresAt) {
+      res.status(403).json({
+        error: 'Para activar la cuenta es obligatorio abrir el enlace de confirmación enviado a tu correo electrónico.'
+      });
+      return;
+    }
+
     const pending = pendingRegistrations[pendingIdx];
     pending.user.emailVerified = true;
     pending.user.verified = false;
     pending.user.lastActive = new Date().toISOString();
-    activatedUser = pending.user;
 
     const existingIdx = users.findIndex(u => u.email.toLowerCase() === email);
     if (existingIdx !== -1) {
@@ -1196,25 +1219,45 @@ app.post('/api/auth/mark-email-verified', (req, res) => {
     }
     pendingRegistrations.splice(pendingIdx, 1);
     saveDatabase();
+    otpStore.delete(key);
+
+    res.json({
+      success: true,
+      message: 'Correo verificado y cuenta activada con éxito.',
+      user: toPrivateUser(pending.user)
+    });
+    return;
   }
 
   const existingUser = users.find(u => u.email.toLowerCase() === email);
   if (existingUser) {
-    existingUser.emailVerified = true;
-    existingUser.lastActive = new Date().toISOString();
-    saveDatabase();
-    if (!activatedUser) activatedUser = existingUser;
+    if (!existingUser.emailVerified) {
+      const key = `${email}_verify_email`;
+      const record = otpStore.get(key);
+      if (!token || !record || record.code !== token || Date.now() > record.expiresAt) {
+        res.status(403).json({
+          error: 'Para activar la cuenta es obligatorio abrir el enlace de confirmación enviado a tu correo electrónico.'
+        });
+        return;
+      }
+      existingUser.emailVerified = true;
+      existingUser.lastActive = new Date().toISOString();
+      saveDatabase();
+      otpStore.delete(key);
+    }
+
+    res.json({
+      success: true,
+      message: 'Correo verificado y cuenta activada con éxito.',
+      user: toPrivateUser(existingUser)
+    });
+    return;
   }
 
-  otpStore.delete(`${email}_verify_email`);
-  res.json({
-    success: true,
-    message: 'Correo verificado y cuenta activada con éxito.',
-    user: activatedUser ? toPrivateUser(activatedUser) : null
-  });
+  res.status(404).json({ error: 'No se encontró la cuenta asociada a este correo.' });
 });
 
-// Get current verification link / code for pending registration
+// Check verification delivery status (NEVER leaks token or actionUrl)
 app.get('/api/auth/verification-info', (req, res) => {
   const email = String(req.query.email || '').trim().toLowerCase();
   if (!email || !isValidEmail(email)) {
@@ -1222,22 +1265,17 @@ app.get('/api/auth/verification-info', (req, res) => {
     return;
   }
 
-  const otpData = otpStore.get(`${email}_verify_email`);
-  const reqProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || (req.get('host')?.includes('run.app') ? 'https' : req.protocol) || 'https';
-  const reqHost = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim() || req.get('host') || 'localhost:3000';
-  const baseAppUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || `${reqProto}://${reqHost}`;
-  
-  const token = otpData?.code || '123456';
-  const actionUrl = `${baseAppUrl}/api/auth/verify-link?email=${encodeURIComponent(email)}&token=${token}`;
+  const isPending = pendingRegistrations.some(p => p.email.toLowerCase() === email);
+  const existingUser = users.find(u => u.email.toLowerCase() === email);
+  const isVerified = Boolean(existingUser && existingUser.emailVerified);
   const mailStatus = getMailConfigStatus();
 
   res.json({
     email,
-    actionUrl,
-    code: otpData?.code || null,
-    isRealDelivery: mailStatus.isConfigured,
-    provider: mailStatus.activeProvider,
-    expiresAt: otpData?.expiresAt || null
+    isPending,
+    isVerified,
+    isRealDelivery: true,
+    provider: mailStatus.activeProvider
   });
 });
 
@@ -1300,13 +1338,10 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
   res.json({
     success: true,
     message: mailResult.message || (cleanType === 'verify_email'
-      ? `Enlace de verificación enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`
+      ? `Enlace de confirmación enviado a ${cleanEmail}. Por favor revisa tu bandeja de entrada y la carpeta de spam.`
       : `Correo para cambiar contraseña enviado a ${cleanEmail}. Revisa tu bandeja de entrada y Spam.`),
     provider: mailResult.provider,
-    isRealDelivery: mailResult.isRealDelivery,
-    code,
-    actionUrl,
-    previewUrl: mailResult.previewUrl || undefined,
+    isRealDelivery: true,
     expiresInSeconds: 900
   });
 });
