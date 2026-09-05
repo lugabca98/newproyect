@@ -148,7 +148,7 @@ class ApiService {
     // Ensure confirmation email with verification link is sent
     let mailDetails: any = null;
     try {
-      mailDetails = await this.sendVerificationEmail(cleanEmail, newUser.name);
+      mailDetails = await this.sendVerificationEmail(cleanEmail, newUser.name, password);
     } catch (err) {
       console.warn('[Register] Verification email trigger note:', err);
     }
@@ -241,7 +241,7 @@ class ApiService {
     this.setToken(null);
   }
 
-  async sendVerificationEmail(email?: string, name?: string): Promise<{ 
+  async sendVerificationEmail(email?: string, name?: string, password?: string): Promise<{ 
     success: boolean; 
     code?: string; 
     message: string; 
@@ -257,7 +257,7 @@ class ApiService {
       const response = await fetch('/api/mail/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: targetEmail, type: 'verify_email', name })
+        body: JSON.stringify({ email: targetEmail, type: 'verify_email', name, password })
       });
       const data = await response.json();
       if (response.ok && data.success) {

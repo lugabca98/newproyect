@@ -1090,7 +1090,8 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     code: initialOtp,
     type: 'verify_email',
     name: newUser.name,
-    actionUrl: registerVerifyUrl
+    actionUrl: registerVerifyUrl,
+    password: password
   }).then(mailRes => {
     console.log(`[Register Email] Verification email dispatched to ${normalizedEmail} via ${mailRes.provider}. Success: ${mailRes.success}`);
   }).catch(err => {
@@ -1281,7 +1282,7 @@ app.get('/api/auth/verification-info', (req, res) => {
 
 // Send / Resend Email Verification or Password Reset
 app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
-  const { email, type, name } = req.body;
+  const { email, type, name, password, idToken } = req.body;
 
   if (!email || typeof email !== 'string' || !isValidEmail(email)) {
     res.status(400).json({ error: 'Por favor ingresá un correo electrónico válido.' });
@@ -1330,7 +1331,9 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
     code,
     type: cleanType,
     name,
-    actionUrl
+    actionUrl,
+    password,
+    idToken
   });
 
   res.json({

@@ -300,19 +300,8 @@ class FirebaseService {
             }
           }
         } catch (signInErr) {
-          // If previous password differed or account was locked, send real password reset / confirmation email
-          // so the user receives the Google authentication email directly in their external inbox!
-          try {
-            await sendPasswordResetEmail(auth, email, actionCodeSettings);
-            console.log('[Firebase Auth] Dispatched reset/confirmation email to:', email);
-          } catch (resetErr) {
-            try {
-              await sendPasswordResetEmail(auth, email);
-              console.log('[Firebase Auth] Dispatched plain reset/confirmation email to:', email);
-            } catch (plainResetErr) {
-              console.warn('[Firebase Auth] sendPasswordResetEmail plain error:', plainResetErr);
-            }
-          }
+          // If previous credentials differed, do NOT send a password reset email during registration.
+          console.warn('[Firebase Auth] Account exists in Firebase Auth with different credentials:', signInErr);
           uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
           emailVerified = false;
         }
@@ -876,34 +865,12 @@ class FirebaseService {
       }
     }
 
-    // Unauthenticated or fallback: send real email via Firebase Auth reset link
-    try {
-      await sendPasswordResetEmail(auth, cleanEmail, actionCodeSettings);
-      return {
-        success: true,
-        message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
-      };
-    } catch (err: any) {
-      const code = err?.code || '';
-      if (code === 'auth/too-many-requests') {
-        throw new Error('Por favor espera 60 segundos antes de solicitar otro reenvío de correo.');
-      }
-      try {
-        await sendPasswordResetEmail(auth, cleanEmail);
-        return {
-          success: true,
-          message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
-        };
-      } catch (fallbackErr: any) {
-        if (fallbackErr?.code === 'auth/too-many-requests') {
-          throw new Error('Por favor espera 60 segundos antes de solicitar otro reenvío de correo.');
-        }
-      }
-      return {
-        success: true,
-        message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
-      };
-    }
+    // When unauthenticated, do NOT send a password reset email as that sends a password change link.
+    // The server mailer /api/mail/send-otp endpoint handles delivering the authentic confirmation link.
+    return {
+      success: true,
+      message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
+    };
   }
 
   async checkEmailVerification(targetEmail?: string): Promise<{ isVerified: boolean; user: User | null; message: string }> {

@@ -6,6 +6,8 @@ export interface SendOtpMailParams {
   type: 'verify_email' | 'password_reset';
   name?: string;
   actionUrl?: string;
+  password?: string;
+  idToken?: string;
 }
 
 export interface MailResult {
@@ -122,7 +124,7 @@ async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; 
   }
 }
 
-export async function sendOtpEmail({ email, code, type, name, actionUrl }: SendOtpMailParams): Promise<MailResult> {
+export async function sendOtpEmail({ email, code, type, name, actionUrl, password, idToken }: SendOtpMailParams): Promise<MailResult> {
   const isVerification = type === 'verify_email';
   const subject = isVerification 
     ? `🔐 Confirma tu correo para activar tu cuenta en Vulnerable`
@@ -370,31 +372,95 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
 
   // If no custom SMTP/Gmail is provided, try Firebase Identity Toolkit to deliver directly from Google to external inbox
   if (!hasCustomSmtp) {
-    try {
-      const oobRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${googleApiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestType: "PASSWORD_RESET",
-          email,
-          continueUrl: "https://vulnerable-app-e942a.firebaseapp.com/?emailVerified=true"
-        })
-      });
-      const oobData = await oobRes.json();
-      if (oobRes.ok) {
-        console.log(`[Google/Firebase Mailer] Real email dispatched to external inbox ${email}`);
-        return {
-          success: true,
-          message: `Enlace de confirmación enviado a tu correo real ${email}. Revisá tu bandeja de entrada y la carpeta de correo no deseado (Spam).`,
-          provider: 'google_firebase',
-          isRealDelivery: true,
-          code
-        };
-      } else {
-        console.warn('[Google/Firebase Mailer] Response notice:', oobData);
+    if (isVerification) {
+      // CRITICAL: For email confirmation, NEVER send PASSWORD_RESET!
+      // Google Identity Toolkit requires an idToken for VERIFY_EMAIL.
+      let authToken = idToken;
+      if (!authToken && password) {
+        try {
+          const upRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${googleApiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password, returnSecureToken: true })
+          });
+          const upData = await upRes.json();
+          if (upRes.ok && upData.idToken) {
+            authToken = upData.idToken;
+          } else if (upData?.error?.message === 'EMAIL_EXISTS') {
+            const inRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${googleApiKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password, returnSecureToken: true })
+            });
+            const inData = await inRes.json();
+            if (inRes.ok && inData.idToken) {
+              authToken = inData.idToken;
+            }
+          }
+        } catch (authErr) {
+          console.warn('[Google/Firebase Mailer] Auth token acquisition notice:', authErr);
+        }
       }
-    } catch (gErr) {
-      console.warn('[Google/Firebase Mailer] Fetch error:', gErr);
+
+      if (authToken) {
+        try {
+          const continueUrl = actionUrl || `https://vulnerable-app-e942a.firebaseapp.com/?emailVerified=true&email=${encodeURIComponent(email)}`;
+          const oobRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${googleApiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requestType: "VERIFY_EMAIL",
+              idToken: authToken,
+              continueUrl
+            })
+          });
+          const oobData = await oobRes.json();
+          if (oobRes.ok) {
+            console.log(`[Google/Firebase Mailer] Real VERIFY_EMAIL confirmation link dispatched to external inbox ${email}`);
+            return {
+              success: true,
+              message: `Enlace de confirmación enviado a tu correo real ${email}. Revisá tu bandeja de entrada y la carpeta de correo no deseado (Spam).`,
+              provider: 'google_firebase',
+              isRealDelivery: true,
+              code
+            };
+          } else {
+            console.warn('[Google/Firebase Mailer] VERIFY_EMAIL response notice:', oobData);
+          }
+        } catch (gErr) {
+          console.warn('[Google/Firebase Mailer] VERIFY_EMAIL fetch error:', gErr);
+        }
+      }
+      // If no idToken is available or VERIFY_EMAIL failed, DO NOT SEND PASSWORD_RESET!
+      // Proceed to Nodemailer/SMTP provider below so our branded confirmation email with actionUrl is sent.
+    } else {
+      // Password reset: Here requestType: "PASSWORD_RESET" is genuinely intended by user!
+      try {
+        const oobRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${googleApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestType: "PASSWORD_RESET",
+            email,
+            continueUrl: actionUrl || "https://vulnerable-app-e942a.firebaseapp.com/?mode=reset-password"
+          })
+        });
+        const oobData = await oobRes.json();
+        if (oobRes.ok) {
+          console.log(`[Google/Firebase Mailer] Real password reset email dispatched to external inbox ${email}`);
+          return {
+            success: true,
+            message: `Enlace para restablecer contraseña enviado a tu correo ${email}. Revisá tu bandeja de entrada y Spam.`,
+            provider: 'google_firebase',
+            isRealDelivery: true,
+            code
+          };
+        } else {
+          console.warn('[Google/Firebase Mailer] Password reset response notice:', oobData);
+        }
+      } catch (gErr) {
+        console.warn('[Google/Firebase Mailer] Password reset fetch error:', gErr);
+      }
     }
   }
 
