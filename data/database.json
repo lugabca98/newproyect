@@ -49,12 +49,27 @@
       "userId": "testdel@example.com",
       "deletedAt": "2026-09-04T20:35:42.508Z",
       "deletedBy": "lugabca98@gmail.com"
+    },
+    {
+      "email": "lucasdel@gmail.com",
+      "userId": "test-user-id",
+      "deletedAt": "2026-09-05T17:56:23.408Z",
+      "deletedBy": "lugabca98@gmail.com"
     }
   ],
   "swipes": [],
   "matches": [],
   "messages": [],
   "auditLogs": [
+    {
+      "id": "log-1788630983408",
+      "adminEmail": "lugabca98@gmail.com",
+      "action": "DELETE_USER",
+      "targetUserId": "test-user-id",
+      "targetUserName": "Usuario",
+      "timestamp": "2026-09-05T17:56:23.408Z",
+      "details": "Eliminación definitiva de cuenta y registros asociados (lucasdel@gmail.com)."
+    },
     {
       "id": "log-1788554142508",
       "adminEmail": "lugabca98@gmail.com",
@@ -83,5 +98,5 @@
       "details": "Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero."
     }
   ],
-  "updatedAt": "2026-09-04T20:46:06.672Z"
+  "updatedAt": "2026-09-05T17:56:23.408Z"
 }

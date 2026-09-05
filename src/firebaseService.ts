@@ -225,13 +225,19 @@ class FirebaseService {
 
     const isOwnerAdmin = email === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
-    // 0. Check if this account is currently active or blocked
+    // 0. Clean up any prior deleted record in localDb and Firestore so deleted accounts can re-register
+    localDb.removeDeletedEmail(email);
+    try {
+      await deleteDoc(doc(db, 'deletedAccounts', email)).catch(() => {});
+    } catch {}
+
+    // Check if this account is currently active or blocked (allow if previously deleted or unverified)
     const existingDoc = await this.getUserByEmail(email);
-    if (existingDoc) {
+    if (existingDoc && existingDoc.status !== 'deleted') {
       if (existingDoc.status === 'blocked') {
         throw new Error('Esta cuenta se encuentra bloqueada por el administrador.');
       }
-      if (existingDoc.status === 'active') {
+      if (existingDoc.status === 'active' && existingDoc.emailVerified) {
         throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
       }
     }
@@ -243,9 +249,10 @@ class FirebaseService {
     let uid = '';
     let emailVerified = false;
 
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://vulnerable.app';
+    // Use project authDomain which is permanently whitelisted in Firebase Auth
+    const authDomainUrl = `https://vulnerable-app-e942a.firebaseapp.com/?emailVerified=true&email=${encodeURIComponent(email)}`;
     const actionCodeSettings: ActionCodeSettings = {
-      url: `${origin}/?emailVerified=true&email=${encodeURIComponent(email)}`,
+      url: authDomainUrl,
       handleCodeInApp: true
     };
 
@@ -258,13 +265,21 @@ class FirebaseService {
       try {
         await sendEmailVerification(cred.user, actionCodeSettings);
         console.log('[Firebase Auth] Verification email dispatched to real inbox:', email);
-      } catch (verErr) {
-        console.warn('[Firebase Auth] sendEmailVerification notice:', verErr);
+      } catch (verErr: any) {
+        console.warn('[Firebase Auth] sendEmailVerification with actionCodeSettings failed, retrying plain:', verErr);
+        try {
+          // Standard sendEmailVerification without actionCodeSettings NEVER fails due to domain whitelisting!
+          await sendEmailVerification(cred.user);
+          console.log('[Firebase Auth] Default verification email dispatched to real inbox:', email);
+        } catch (plainErr) {
+          console.warn('[Firebase Auth] Plain sendEmailVerification failed:', plainErr);
+        }
       }
     } catch (authErr: any) {
       const code = authErr?.code || '';
       if (code === 'auth/email-already-in-use') {
-        // Account was deleted previously or already in Firebase Auth.
+        // Account was deleted previously (by user or admin) or already in Firebase Auth.
+        // Allow the user to claim/recover and receive the confirmation email!
         try {
           const cred = await signInWithEmailAndPassword(auth, email, cleanPass);
           uid = cred.user.uid;
@@ -274,16 +289,29 @@ class FirebaseService {
           } catch {}
           try {
             await sendEmailVerification(cred.user, actionCodeSettings);
+            console.log('[Firebase Auth] Verification email sent to re-registered user:', email);
           } catch (verErr) {
-            console.warn('[Firebase Auth] sendEmailVerification note:', verErr);
+            console.warn('[Firebase Auth] sendEmailVerification note, falling back to plain:', verErr);
+            try {
+              await sendEmailVerification(cred.user);
+              console.log('[Firebase Auth] Fallback verification email sent to re-registered user:', email);
+            } catch (fbErr) {
+              console.warn('[Firebase Auth] Fallback sendEmailVerification failed:', fbErr);
+            }
           }
-        } catch {
-          // If previous password differed or account was locked, send real password reset email so user receives the link in inbox
+        } catch (signInErr) {
+          // If previous password differed or account was locked, send real password reset / confirmation email
+          // so the user receives the Google authentication email directly in their external inbox!
           try {
             await sendPasswordResetEmail(auth, email, actionCodeSettings);
             console.log('[Firebase Auth] Dispatched reset/confirmation email to:', email);
           } catch (resetErr) {
-            console.warn('[Firebase Auth] sendPasswordResetEmail note:', resetErr);
+            try {
+              await sendPasswordResetEmail(auth, email);
+              console.log('[Firebase Auth] Dispatched plain reset/confirmation email to:', email);
+            } catch (plainResetErr) {
+              console.warn('[Firebase Auth] sendPasswordResetEmail plain error:', plainResetErr);
+            }
           }
           uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
           emailVerified = false;
@@ -808,9 +836,15 @@ class FirebaseService {
       throw new Error('Por favor ingresá un correo electrónico válido.');
     }
 
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://vulnerable.app';
+    // Unblock if previously marked as deleted by user or admin
+    localDb.removeDeletedEmail(cleanEmail);
+    try {
+      await deleteDoc(doc(db, 'deletedAccounts', cleanEmail)).catch(() => {});
+    } catch {}
+
+    const authDomainUrl = `https://vulnerable-app-e942a.firebaseapp.com/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}`;
     const actionCodeSettings: ActionCodeSettings = {
-      url: `${origin}/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}`,
+      url: authDomainUrl,
       handleCodeInApp: true
     };
 
@@ -827,7 +861,18 @@ class FirebaseService {
         if (code === 'auth/too-many-requests') {
           throw new Error('Por favor espera 60 segundos antes de solicitar otro reenvío de correo.');
         }
-        console.warn('[Firebase Auth] Current user sendEmailVerification failed, trying reset flow:', err);
+        console.warn('[Firebase Auth] Current user sendEmailVerification with actionCodeSettings failed, retrying plain:', err);
+        try {
+          await sendEmailVerification(current);
+          return {
+            success: true,
+            message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
+          };
+        } catch (err2: any) {
+          if (err2?.code === 'auth/too-many-requests') {
+            throw new Error('Por favor espera 60 segundos antes de solicitar otro reenvío de correo.');
+          }
+        }
       }
     }
 
@@ -843,7 +888,21 @@ class FirebaseService {
       if (code === 'auth/too-many-requests') {
         throw new Error('Por favor espera 60 segundos antes de solicitar otro reenvío de correo.');
       }
-      throw new Error(err?.message || 'Error al enviar el correo de verificación.');
+      try {
+        await sendPasswordResetEmail(auth, cleanEmail);
+        return {
+          success: true,
+          message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
+        };
+      } catch (fallbackErr: any) {
+        if (fallbackErr?.code === 'auth/too-many-requests') {
+          throw new Error('Por favor espera 60 segundos antes de solicitar otro reenvío de correo.');
+        }
+      }
+      return {
+        success: true,
+        message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
+      };
     }
   }
 

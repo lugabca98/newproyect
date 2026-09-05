@@ -130,6 +130,21 @@ class ApiService {
     // Explicitly do not grant token for unverified registrations under any circumstances
     this.setToken(null);
 
+    // Sync registration with server pendingRegistrations so server clears deletedAccounts and enables verification link
+    try {
+      await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...userData,
+          email: cleanEmail,
+          password
+        })
+      });
+    } catch (syncErr) {
+      console.warn('[Register] Server register sync notice:', syncErr);
+    }
+
     // Ensure confirmation email with verification link is sent
     let mailDetails: any = null;
     try {

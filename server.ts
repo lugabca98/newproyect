@@ -1291,15 +1291,13 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
   const cleanEmail = email.trim().toLowerCase();
   const cleanType: 'verify_email' | 'password_reset' = type === 'password_reset' ? 'password_reset' : 'verify_email';
 
-  // For verification email: if the account was previously marked as deleted, clear it from deletedAccounts
-  // because the user is actively verifying or re-registering this account
-  if (cleanType === 'verify_email') {
-    deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== cleanEmail);
-  }
+  // For verification email or recovery: clear from deletedAccounts so deleted accounts
+  // can receive the confirmation link and re-register or restore their access
+  deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== cleanEmail);
 
-  // For password reset, verify user exists first
+  // For password reset, verify user exists or was previously registered
   if (cleanType === 'password_reset') {
-    const userExists = users.some(u => u.email.toLowerCase() === cleanEmail && u.status !== 'deleted');
+    const userExists = users.some(u => u.email.toLowerCase() === cleanEmail);
     const pendingExists = pendingRegistrations.some(p => p.email.toLowerCase() === cleanEmail);
     if (!userExists && !pendingExists && cleanEmail !== 'lugabca98@gmail.com') {
       res.status(404).json({ error: `No se encontró ninguna cuenta registrada con el correo "${cleanEmail}".` });

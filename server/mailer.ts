@@ -366,31 +366,36 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
 
   // 4. Try Google Firebase Identity Toolkit (sends real email directly to Gmail / external inboxes from Google servers)
   const googleApiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyDQ3y2kU-0dQbSYMKbeAFqEGiDg_wyquQ0";
-  try {
-    const oobType = isVerification ? "PASSWORD_RESET" : "PASSWORD_RESET";
-    const oobRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${googleApiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requestType: oobType,
-        email
-      })
-    });
-    const oobData = await oobRes.json();
-    if (oobRes.ok) {
-      console.log(`[Google/Firebase Mailer] Real email dispatched to external inbox ${email}`);
-      return {
-        success: true,
-        message: `Enlace de confirmación enviado a tu correo real ${email}. Revisá tu bandeja de entrada y la carpeta de correo no deseado (Spam).`,
-        provider: 'google_firebase',
-        isRealDelivery: true,
-        code
-      };
-    } else {
-      console.warn('[Google/Firebase Mailer] Response error:', oobData);
+  const hasCustomSmtp = Boolean(process.env.GMAIL_USER || process.env.SMTP_HOST || process.env.SMTP_USER);
+
+  // If no custom SMTP/Gmail is provided, try Firebase Identity Toolkit to deliver directly from Google to external inbox
+  if (!hasCustomSmtp) {
+    try {
+      const oobRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${googleApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestType: "PASSWORD_RESET",
+          email,
+          continueUrl: "https://vulnerable-app-e942a.firebaseapp.com/?emailVerified=true"
+        })
+      });
+      const oobData = await oobRes.json();
+      if (oobRes.ok) {
+        console.log(`[Google/Firebase Mailer] Real email dispatched to external inbox ${email}`);
+        return {
+          success: true,
+          message: `Enlace de confirmación enviado a tu correo real ${email}. Revisá tu bandeja de entrada y la carpeta de correo no deseado (Spam).`,
+          provider: 'google_firebase',
+          isRealDelivery: true,
+          code
+        };
+      } else {
+        console.warn('[Google/Firebase Mailer] Response notice:', oobData);
+      }
+    } catch (gErr) {
+      console.warn('[Google/Firebase Mailer] Fetch error:', gErr);
     }
-  } catch (gErr) {
-    console.warn('[Google/Firebase Mailer] Fetch error:', gErr);
   }
 
   // 5. Use Nodemailer SMTP / Gmail / Ethereal transport
