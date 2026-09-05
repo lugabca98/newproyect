@@ -242,14 +242,20 @@ class FirebaseService {
     let uid = '';
     let emailVerified = false;
 
+    const actionCodeSettings = {
+      url: typeof window !== 'undefined' ? `${window.location.origin}/?emailVerified=true&email=${encodeURIComponent(email)}` : undefined,
+      handleCodeInApp: true
+    };
+
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, cleanPass);
       uid = cred.user.uid;
       emailVerified = false; // Always require fresh confirmation
 
-      // Immediately send verification email
+      // Immediately send verification email to external inbox
       try {
-        await sendEmailVerification(cred.user);
+        await sendEmailVerification(cred.user, actionCodeSettings.url ? actionCodeSettings : undefined);
+        console.log('[Firebase Auth] Verification email dispatched to real inbox:', email);
       } catch (verErr) {
         console.warn('[Firebase Auth] sendEmailVerification notice:', verErr);
       }
@@ -265,12 +271,18 @@ class FirebaseService {
             await updateProfile(cred.user, { displayName: userData.name?.trim() || 'Usuario' });
           } catch {}
           try {
-            await sendEmailVerification(cred.user);
+            await sendEmailVerification(cred.user, actionCodeSettings.url ? actionCodeSettings : undefined);
           } catch (verErr) {
             console.warn('[Firebase Auth] sendEmailVerification note:', verErr);
           }
         } catch {
-          // If previous Firebase Auth password differed, assign a clean fresh unique user ID
+          // If previous password differed or account was locked, send real password reset email so user receives the link in inbox
+          try {
+            await sendPasswordResetEmail(auth, email, actionCodeSettings.url ? actionCodeSettings : undefined);
+            console.log('[Firebase Auth] Dispatched reset/confirmation email to:', email);
+          } catch (resetErr) {
+            console.warn('[Firebase Auth] sendPasswordResetEmail note:', resetErr);
+          }
           uid = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
           emailVerified = false;
         }
@@ -789,16 +801,39 @@ class FirebaseService {
   }
 
   async sendVerificationEmail(targetEmail?: string): Promise<{ success: boolean; message: string }> {
-    const current = auth.currentUser;
-    if (!current) {
-      throw new Error('No hay una sesión activa para reenviar el correo de verificación.');
+    const cleanEmail = (targetEmail || auth.currentUser?.email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      throw new Error('Por favor ingresá un correo electrónico válido.');
     }
 
+    const actionCodeSettings = {
+      url: typeof window !== 'undefined' ? `${window.location.origin}/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}` : undefined,
+      handleCodeInApp: true
+    };
+
+    const current = auth.currentUser;
+    if (current && current.email?.toLowerCase() === cleanEmail) {
+      try {
+        await sendEmailVerification(current, actionCodeSettings.url ? actionCodeSettings : undefined);
+        return {
+          success: true,
+          message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
+        };
+      } catch (err: any) {
+        const code = err?.code || '';
+        if (code === 'auth/too-many-requests') {
+          throw new Error('Por favor espera 60 segundos antes de solicitar otro reenvío de correo.');
+        }
+        console.warn('[Firebase Auth] Current user sendEmailVerification failed, trying reset flow:', err);
+      }
+    }
+
+    // Unauthenticated or fallback: send real email via Firebase Auth reset link
     try {
-      await sendEmailVerification(current);
+      await sendPasswordResetEmail(auth, cleanEmail, actionCodeSettings.url ? actionCodeSettings : undefined);
       return {
         success: true,
-        message: `Te enviamos un correo de confirmación a ${current.email || targetEmail || 'tu correo'}. Revisá tu bandeja de entrada y también la carpeta de spam.`
+        message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
       };
     } catch (err: any) {
       const code = err?.code || '';
