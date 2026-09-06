@@ -222,7 +222,12 @@ function getAdminOwnerUser(): ServerUser {
 
 function getDefaultSeedUsers(): ServerUser[] {
   return [
-    getAdminOwnerUser(),
+    getAdminOwnerUser()
+  ];
+}
+
+function _unusedSeedUsers(): ServerUser[] {
+  return [
     createSeedUser({
       id: 'user-valeria',
       name: 'Valeria Rivas',
@@ -440,96 +445,27 @@ function getDefaultSeedUsers(): ServerUser[] {
 function getDefaultSeedAuditLogs(): AuditLog[] {
   return [
     {
-      id: 'log-1',
+      id: 'log-initial-scratch',
       adminEmail: 'lugabca98@gmail.com',
       action: 'SYSTEM_RESET',
       targetUserId: 'system',
-      targetUserName: 'System Engine',
-      timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
-      details: 'Inicialización de servicios seguros y autenticación criptográfica.'
+      targetUserName: 'Plataforma Vulnerable',
+      timestamp: new Date().toISOString(),
+      details: 'Inicialización de la aplicación desde el principio: base de datos restablecida a cero, lista para nuevos registros.'
     }
   ];
 }
 
 function getDefaultSeedSwipes(): SwipeRecord[] {
-  return [
-    { id: 'sw-1', swiperId: 'user-valeria', targetId: 'user-lucas', type: 'like', timestamp: new Date(Date.now() - 86400000 * 2).toISOString() },
-    { id: 'sw-2', swiperId: 'user-lucas', targetId: 'user-valeria', type: 'like', timestamp: new Date(Date.now() - 86400000 * 2).toISOString() },
-    { id: 'sw-3', swiperId: 'user-camila', targetId: 'user-mateo', type: 'like', timestamp: new Date(Date.now() - 86400000 * 1).toISOString() },
-    { id: 'sw-4', swiperId: 'user-mateo', targetId: 'user-camila', type: 'like', timestamp: new Date(Date.now() - 86400000 * 1).toISOString() },
-    { id: 'sw-5', swiperId: 'user-valeria', targetId: 'user-mateo', type: 'like', timestamp: new Date(Date.now() - 86400000 * 3).toISOString() }
-  ];
+  return [];
 }
 
 function getDefaultSeedMatches(): Match[] {
-  return [
-    {
-      id: 'match-valeria-lucas',
-      userIds: ['user-valeria', 'user-lucas'],
-      matchedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      lastMessage: '¡Hola Valeria! Qué lindo perfil. ¿Cuál es tu cafetería favorita?',
-      lastMessageTime: new Date(Date.now() - 3600000 * 4).toISOString(),
-      unreadCount: 0
-    },
-    {
-      id: 'match-camila-mateo',
-      userIds: ['user-camila', 'user-mateo'],
-      matchedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-      lastMessage: 'Me encantaron las fotos de tu último viaje 📸',
-      lastMessageTime: new Date(Date.now() - 3600000 * 12).toISOString(),
-      unreadCount: 1
-    }
-  ];
+  return [];
 }
 
 function getDefaultSeedMessages(): Message[] {
-  return [
-    {
-      id: 'msg-1',
-      matchId: 'match-valeria-lucas',
-      senderId: 'user-lucas',
-      receiverId: 'user-valeria',
-      text: '¡Hola Valeria! Me encantaron tus fotos. ¿Qué café filtrado recomendás en Palermo?',
-      createdAt: new Date(Date.now() - 3600000 * 6).toISOString(),
-      read: true
-    },
-    {
-      id: 'msg-2',
-      matchId: 'match-valeria-lucas',
-      senderId: 'user-valeria',
-      receiverId: 'user-lucas',
-      text: '¡Hola Lucas! Definitivamente Cuervo o Lattente. Hacen un café increíble 🙌',
-      createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-      read: true
-    },
-    {
-      id: 'msg-3',
-      matchId: 'match-valeria-lucas',
-      senderId: 'user-lucas',
-      receiverId: 'user-valeria',
-      text: '¡Hola Valeria! Qué lindo perfil. ¿Cuál es tu cafetería favorita?',
-      createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-      read: true
-    },
-    {
-      id: 'msg-4',
-      matchId: 'match-camila-mateo',
-      senderId: 'user-mateo',
-      receiverId: 'user-camila',
-      text: '¡Hola Camila! Vi que te gusta el cine de A24. ¿Viste Past Lives?',
-      createdAt: new Date(Date.now() - 3600000 * 14).toISOString(),
-      read: true
-    },
-    {
-      id: 'msg-5',
-      matchId: 'match-camila-mateo',
-      senderId: 'user-camila',
-      receiverId: 'user-mateo',
-      text: 'Me encantaron las fotos de tu último viaje 📸',
-      createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-      read: false
-    }
-  ];
+  return [];
 }
 
 // In-Memory active database instances loaded from disk
@@ -1095,6 +1031,8 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   const mailStatus = getMailConfigStatus();
 
   console.log(`[Register Email] Dispatching account confirmation email with link to ${normalizedEmail}... Action URL: ${registerVerifyUrl}`);
+  
+  // 1. Dispatch Email with registration confirmation and activation link
   sendOtpEmail({
     email: normalizedEmail,
     code: initialOtp,
@@ -1102,8 +1040,34 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     name: newUser.name,
     actionUrl: registerVerifyUrl,
     password: password
-  }).then(mailRes => {
+  }).then(async (mailRes) => {
     console.log(`[Register Email] Verification email dispatched to ${normalizedEmail} via ${mailRes.provider}. Success: ${mailRes.success}`);
+
+    // 2. Dispatch Email with password reset / change link
+    const resetOtp = String(Math.floor(100000 + Math.random() * 900000));
+    otpStore.set(`${normalizedEmail}_password_reset`, {
+      code: resetOtp,
+      type: 'password_reset',
+      email: normalizedEmail,
+      name: newUser.name,
+      expiresAt: Date.now() + 60 * 60 * 1000 // 1 hour
+    });
+    const passwordResetUrl = `${baseAppUrl}/?mode=reset-password&email=${encodeURIComponent(normalizedEmail)}&code=${resetOtp}`;
+    
+    console.log(`[Register Email] Dispatching second email with password change link to ${normalizedEmail}... Action URL: ${passwordResetUrl}`);
+    try {
+      const resetMailRes = await sendOtpEmail({
+        email: normalizedEmail,
+        code: resetOtp,
+        type: 'password_reset',
+        name: newUser.name,
+        actionUrl: passwordResetUrl,
+        password: password
+      });
+      console.log(`[Register Email] Password change email dispatched to ${normalizedEmail} via ${resetMailRes.provider}. Success: ${resetMailRes.success}`);
+    } catch (resetErr) {
+      console.warn('[Register Email] Password change email dispatch notice:', resetErr);
+    }
   }).catch(err => {
     console.warn('[Register Email] Error sending verification email:', err);
   });
@@ -1115,7 +1079,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     emailSent: true,
     isRealDelivery: true,
     provider: mailStatus.activeProvider,
-    message: 'Hemos enviado un enlace de confirmación a tu correo electrónico. Es obligatorio abrir dicho enlace para activar tu cuenta antes de ingresar.'
+    message: 'Hemos enviado dos correos a tu casilla: uno con el enlace de confirmación para registrarte y activar tu cuenta, y otro con el enlace para cambiar la contraseña.'
   });
 });
 

@@ -225,9 +225,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const searchParams = new URLSearchParams(window.location.search);
         const urlMode = searchParams.get('mode');
         const urlEmail = searchParams.get('email');
-        const urlCode = searchParams.get('code') || searchParams.get('token');
+        const urlCode = searchParams.get('code') || searchParams.get('token') || searchParams.get('oobCode');
 
-        if (urlMode === 'reset-password' || urlMode === 'resetPassword') {
+        if (urlMode === 'reset-password' || urlMode === 'resetPassword' || searchParams.get('oobCode')) {
           setMode('enter-new-password');
           if (urlEmail) setForgotEmail(urlEmail);
           if (urlCode) setResetOtpInput(urlCode);
@@ -684,10 +684,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
                 <div className="space-y-1.5">
                   <h4 className="text-xs font-bold text-white">
-                    Paso obligatorio para habilitar tu cuenta
+                    Correos de activación y gestión enviados
                   </h4>
                   <p className="text-[12px] text-slate-300 leading-relaxed">
-                    Hemos enviado un correo electrónico con tu enlace seguro a <strong className="text-rose-300 font-mono">{regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email')}</strong>.
+                    Hemos enviado dos correos electrónicos a <strong className="text-rose-300 font-mono">{regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email')}</strong>:
                   </p>
                 </div>
               </div>
@@ -695,21 +695,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-2 text-[11.5px] text-slate-300">
                 <div className="flex items-start gap-2">
                   <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold shrink-0 mt-0.5">1</span>
-                  <span>Abrí tu casilla de correo electrónico (Gmail, Outlook, etc.).</span>
+                  <span><strong>Correo de Confirmación:</strong> Hacé clic en "Confirmar mi correo electrónico" para activar tu registro e ingresar.</span>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold shrink-0 mt-0.5">2</span>
-                  <span>Buscá el correo enviado por <strong>Vulnerable</strong>.</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold shrink-0 mt-0.5">3</span>
-                  <span>Hacé clic en el botón <strong>"Confirmar mi correo electrónico"</strong> dentro del mensaje.</span>
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold shrink-0 mt-0.5">2</span>
+                  <span><strong>Correo de Contraseña:</strong> Incluye el enlace seguro directo por si necesitás modificar o definir una nueva clave.</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200/90 leading-snug">
                 <span className="text-amber-400 font-bold">Tip:</span>
-                <span>Si no encontrás el mensaje en tu bandeja principal, por favor revisá en la carpeta de <strong>Correo no deseado (Spam)</strong> o Promociones.</span>
+                <span>Si no encontrás los mensajes en tu bandeja principal, por favor revisá en la carpeta de <strong>Correo no deseado (Spam)</strong> o Promociones.</span>
               </div>
 
               <div className="pt-1 flex items-center justify-center gap-2 text-[11px] text-slate-400">
@@ -743,26 +739,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 )}
               </button>
 
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <button
                   id="btn-resend-verification"
                   type="button"
                   onClick={handleResendVerification}
                   disabled={loading || resendVerificationCooldown > 0}
-                  className="flex-1 py-2.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                   <span>
                     {resendVerificationCooldown > 0
                       ? `Reenviar en (${resendVerificationCooldown}s)`
-                      : 'Reenviar enlace de verificación'}
+                      : 'Reenviar enlace de registro'}
                   </span>
                 </button>
 
                 <button
+                  id="btn-resend-password-link"
+                  type="button"
+                  onClick={() => {
+                    const targetEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim();
+                    if (targetEmail) {
+                      setForgotEmail(targetEmail);
+                      handleSendForgotPassword();
+                    }
+                  }}
+                  disabled={loading}
+                  className="py-2.5 px-3 bg-slate-950 hover:bg-slate-800 disabled:opacity-50 border border-slate-800 text-amber-300/90 hover:text-amber-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>Reenviar enlace de contraseña</span>
+                </button>
+              </div>
+
+              <div className="pt-1 text-center">
+                <button
                   type="button"
                   onClick={() => { setMode('login'); setErrorMsg(''); }}
-                  className="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  className="px-4 py-2 text-slate-400 hover:text-slate-200 text-xs font-semibold transition cursor-pointer"
                 >
                   Volver al Login
                 </button>

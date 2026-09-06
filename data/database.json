@@ -26,9 +26,9 @@
       "status": "active",
       "role": "admin",
       "createdAt": "2026-01-01T00:00:00.000Z",
-      "lastActive": "2026-09-04T20:46:06.672Z",
-      "likesCount": 142,
-      "matchesCount": 28,
+      "lastActive": "2026-09-06T16:00:00.000Z",
+      "likesCount": 0,
+      "matchesCount": 0,
       "preferences": {
         "minAge": 18,
         "maxAge": 99,
@@ -42,159 +42,24 @@
       }
     }
   ],
-  "pendingRegistrations": [
-    {
-      "id": "user-1788632649505-2f581884",
-      "email": "test_verify_1788632649242@example.com",
-      "user": {
-        "id": "user-1788632649505-2f581884",
-        "name": "Test User Re-registered",
-        "email": "test_verify_1788632649242@example.com",
-        "passwordHash": "f212e829b9db2416e8b3f4a4bd5152a094e1e953bd18e8e0b70e498c80fe070e4394fe94e58e64040b6dda635bc757da9ac0a1d1d3a47d948fa66a96cf348395",
-        "passwordSalt": "34b3ab37ec3558fa131ea6478078c8e0",
-        "age": 25,
-        "gender": "female",
-        "bio": "¡Hola! Acabo de unirme a Vulnerable.",
-        "photos": [
-          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
-        ],
-        "location": "Buenos Aires, Argentina",
-        "distanceKm": 12,
-        "occupation": "Neurodivergente",
-        "interests": [
-          "Música",
-          "Café",
-          "Viajes"
-        ],
-        "verified": false,
-        "emailVerified": false,
-        "status": "active",
-        "role": "user",
-        "createdAt": "2026-09-05T18:24:09.505Z",
-        "lastActive": "2026-09-05T18:24:09.505Z",
-        "likesCount": 0,
-        "matchesCount": 0,
-        "preferences": {
-          "minAge": 18,
-          "maxAge": 45,
-          "interestedIn": [
-            "male"
-          ],
-          "maxDistanceKm": 50
-        }
-      },
-      "createdAt": "2026-09-05T18:24:09.505Z"
-    },
-    {
-      "id": "user-1788632654385-4933211a",
-      "email": "test_selfdel_1788632653693@example.com",
-      "user": {
-        "id": "user-1788632654385-4933211a",
-        "name": "Reborn User",
-        "email": "test_selfdel_1788632653693@example.com",
-        "passwordHash": "2b766a92a9c84c05c3ad46407c0732e65bad2f1605b41ac48a3cb51f45e3768c1709ab3a49218db89719ec0443be6ba2915bdda6bef477ac273bf3530836e9b9",
-        "passwordSalt": "fc48a4e89a15c46a2d72060d4041ed14",
-        "age": 26,
-        "gender": "male",
-        "bio": "¡Hola! Acabo de unirme a Vulnerable.",
-        "photos": [
-          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80"
-        ],
-        "location": "Buenos Aires, Argentina",
-        "distanceKm": 2,
-        "occupation": "Neurodivergente",
-        "interests": [
-          "Música",
-          "Café",
-          "Viajes"
-        ],
-        "verified": false,
-        "emailVerified": false,
-        "status": "active",
-        "role": "user",
-        "createdAt": "2026-09-05T18:24:14.385Z",
-        "lastActive": "2026-09-05T18:24:14.385Z",
-        "likesCount": 0,
-        "matchesCount": 0,
-        "preferences": {
-          "minAge": 18,
-          "maxAge": 45,
-          "interestedIn": [
-            "female"
-          ],
-          "maxDistanceKm": 50
-        }
-      },
-      "createdAt": "2026-09-05T18:24:14.385Z"
-    }
-  ],
-  "deletedAccounts": [
-    {
-      "email": "testdel@example.com",
-      "userId": "testdel@example.com",
-      "deletedAt": "2026-09-04T20:35:42.508Z",
-      "deletedBy": "lugabca98@gmail.com"
-    },
-    {
-      "email": "lucasdel@gmail.com",
-      "userId": "test-user-id",
-      "deletedAt": "2026-09-05T17:56:23.408Z",
-      "deletedBy": "lugabca98@gmail.com"
-    }
-  ],
+  "pendingRegistrations": [],
+  "deletedAccounts": [],
   "serverCredentials": {
-    "test_verify_1788632649242@example.com": "newpassword456",
-    "test_selfdel_1788632653693@example.com": "brandnewpassword789"
+    "lugabca98@gmail.com": "admin1234"
   },
   "swipes": [],
   "matches": [],
   "messages": [],
   "auditLogs": [
     {
-      "id": "log-1788632649440",
-      "adminEmail": "lugabca98@gmail.com",
-      "action": "DELETE_USER",
-      "targetUserId": "user-1788632649411-e1f5789e",
-      "targetUserName": "Test User",
-      "timestamp": "2026-09-05T18:24:09.440Z",
-      "details": "Eliminación definitiva de cuenta y registros asociados (test_verify_1788632649242@example.com)."
-    },
-    {
-      "id": "log-1788630983408",
-      "adminEmail": "lugabca98@gmail.com",
-      "action": "DELETE_USER",
-      "targetUserId": "test-user-id",
-      "targetUserName": "Usuario",
-      "timestamp": "2026-09-05T17:56:23.408Z",
-      "details": "Eliminación definitiva de cuenta y registros asociados (lucasdel@gmail.com)."
-    },
-    {
-      "id": "log-1788554142508",
-      "adminEmail": "lugabca98@gmail.com",
-      "action": "DELETE_USER",
-      "targetUserId": "testdel@example.com",
-      "targetUserName": "Test User Reborn",
-      "timestamp": "2026-09-04T20:35:42.508Z",
-      "details": "Eliminación definitiva de cuenta y registros asociados (testdel@example.com)."
-    },
-    {
-      "id": "log-1788554136087",
-      "adminEmail": "lugabca98@gmail.com",
-      "action": "DELETE_USER",
-      "targetUserId": "testdel@example.com",
-      "targetUserName": "Test User",
-      "timestamp": "2026-09-04T20:35:36.087Z",
-      "details": "Eliminación definitiva de cuenta y registros asociados (testdel@example.com)."
-    },
-    {
-      "id": "log-1788385595720",
+      "id": "log-initial-scratch",
       "adminEmail": "lugabca98@gmail.com",
       "action": "SYSTEM_RESET",
       "targetUserId": "system",
-      "targetUserName": "Vulnerable Platform",
-      "timestamp": "2026-09-02T21:46:35.720Z",
-      "details": "Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero."
+      "targetUserName": "Plataforma Vulnerable",
+      "timestamp": "2026-09-06T16:00:00.000Z",
+      "details": "Inicialización de la aplicación desde el principio: base de datos restablecida a cero, lista para nuevos registros."
     }
   ],
-  "updatedAt": "2026-09-05T18:24:14.385Z"
+  "updatedAt": "2026-09-06T16:00:00.000Z"
 }

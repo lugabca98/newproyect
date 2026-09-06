@@ -79,7 +79,7 @@ class LocalDatabaseStore {
   }
 
   init(): void {
-    if (typeof window !== 'undefined' && localStorage.getItem('vulnerable_zero_reset_v5') !== 'true') {
+    if (typeof window !== 'undefined' && localStorage.getItem('vulnerable_zero_reset_v7') !== 'true') {
       this.resetToZero();
       return;
     }
@@ -523,10 +523,10 @@ class LocalDatabaseStore {
           targetUserId: 'system',
           targetUserName: 'Motor Local & Servidor',
           timestamp: new Date().toISOString(),
-          details: 'Reinicio total: todas las cuentas registradas fueron eliminadas para empezar la plataforma desde 0.'
+          details: 'Inicialización total desde el principio: base de datos local restablecida a cero, lista para nuevos registros.'
         }
       ]);
-      localStorage.setItem('vulnerable_zero_reset_v5', 'true');
+      localStorage.setItem('vulnerable_zero_reset_v7', 'true');
     } catch (e) {
       console.warn('resetToZero error:', e);
     }
