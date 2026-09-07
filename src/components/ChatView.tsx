@@ -11,7 +11,8 @@ import {
   CheckCircle2, 
   Sparkles,
   ShieldCheck,
-  Search
+  Search,
+  Archive
 } from 'lucide-react';
 import { Match, Message, User } from '../types';
 import { api } from '../api';
@@ -82,7 +83,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     if (selectedMatchId) {
       loadMessages(selectedMatchId, true);
       const unsub = firebaseService.subscribeMessages(selectedMatchId, currentUser.id, (realtimeMsgs) => {
-        if (realtimeMsgs && realtimeMsgs.length > 0) {
+        if (Array.isArray(realtimeMsgs)) {
           setMessages(realtimeMsgs);
           scrollToBottom();
         }
@@ -318,10 +319,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 </div>
               </div>
 
-              {/* Safety badge */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/70 border border-slate-700 text-slate-300 text-[11px]">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">Conexión Verificada</span>
+              {/* Safety & Archival badges */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-medium shadow-sm">
+                  <Archive className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Historial archivado</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/70 border border-slate-700 text-slate-300 text-[11px]">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">Conexión Verificada</span>
+                </div>
               </div>
             </div>
 

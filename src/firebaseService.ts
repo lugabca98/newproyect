@@ -30,7 +30,7 @@ import {
   User as FirebaseUser
 } from 'firebase/auth';
 import { auth, db, firebaseConfig } from './firebase';
-import { User, Match, Message, AuditLog, SwipeRecord, AdminStats, UserStatus, UserRole } from './types';
+import { User, Match, Message, AuditLog, SwipeRecord, AdminStats, UserStatus, UserRole, UserPreferences } from './types';
 import { INITIAL_SEED_USERS, INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL, localDb } from './localStore';
 import { DEMO_ACCOUNTS, hashPassword, isPasswordValidForDemoAccount } from './utils/security';
 
@@ -1641,10 +1641,11 @@ class FirebaseService {
         if (pub.status === 'deleted' || (pub.email && localDb.isEmailDeleted(pub.email))) {
           return null;
         }
+        const existingLocalPref = localDb.getUsers().find(u => u.id === userId)?.preferences;
         const userObj: User = {
           ...pub,
           email: pub.email || '',
-          preferences: pub.preferences || { minAge: 18, maxAge: 99, interestedIn: ['female', 'male', 'non-binary', 'other'], maxDistanceKm: 100 }
+          preferences: pub.preferences || existingLocalPref || { minAge: 18, maxAge: 99, interestedIn: ['female', 'male', 'non-binary', 'other'], maxDistanceKm: 100 }
         };
         this.cacheUser(userObj);
         return userObj;
@@ -1723,7 +1724,7 @@ class FirebaseService {
   // -------------------------------------------------------------
   // FEED & MUTUAL SWIPING LOGIC (NO EMAIL LEAKS & REAL MUTUAL MATCHES)
   // -------------------------------------------------------------
-  async getFeed(currentUserId: string): Promise<User[]> {
+  async getFeed(currentUserId: string, explicitPreferences?: UserPreferences): Promise<User[]> {
     await this.initializeDatabase();
     const swipedTargetIds = new Set<string>();
 
@@ -1733,11 +1734,12 @@ class FirebaseService {
       currentUser = localDb.getUsers().find(u => u.id === currentUserId) || null;
     }
 
-    const interestedIn = currentUser?.preferences?.interestedIn && currentUser.preferences.interestedIn.length > 0
-      ? currentUser.preferences.interestedIn
+    const effectivePref = explicitPreferences || currentUser?.preferences || localDb.getUsers().find(u => u.id === currentUserId)?.preferences;
+    const interestedIn = effectivePref?.interestedIn && effectivePref.interestedIn.length > 0
+      ? effectivePref.interestedIn
       : null;
-    const minAge = currentUser?.preferences?.minAge || 18;
-    const maxAge = currentUser?.preferences?.maxAge || 99;
+    const minAge = effectivePref?.minAge || 18;
+    const maxAge = effectivePref?.maxAge || 99;
 
     const matchesPreference = (u: User) => {
       if (u.id === currentUserId) return false;
@@ -1746,9 +1748,16 @@ class FirebaseService {
       if (u.status === 'blocked' || u.status === 'deleted') return false;
       if (swipedTargetIds.has(u.id)) return false;
 
-      // Gender preference filter (e.g. ['female'] => only female, ['male'] => only male)
+      // Gender preference filter (e.g. ['female'] => strictly only female/mujer/woman)
       if (interestedIn && interestedIn.length > 0) {
-        if (!u.gender || !interestedIn.includes(u.gender)) {
+        const g = (u.gender || '').toLowerCase().trim();
+        const matchesGender = interestedIn.some((pref: string) => {
+          if (pref === 'female') return g === 'female' || g === 'mujer' || g === 'woman';
+          if (pref === 'male') return g === 'male' || g === 'hombre' || g === 'man';
+          if (pref === 'non-binary') return g === 'non-binary' || g === 'no binario';
+          return g === pref || g === 'other';
+        });
+        if (!matchesGender) {
           return false;
         }
       }
@@ -2043,12 +2052,21 @@ class FirebaseService {
   }
 
   // -------------------------------------------------------------
-  // MATCHES & CHAT
+  // MATCHES & CHAT ARCHIVE
   // -------------------------------------------------------------
   async getMatches(currentUserId: string): Promise<Match[]> {
     await this.initializeDatabase();
     const matchesMap = new Map<string, Match>();
 
+    // 1. Initial fast population from local archival storage
+    try {
+      const localMatches = localDb.getMatchesForUser(currentUserId);
+      for (const lm of localMatches) {
+        matchesMap.set(lm.id, lm);
+      }
+    } catch (e) {}
+
+    // 2. Fetch from Firestore
     try {
       const matchesCol = collection(db, 'matches');
       const q = query(matchesCol, where('userIds', 'array-contains', currentUserId));
@@ -2071,95 +2089,209 @@ class FirebaseService {
       console.warn('[Firestore] Error getting matches from Firestore:', err);
     }
 
-    // Merge any matches stored in localDb
+    // 3. Sync with backend server matches
     try {
-      const localMatches = localDb.getMatches().filter(m => m.userIds && m.userIds.includes(currentUserId));
-      for (const lm of localMatches) {
-        if (!matchesMap.has(lm.id)) {
-          const partnerId = lm.userIds.find(id => id !== currentUserId);
-          let partner = lm.partner || null;
-          if (!partner && partnerId) {
-            partner = await this.getUserById(partnerId) || 
-                      localDb.getUsers().find(u => u.id === partnerId) || 
-                      INITIAL_SEED_USERS.find(u => u.id === partnerId) || null;
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_token') || currentUserId) : currentUserId;
+      const res = await fetch('/api/matches', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.matches)) {
+          for (const sm of data.matches) {
+            if (!matchesMap.has(sm.id)) {
+              matchesMap.set(sm.id, sm);
+            } else {
+              const existing = matchesMap.get(sm.id)!;
+              matchesMap.set(sm.id, {
+                ...existing,
+                ...sm,
+                partner: existing.partner || sm.partner
+              });
+            }
           }
-          matchesMap.set(lm.id, { ...lm, partner: partner || undefined });
         }
       }
+    } catch (err) {
+      console.warn('[Server] Error syncing matches:', err);
+    }
+
+    const finalMatches = Array.from(matchesMap.values()).sort(
+      (a, b) => new Date(b.lastMessageTime || b.matchedAt).getTime() - new Date(a.lastMessageTime || a.matchedAt).getTime()
+    );
+
+    // 4. Archive matches locally
+    try {
+      const otherMatches = localDb.getMatches().filter(m => !m.userIds || !m.userIds.includes(currentUserId));
+      localDb.saveMatches([...finalMatches, ...otherMatches]);
     } catch (e) {}
 
-    return Array.from(matchesMap.values()).sort(
-      (a, b) => new Date(b.matchedAt).getTime() - new Date(a.matchedAt).getTime()
-    );
+    return finalMatches;
   }
 
   subscribeMatches(currentUserId: string, callback: (matches: Match[]) => void): Unsubscribe {
-    const matchesCol = collection(db, 'matches');
-    const q = query(matchesCol, where('userIds', 'array-contains', currentUserId));
-    
-    return onSnapshot(q, async (snap) => {
-      const matchesMap = new Map<string, Match>();
+    // 1. Immediately invoke callback with local archived matches (zero wait time)
+    const initialLocal = localDb.getMatchesForUser(currentUserId);
+    if (initialLocal.length > 0) {
+      callback(initialLocal);
+    }
 
-      await Promise.all(snap.docs.map(async (d) => {
-        const m = d.data() as Match;
-        const partnerId = m.userIds.find(id => id !== currentUserId);
-        let partner: User | null = null;
-        if (partnerId) {
-          partner = await this.getUserById(partnerId);
-          if (!partner) {
-            partner = localDb.getUsers().find(u => u.id === partnerId) || 
-                      INITIAL_SEED_USERS.find(u => u.id === partnerId) || null;
+    // 2. Refresh from server in background
+    this.getMatches(currentUserId).then(allMatches => {
+      if (allMatches.length > 0) {
+        callback(allMatches);
+      }
+    }).catch(() => {});
+
+    // 3. Real-time Firestore subscription
+    try {
+      const matchesCol = collection(db, 'matches');
+      const q = query(matchesCol, where('userIds', 'array-contains', currentUserId));
+      
+      return onSnapshot(q, async (snap) => {
+        const matchesMap = new Map<string, Match>();
+
+        await Promise.all(snap.docs.map(async (d) => {
+          const m = d.data() as Match;
+          const partnerId = m.userIds.find(id => id !== currentUserId);
+          let partner: User | null = null;
+          if (partnerId) {
+            partner = await this.getUserById(partnerId);
+            if (!partner) {
+              partner = localDb.getUsers().find(u => u.id === partnerId) || 
+                        INITIAL_SEED_USERS.find(u => u.id === partnerId) || null;
+            }
+          }
+          matchesMap.set(m.id, { ...m, partner: partner || undefined });
+        }));
+
+        // Merge local archived matches
+        const localMatches = localDb.getMatchesForUser(currentUserId);
+        for (const lm of localMatches) {
+          if (!matchesMap.has(lm.id)) {
+            matchesMap.set(lm.id, lm);
           }
         }
-        matchesMap.set(m.id, { ...m, partner: partner || undefined });
-      }));
 
-      // Merge local matches
-      const localMatches = localDb.getMatches().filter(m => m.userIds && m.userIds.includes(currentUserId));
-      for (const lm of localMatches) {
-        if (!matchesMap.has(lm.id)) {
-          const partnerId = lm.userIds.find(id => id !== currentUserId);
-          let partner = lm.partner || null;
-          if (!partner && partnerId) {
-            partner = localDb.getUsers().find(u => u.id === partnerId) || null;
+        const sortedMatches = Array.from(matchesMap.values()).sort(
+          (a, b) => new Date(b.lastMessageTime || b.matchedAt).getTime() - new Date(a.lastMessageTime || a.matchedAt).getTime()
+        );
+        callback(sortedMatches);
+      }, (err) => {
+        console.warn('[Firestore] Matches subscription fallback:', err);
+        callback(localDb.getMatchesForUser(currentUserId));
+      });
+    } catch {
+      callback(localDb.getMatchesForUser(currentUserId));
+      return () => {};
+    }
+  }
+
+  async getMessages(matchId: string, currentUserId: string): Promise<Message[]> {
+    if (!matchId) return [];
+    const messagesMap = new Map<string, Message>();
+
+    // 1. Instant load from local permanent archive
+    const localMsgs = localDb.getMessagesForMatch(matchId);
+    for (const m of localMsgs) {
+      messagesMap.set(m.id, m);
+    }
+
+    // 2. Fetch from Firestore
+    try {
+      const messagesCol = collection(db, 'messages');
+      const q = query(messagesCol, where('matchId', '==', matchId));
+      const snap = await getDocs(q);
+      snap.forEach(d => {
+        const msg = d.data() as Message;
+        if (msg.matchId === matchId) {
+          messagesMap.set(msg.id || d.id, { ...msg, id: msg.id || d.id });
+        }
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error fetching messages:', err);
+    }
+
+    // 3. Fetch from backend server archive endpoint
+    try {
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_token') || currentUserId) : currentUserId;
+      const res = await fetch(`/api/messages/${matchId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.messages)) {
+          for (const sm of data.messages) {
+            messagesMap.set(sm.id, sm);
           }
-          matchesMap.set(lm.id, { ...lm, partner: partner || undefined });
         }
       }
+    } catch (err) {
+      console.warn('[Server] Error fetching server messages:', err);
+    }
 
-      const sortedMatches = Array.from(matchesMap.values()).sort(
-        (a, b) => new Date(b.matchedAt).getTime() - new Date(a.matchedAt).getTime()
-      );
-      callback(sortedMatches);
-    }, (err) => {
-      console.warn('[Firestore] Matches subscription error:', err);
-      // Call with local matches as fallback
-      const localFallback = localDb.getMatches().filter(m => m.userIds && m.userIds.includes(currentUserId));
-      callback(localFallback);
-    });
+    const mergedList = Array.from(messagesMap.values()).sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    // 4. Permanently archive merged history in local database
+    localDb.archiveMessages(mergedList);
+
+    return mergedList;
   }
 
   subscribeMessages(matchId: string, currentUserId: string, callback: (messages: Message[]) => void): Unsubscribe {
-    const messagesCol = collection(db, 'messages');
-    const q = query(
-      messagesCol, 
-      where('matchId', '==', matchId)
-    );
+    // 1. Immediately invoke callback with local archived messages (prevents blank chat screen on navigation or re-login)
+    const localMsgs = localDb.getMessagesForMatch(matchId);
+    if (localMsgs.length > 0) {
+      callback(localMsgs);
+    }
 
-    return onSnapshot(q, (snap) => {
-      const messages: Message[] = [];
-      snap.forEach(d => {
-        const msg = d.data() as Message;
-        // Verify current user belongs to the message exchange
-        if (msg.senderId === currentUserId || msg.receiverId === currentUserId) {
-          messages.push(msg);
+    // 2. Background sync with server and Firestore
+    this.getMessages(matchId, currentUserId).then(allMsgs => {
+      if (allMsgs.length > 0) {
+        callback(allMsgs);
+      }
+    }).catch(() => {});
+
+    // 3. Real-time Firestore listener
+    try {
+      const messagesCol = collection(db, 'messages');
+      const q = query(
+        messagesCol, 
+        where('matchId', '==', matchId)
+      );
+
+      return onSnapshot(q, (snap) => {
+        const messagesMap = new Map<string, Message>();
+        
+        // Start with local archived messages
+        for (const lm of localDb.getMessagesForMatch(matchId)) {
+          messagesMap.set(lm.id, lm);
         }
+
+        snap.forEach(d => {
+          const msg = d.data() as Message;
+          if (msg.matchId === matchId) {
+            messagesMap.set(msg.id || d.id, { ...msg, id: msg.id || d.id });
+          }
+        });
+
+        const sorted = Array.from(messagesMap.values()).sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+
+        // Archive to local storage
+        localDb.archiveMessages(sorted);
+        callback(sorted);
+      }, (err) => {
+        console.warn('[Firestore] Messages subscription fallback:', err);
+        callback(localDb.getMessagesForMatch(matchId));
       });
-      messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      callback(messages);
-    }, (err) => {
-      console.warn('[Firestore] Messages subscription error:', err);
-    });
+    } catch {
+      callback(localDb.getMessagesForMatch(matchId));
+      return () => {};
+    }
   }
 
   async sendMessage(matchId: string, senderId: string, receiverId: string, text: string): Promise<Message> {
@@ -2179,12 +2311,32 @@ class FirebaseService {
       read: false
     };
 
-    await setDoc(doc(db, 'messages', msgId), newMsg);
+    // 1. Immediately archive in local database (survives logout, closing chat, or reloading)
+    localDb.archiveMessage(newMsg);
 
-    await updateDoc(doc(db, 'matches', matchId), {
-      lastMessage: cleanText,
-      lastMessageTime: now
-    }).catch(() => {});
+    // 2. Persist to Firestore
+    try {
+      await setDoc(doc(db, 'messages', msgId), newMsg);
+      await updateDoc(doc(db, 'matches', matchId), {
+        lastMessage: cleanText,
+        lastMessageTime: now
+      }).catch(() => {});
+    } catch (err) {
+      console.warn('[Firestore] Error saving message to Firestore:', err);
+    }
+
+    // 3. Persist to server backend database (/api/messages/:matchId)
+    try {
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_token') || senderId) : senderId;
+      fetch(`/api/messages/${matchId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ text: cleanText, receiverId })
+      }).catch(() => {});
+    } catch {}
 
     return newMsg;
   }

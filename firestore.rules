@@ -93,9 +93,9 @@ service cloud.firestore {
 
     // 6. MENSAJES DE CHAT (/messages/{messageId})
     match /messages/{messageId} {
-      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && (request.resource.data.senderId == request.auth.uid || isAdmin());
-      allow update: if isSignedIn() && (resource.data.receiverId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (resource.data.receiverId == request.auth.uid || resource.data.senderId == request.auth.uid || isAdmin());
       allow delete: if isAdmin();
     }
 

@@ -283,6 +283,82 @@ class LocalDatabaseStore {
     this.setStored(STORAGE_KEY_MESSAGES, messages);
   }
 
+  getMessagesForMatch(matchId: string): Message[] {
+    if (!matchId) return [];
+    const all = this.getMessages();
+    return all
+      .filter(m => m.matchId === matchId)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  archiveMessage(message: Message): void {
+    if (!message || !message.matchId) return;
+    const all = this.getMessages();
+    const existingIndex = all.findIndex(m => m.id === message.id || (m.matchId === message.matchId && m.createdAt === message.createdAt && m.text === message.text));
+    if (existingIndex >= 0) {
+      all[existingIndex] = { ...all[existingIndex], ...message };
+    } else {
+      all.push(message);
+    }
+    this.saveMessages(all);
+
+    // Also update match lastMessage and lastMessageTime
+    this.updateMatchLastMessage(message.matchId, message.text, message.createdAt);
+  }
+
+  archiveMessages(messages: Message[]): void {
+    if (!Array.isArray(messages) || messages.length === 0) return;
+    const all = this.getMessages();
+    const map = new Map<string, Message>();
+    for (const m of all) {
+      map.set(m.id, m);
+    }
+    for (const m of messages) {
+      if (m && m.id) {
+        map.set(m.id, { ...(map.get(m.id) || {}), ...m });
+        this.updateMatchLastMessage(m.matchId, m.text, m.createdAt);
+      }
+    }
+    this.saveMessages(Array.from(map.values()));
+  }
+
+  updateMatchLastMessage(matchId: string, text: string, time: string): void {
+    if (!matchId) return;
+    const matches = this.getMatches();
+    let updated = false;
+    const newMatches = matches.map(m => {
+      if (m.id === matchId) {
+        updated = true;
+        return {
+          ...m,
+          lastMessage: text,
+          lastMessageTime: time
+        };
+      }
+      return m;
+    });
+    if (updated) {
+      this.saveMatches(newMatches);
+    }
+  }
+
+  archiveMatch(match: Match): void {
+    if (!match || !match.id) return;
+    const matches = this.getMatches();
+    const idx = matches.findIndex(m => m.id === match.id);
+    if (idx >= 0) {
+      matches[idx] = { ...matches[idx], ...match };
+      this.saveMatches(matches);
+    } else {
+      this.saveMatches([match, ...matches]);
+    }
+  }
+
+  getMatchesForUser(userId: string): Match[] {
+    if (!userId) return [];
+    return this.getMatches().filter(m => Array.isArray(m.userIds) && m.userIds.includes(userId));
+  }
+
   getAuditLogs(): AuditLog[] {
     const val = this.getStored<any>(STORAGE_KEY_LOGS, INITIAL_LOGS);
     return Array.isArray(val) ? val : [];

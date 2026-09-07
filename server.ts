@@ -1643,7 +1643,16 @@ app.get('/api/profiles/feed', requireAuth, (req, res) => {
         const { minAge, maxAge, interestedIn } = currentUser.preferences;
         if (minAge && u.age < minAge) return false;
         if (maxAge && u.age > maxAge) return false;
-        if (interestedIn && interestedIn.length > 0 && !interestedIn.includes(u.gender)) return false;
+        if (interestedIn && interestedIn.length > 0) {
+          const g = (u.gender || '').toLowerCase().trim();
+          const matchesGender = interestedIn.some((pref: string) => {
+            if (pref === 'female') return g === 'female' || g === 'mujer' || g === 'woman';
+            if (pref === 'male') return g === 'male' || g === 'hombre' || g === 'man';
+            if (pref === 'non-binary') return g === 'non-binary' || g === 'no binario';
+            return g === pref || g === 'other';
+          });
+          if (!matchesGender) return false;
+        }
       }
       return true;
     })
@@ -1815,7 +1824,21 @@ app.get('/api/messages/:matchId', requireAuth, (req, res) => {
   const currentUserId = (req as any).user.id;
   const { matchId } = req.params;
 
-  const match = matches.find(m => m.id === matchId);
+  let match = matches.find(m => m.id === matchId);
+  if (!match && matchId.startsWith('match_')) {
+    const parts = matchId.replace('match_', '').split('_');
+    if (parts.length === 2 && parts.includes(currentUserId)) {
+      match = {
+        id: matchId,
+        userIds: [parts[0], parts[1]],
+        matchedAt: new Date().toISOString(),
+        unreadCount: 0
+      };
+      matches.unshift(match);
+      saveDatabase();
+    }
+  }
+
   if (!match || !match.userIds.includes(currentUserId)) {
     res.status(403).json({ error: 'Acceso Denegado: No pertenecés a esta conversación.' });
     return;
@@ -1850,7 +1873,7 @@ app.get('/api/messages/:matchId', requireAuth, (req, res) => {
 app.post('/api/messages/:matchId', requireAuth, messageLimiter, (req, res) => {
   const currentUserId = (req as any).user.id;
   const { matchId } = req.params;
-  const { text } = req.body;
+  const { text, receiverId: requestedReceiverId } = req.body;
 
   if (!text || typeof text !== 'string' || !text.trim()) {
     res.status(400).json({ error: 'El mensaje no puede estar vacío.' });
@@ -1863,13 +1886,27 @@ app.post('/api/messages/:matchId', requireAuth, messageLimiter, (req, res) => {
     return;
   }
 
-  const match = matches.find(m => m.id === matchId);
+  let match = matches.find(m => m.id === matchId);
+  if (!match && matchId.startsWith('match_')) {
+    const parts = matchId.replace('match_', '').split('_');
+    if (parts.length === 2 && parts.includes(currentUserId)) {
+      match = {
+        id: matchId,
+        userIds: [parts[0], parts[1]],
+        matchedAt: new Date().toISOString(),
+        unreadCount: 0
+      };
+      matches.unshift(match);
+      saveDatabase();
+    }
+  }
+
   if (!match || !match.userIds.includes(currentUserId)) {
     res.status(403).json({ error: 'Acceso Denegado: No tenés permiso para enviar mensajes en este chat.' });
     return;
   }
 
-  const receiverId = match.userIds.find(id => id !== currentUserId)!;
+  const receiverId = requestedReceiverId || match.userIds.find(id => id !== currentUserId)!;
   const receiverUser = users.find(u => u.id === receiverId);
 
   if (receiverUser?.status === 'blocked') {

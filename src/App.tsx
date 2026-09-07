@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Navbar } from './components/Navbar';
 import { SwipeCard } from './components/SwipeCard';
 import { MatchCelebrationModal } from './components/MatchCelebrationModal';
@@ -202,10 +202,11 @@ export function App() {
     }
   }, [currentUser?.id, currentUser?.preferences, currentUser?.status]);
 
-  const loadFeed = async () => {
+  const loadFeed = async (prefOverride?: UserPreferences) => {
     setFeedLoading(true);
     try {
-      const data = await api.getFeed();
+      const effPref = prefOverride || currentUser?.preferences;
+      const data = await api.getFeed(effPref);
       const safeProfiles = (data.profiles || []).map(p => ({
         ...p,
         photos: (p.photos && p.photos.length > 0)
@@ -223,6 +224,41 @@ export function App() {
   };
 
   const knownMatchIdsRef = useRef<Set<string> | null>(null);
+
+  // Filtered displayed profiles strictly adhering to current preference
+  const displayedProfiles = useMemo(() => {
+    if (!currentUser) return feedProfiles;
+    const interestedIn = currentUser.preferences?.interestedIn;
+    if (!interestedIn || interestedIn.length === 0) return feedProfiles;
+
+    return feedProfiles.filter(profile => {
+      if (!profile || profile.id === currentUser.id) return false;
+      const g = (profile.gender || '').toLowerCase().trim();
+
+      // If user selected "Solo Mujeres" (only 'female')
+      if (interestedIn.length === 1 && interestedIn[0] === 'female') {
+        return g === 'female' || g === 'mujer' || g === 'woman';
+      }
+
+      // If user selected "Solo Hombres" (only 'male')
+      if (interestedIn.length === 1 && interestedIn[0] === 'male') {
+        return g === 'male' || g === 'hombre' || g === 'man';
+      }
+
+      // If user selected "Solo No Binario"
+      if (interestedIn.length === 1 && interestedIn[0] === 'non-binary') {
+        return g === 'non-binary' || g === 'no binario';
+      }
+
+      // If multiple or all
+      return interestedIn.some(pref => {
+        if (pref === 'female') return g === 'female' || g === 'mujer' || g === 'woman';
+        if (pref === 'male') return g === 'male' || g === 'hombre' || g === 'man';
+        if (pref === 'non-binary') return g === 'non-binary' || g === 'no binario';
+        return g === pref || g === 'other';
+      });
+    });
+  }, [feedProfiles, currentUser?.id, currentUser?.preferences?.interestedIn]);
 
   // Realtime matches & unread counter listener + Realtime incoming match celebration
   useEffect(() => {
@@ -264,12 +300,12 @@ export function App() {
 
   // Swipe Action Handler
   const handleSwipe = async (type: SwipeType) => {
-    if (feedProfiles.length === 0 || !currentUser) return;
+    if (displayedProfiles.length === 0 || !currentUser) return;
 
-    const currentProfile = feedProfiles[0];
+    const currentProfile = displayedProfiles[0];
     
     // Remove from local feed immediately for snappy UI
-    setFeedProfiles(prev => prev.slice(1));
+    setFeedProfiles(prev => prev.filter(p => p.id !== currentProfile.id));
     setCanRewind(true);
 
     try {
@@ -358,7 +394,7 @@ export function App() {
     // Reload candidates feed immediately
     setFeedLoading(true);
     try {
-      const data = await api.getFeed();
+      const data = await api.getFeed(updatedPreferences);
       setFeedProfiles(data.profiles);
     } catch (err) {
       console.error('Error reloading feed after filter change:', err);
@@ -498,11 +534,11 @@ export function App() {
                 <Flame className="w-10 h-10 text-rose-500/60" />
                 <span className="text-xs font-semibold text-slate-400">Buscando personas cerca de ti...</span>
               </div>
-            ) : feedProfiles.length > 0 ? (
+            ) : displayedProfiles.length > 0 ? (
               <div className="w-full">
                 <SwipeCard
-                  key={feedProfiles[0].id}
-                  profile={feedProfiles[0]}
+                  key={displayedProfiles[0].id}
+                  profile={displayedProfiles[0]}
                   onSwipe={handleSwipe}
                   onRewind={handleRewind}
                   canRewind={canRewind}
@@ -525,7 +561,7 @@ export function App() {
                 <div className="flex flex-col w-full gap-2 pt-2">
                   <button
                     id="btn-reload-feed"
-                    onClick={loadFeed}
+                    onClick={() => loadFeed()}
                     className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white font-bold text-xs shadow-lg shadow-rose-500/30 transition hover:scale-105 flex items-center justify-center gap-2"
                   >
                     <RotateCcw className="w-4 h-4" />

@@ -1,4 +1,4 @@
-import { User, Match, Message, AdminStats, AuditLog } from './types';
+import { User, Match, Message, AdminStats, AuditLog, UserPreferences } from './types';
 import { firebaseService } from './firebaseService';
 import { INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL, localDb } from './localStore';
 
@@ -513,9 +513,9 @@ class ApiService {
   // -------------------------------------------------------------
   // FEED & SWIPES (Mutual Match Engine)
   // -------------------------------------------------------------
-  async getFeed(): Promise<{ profiles: User[] }> {
+  async getFeed(explicitPreferences?: UserPreferences): Promise<{ profiles: User[] }> {
     const currentId = this.getCurrentUserId();
-    const profiles = await firebaseService.getFeed(currentId);
+    const profiles = await firebaseService.getFeed(currentId, explicitPreferences);
     return { profiles };
   }
 
@@ -541,8 +541,10 @@ class ApiService {
     return { matches };
   }
 
-  async getMessages(_matchId: string): Promise<{ messages: Message[] }> {
-    return { messages: [] };
+  async getMessages(matchId: string): Promise<{ messages: Message[] }> {
+    const currentId = this.getCurrentUserId();
+    const messages = await firebaseService.getMessages(matchId, currentId);
+    return { messages };
   }
 
   async sendMessage(matchId: string, text: string): Promise<{ message: Message }> {
@@ -561,6 +563,17 @@ class ApiService {
   async updateProfile(data: Partial<User>): Promise<{ user: User }> {
     const currentId = this.getCurrentUserId();
     const user = await firebaseService.updateUser(currentId, data);
+    try {
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('vulnerable_auth_token') || currentId) : currentId;
+      fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(data)
+      }).catch(() => {});
+    } catch {}
     return { user };
   }
 
