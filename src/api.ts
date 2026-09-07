@@ -515,8 +515,49 @@ class ApiService {
   // -------------------------------------------------------------
   async getFeed(explicitPreferences?: UserPreferences): Promise<{ profiles: User[] }> {
     const currentId = this.getCurrentUserId();
-    const profiles = await firebaseService.getFeed(currentId, explicitPreferences);
-    return { profiles };
+    const profileMap = new Map<string, User>();
+
+    // 1. Fetch from firebaseService (which merges Firestore, seeds across 0-1400+ km & local store)
+    try {
+      const fbProfiles = await firebaseService.getFeed(currentId, explicitPreferences);
+      fbProfiles.forEach(p => {
+        if (p && p.id) {
+          profileMap.set(p.id, {
+            ...p,
+            distanceKm: p.distanceKm !== undefined ? p.distanceKm : 0
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('[api.getFeed] Firebase getFeed fallback:', e);
+    }
+
+    // 2. Fetch from Express /api/profiles/feed if server session is active
+    try {
+      const token = this.getToken();
+      if (token) {
+        const res = await fetch('/api/profiles/feed', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.profiles)) {
+            data.profiles.forEach((p: User) => {
+              if (p && p.id && !profileMap.has(p.id)) {
+                profileMap.set(p.id, {
+                  ...p,
+                  distanceKm: p.distanceKm !== undefined ? p.distanceKm : 0
+                });
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // server fetch note
+    }
+
+    return { profiles: Array.from(profileMap.values()) };
   }
 
   async swipe(targetId: string, type: 'like' | 'pass' | 'superlike', targetUser?: User): Promise<{
@@ -599,23 +640,72 @@ class ApiService {
   }
 
   async getAllUsersAdmin(): Promise<{ users: User[] }> {
-    const users = await firebaseService.getAllUsersAdmin();
-    return { users };
+    const userMap = new Map<string, User>();
+    // 1. Get from firebaseService
+    try {
+      const fbUsers = await firebaseService.getAllUsersAdmin();
+      fbUsers.forEach(u => {
+        if (u && u.id) userMap.set(u.id, u);
+      });
+    } catch (e) {
+      console.warn('[api.getAllUsersAdmin] Firebase load note:', e);
+    }
+
+    // 2. Query Express server /api/admin/users
+    try {
+      const token = this.getToken();
+      if (token) {
+        const res = await fetch('/api/admin/users', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.users)) {
+            data.users.forEach((srvUser: User) => {
+              if (srvUser && srvUser.id) {
+                const existing = userMap.get(srvUser.id);
+                userMap.set(srvUser.id, {
+                  ...srvUser,
+                  photos: srvUser.photos?.length ? srvUser.photos : (existing?.photos || []),
+                  distanceKm: srvUser.distanceKm !== undefined ? srvUser.distanceKm : existing?.distanceKm
+                });
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[api.getAllUsersAdmin] Server load note:', e);
+    }
+
+    return { users: Array.from(userMap.values()) };
   }
 
-  async getAdminUsers(params?: { q?: string; status?: string; sortBy?: string }): Promise<{ users: User[] }> {
-    let users = await firebaseService.getAllUsersAdmin();
+  async getAdminUsers(params?: { q?: string; status?: string; sortBy?: string; distanceFilter?: string }): Promise<{ users: User[] }> {
+    const { users: rawUsers } = await this.getAllUsersAdmin();
+    let users = rawUsers;
     if (params?.q) {
       const q = params.q.toLowerCase().trim();
       users = users.filter(u => 
         (u.name || '').toLowerCase().includes(q) || 
         (u.email || '').toLowerCase().includes(q) ||
         (u.location || '').toLowerCase().includes(q) ||
-        (u.occupation || '').toLowerCase().includes(q)
+        (u.occupation || '').toLowerCase().includes(q) ||
+        `${u.distanceKm || 0} km`.toLowerCase().includes(q) ||
+        `${u.distanceKm || 0}km`.toLowerCase().includes(q)
       );
     }
     if (params?.status && params.status !== 'all') {
       users = users.filter(u => u.status === params.status);
+    }
+    if (params?.distanceFilter && params.distanceFilter !== 'all') {
+      if (params.distanceFilter === 'near') {
+        users = users.filter(u => (u.distanceKm || 0) <= 20);
+      } else if (params.distanceFilter === 'medium') {
+        users = users.filter(u => (u.distanceKm || 0) > 20 && (u.distanceKm || 0) <= 100);
+      } else if (params.distanceFilter === 'far') {
+        users = users.filter(u => (u.distanceKm || 0) > 100);
+      }
     }
     if (params?.sortBy) {
       if (params.sortBy === 'newest') {
@@ -626,6 +716,10 @@ class ApiService {
         users.sort((a, b) => (b.likesCount || 0) - (a.likesCount || 0));
       } else if (params.sortBy === 'matches') {
         users.sort((a, b) => (b.matchesCount || 0) - (a.matchesCount || 0));
+      } else if (params.sortBy === 'distanceAsc') {
+        users.sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
+      } else if (params.sortBy === 'distanceDesc') {
+        users.sort((a, b) => (b.distanceKm || 0) - (a.distanceKm || 0));
       }
     }
     return { users };

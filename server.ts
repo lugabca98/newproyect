@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, Gender } from './src/types.js';
+import { SEED_PROFILES_WITH_DISTANCES } from './src/seedUsers';
 import { sendOtpEmail, getMailConfigStatus, purgeUserFromFirebaseAuth, recordKnownCredential } from './server/mailer.js';
 
 const app = express();
@@ -221,9 +222,15 @@ function getAdminOwnerUser(): ServerUser {
 }
 
 function getDefaultSeedUsers(): ServerUser[] {
-  return [
-    getAdminOwnerUser()
-  ];
+  const admin = getAdminOwnerUser();
+  const seedUsers = SEED_PROFILES_WITH_DISTANCES.map(u => 
+    createSeedUser({
+      ...u,
+      role: 'user' as const,
+      status: 'active' as const
+    }, 'password123')
+  );
+  return [admin, ...seedUsers];
 }
 
 function _unusedSeedUsers(): ServerUser[] {
@@ -544,9 +551,21 @@ function loadDatabase() {
     auditLogs = getDefaultSeedAuditLogs();
   }
 
-  ensureAdminUser();
-  saveDatabase();
-}
+    ensureAdminUser();
+
+    // Merge any missing seed users (with varying kilometers) into active users
+    const deletedSet = new Set(deletedAccounts.map(d => d.email.toLowerCase()));
+    const existingUserIds = new Set(users.map(u => u.id));
+    const allSeeds = getDefaultSeedUsers();
+    for (const seed of allSeeds) {
+      if (!existingUserIds.has(seed.id) && !deletedSet.has(seed.email.toLowerCase())) {
+        users.push(seed);
+        existingUserIds.add(seed.id);
+      }
+    }
+
+    saveDatabase();
+  }
 
 let isSaving = false;
 let pendingSave = false;
@@ -1968,7 +1987,7 @@ app.get('/api/admin/metrics', requireAdmin, (req, res) => {
 
 // Admin Get All Users
 app.get('/api/admin/users', requireAdmin, (req, res) => {
-  const { q, status, role, sortBy } = req.query as { q?: string; status?: string; role?: string; sortBy?: string };
+  const { q, status, role, sortBy, distanceFilter } = req.query as { q?: string; status?: string; role?: string; sortBy?: string; distanceFilter?: string };
 
   let filtered = users.map(u => toPrivateUser(u));
 
@@ -1979,6 +1998,8 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
       u.email.toLowerCase().includes(term) ||
       u.location.toLowerCase().includes(term) ||
       u.occupation.toLowerCase().includes(term) ||
+      `${u.distanceKm || 0} km`.toLowerCase().includes(term) ||
+      `${u.distanceKm || 0}km`.toLowerCase().includes(term) ||
       u.interests.some(i => i.toLowerCase().includes(term))
     );
   }
@@ -1991,12 +2012,26 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
     filtered = filtered.filter(u => u.role === role);
   }
 
+  if (distanceFilter && distanceFilter !== 'all') {
+    if (distanceFilter === 'near') {
+      filtered = filtered.filter(u => (u.distanceKm || 0) <= 20);
+    } else if (distanceFilter === 'medium') {
+      filtered = filtered.filter(u => (u.distanceKm || 0) > 20 && (u.distanceKm || 0) <= 100);
+    } else if (distanceFilter === 'far') {
+      filtered = filtered.filter(u => (u.distanceKm || 0) > 100);
+    }
+  }
+
   if (sortBy === 'oldest') {
     filtered.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   } else if (sortBy === 'likes') {
     filtered.sort((a, b) => (b.likesCount || 0) - (a.likesCount || 0));
   } else if (sortBy === 'matches') {
     filtered.sort((a, b) => (b.matchesCount || 0) - (a.matchesCount || 0));
+  } else if (sortBy === 'distanceAsc') {
+    filtered.sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
+  } else if (sortBy === 'distanceDesc') {
+    filtered.sort((a, b) => (b.distanceKm || 0) - (a.distanceKm || 0));
   } else {
     filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }

@@ -217,9 +217,12 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
                 <span>{profile.occupation}</span>
               </div>
             )}
-            <div className="flex items-center gap-1 text-slate-300">
-              <MapPin className="w-3.5 h-3.5 text-rose-400" />
-              <span>{profile.location} {profile.distanceKm ? `(a ${profile.distanceKm} km)` : ''}</span>
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>{profile.location}</span>
+              <span className="font-mono text-[10px] font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 rounded-full">
+                {profile.distanceKm !== undefined ? `a ${profile.distanceKm} km` : 'a 0 km'}
+              </span>
             </div>
           </div>
 

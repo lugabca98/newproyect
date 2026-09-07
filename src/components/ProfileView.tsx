@@ -98,7 +98,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setInterests(currentUser.interests || []);
     setMinAge(currentUser.preferences?.minAge || 18);
     setMaxAge(currentUser.preferences?.maxAge || 45);
-    setMaxDistance(currentUser.preferences?.maxDistanceKm || 50);
+    setMaxDistance(currentUser.preferences?.maxDistanceKm || 1500);
     setInterestedIn(currentUser.preferences?.interestedIn || ['female', 'male']);
   }, [currentUser.id]);
 
@@ -815,16 +815,36 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div>
               <div className="flex justify-between text-xs text-slate-400 mb-1">
                 <span>Distancia Máxima</span>
-                <span className="text-white font-bold">{maxDistance} km</span>
+                <span className="text-white font-bold">
+                  {maxDistance >= 1500 ? 'Sin límite (Cualquier distancia / Otros km)' : `${maxDistance} km`}
+                </span>
               </div>
               <input
+                id="input-preferences-max-distance"
                 type="range"
                 min="5"
-                max="200"
+                max="1500"
+                step="10"
                 value={maxDistance}
                 onChange={(e) => setMaxDistance(Number(e.target.value))}
                 className="w-full accent-rose-500"
               />
+              <div className="flex items-center justify-between gap-1 mt-1.5">
+                {[50, 200, 500, 1500].map(dist => (
+                  <button
+                    key={dist}
+                    type="button"
+                    onClick={() => setMaxDistance(dist)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition ${
+                      maxDistance === dist
+                        ? 'bg-rose-500 text-white shadow'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {dist === 1500 ? 'Sin límite (Otros km)' : `${dist} km`}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

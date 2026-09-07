@@ -57,6 +57,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
+  const [distanceFilter, setDistanceFilter] = useState('all');
 
   // Selected User Modal for deep profile inspection
   const [inspectedUser, setInspectedUser] = useState<User | null>(null);
@@ -81,7 +82,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   useEffect(() => {
     fetchAdminData();
-  }, [searchQuery, statusFilter, sortBy]);
+  }, [searchQuery, statusFilter, sortBy, distanceFilter]);
 
   const fetchAdminData = async () => {
     if (!isAuthorizedAdmin) {
@@ -93,7 +94,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       // Parallel fetch metrics, users, and audit logs with resilient fallbacks
       const [metricsRes, usersRes, logsRes] = await Promise.allSettled([
         api.getAdminMetrics(),
-        api.getAdminUsers({ q: searchQuery, status: statusFilter, sortBy }),
+        api.getAdminUsers({ q: searchQuery, status: statusFilter, sortBy, distanceFilter }),
         api.getAdminAuditLogs()
       ]);
 
@@ -411,7 +412,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar por nombre, email, ciudad..."
+                placeholder="Buscar por nombre, email, ciudad, distancia km..."
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
               />
             </div>
@@ -435,6 +436,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 ))}
               </div>
 
+              {/* Distance Filter Selector */}
+              <select
+                id="select-admin-distance"
+                value={distanceFilter}
+                onChange={(e) => setDistanceFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-amber-500"
+              >
+                <option value="all">📍 Todos los kilómetros (0 - 1500+ km)</option>
+                <option value="near">Cercanos (≤ 20 km)</option>
+                <option value="medium">Media distancia (20 - 100 km)</option>
+                <option value="far">Otros kilómetros / Lejanos (&gt; 100 km)</option>
+              </select>
+
               {/* Sort selector */}
               <select
                 id="select-admin-sort"
@@ -446,6 +460,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <option value="oldest">Más antiguos</option>
                 <option value="likes">Más Likes</option>
                 <option value="matches">Más Matches</option>
+                <option value="distanceAsc">Distancia: Menor a mayor km</option>
+                <option value="distanceDesc">Distancia: Mayor a menor km (otros km)</option>
               </select>
 
             </div>
@@ -492,10 +508,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-rose-300 font-medium truncate">{user.occupation || 'Neurodivergente'}</p>
-                      <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                      <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-400 truncate">
                         <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
                         <span className="truncate">{user.location}</span>
-                      </p>
+                        <span className="shrink-0 font-mono font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 rounded text-[10px]">
+                          {user.distanceKm !== undefined ? `${user.distanceKm} km` : '0 km'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -649,9 +668,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                       {/* Location & Age */}
                       <td className="px-4 py-3.5">
-                        <span className="text-slate-200 block">{user.age} años • {user.gender}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-200 font-medium">{user.age} años • {user.gender}</span>
+                          <span className="font-mono text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                            {user.distanceKm !== undefined ? `${user.distanceKm} km` : '0 km'}
+                          </span>
+                        </div>
                         <span className="text-slate-400 text-[11px] flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3 text-rose-400" />
+                          <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
                           <span>{user.location}</span>
                         </span>
                       </td>
@@ -914,7 +938,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               <div className="grid grid-cols-2 gap-2 pt-1 text-slate-400">
                 <div><strong>Neurodivergencia:</strong> {inspectedUser.occupation}</div>
-                <div><strong>Ubicación:</strong> {inspectedUser.location}</div>
+                <div><strong>Ubicación:</strong> {inspectedUser.location} <span className="font-mono text-amber-300 font-bold">({inspectedUser.distanceKm !== undefined ? `${inspectedUser.distanceKm} km` : '0 km'})</span></div>
                 <div><strong>Registro:</strong> {new Date(inspectedUser.createdAt).toLocaleDateString()}</div>
                 <div><strong>Última actividad:</strong> {new Date(inspectedUser.lastActive).toLocaleDateString()}</div>
               </div>

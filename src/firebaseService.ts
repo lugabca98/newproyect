@@ -1767,8 +1767,17 @@ class FirebaseService {
         return false;
       }
 
+      // Distance filter: respect maxDistanceKm only if user specifically configured it below 1500 km
+      if (effectivePref?.maxDistanceKm && effectivePref.maxDistanceKm < 1500) {
+        if (u.distanceKm !== undefined && u.distanceKm > effectivePref.maxDistanceKm) {
+          return false;
+        }
+      }
+
       return true;
     };
+
+    const candidatePool = new Map<string, User>();
 
     try {
       // 1. Get all swipes recorded by current user
@@ -1783,47 +1792,44 @@ class FirebaseService {
       // 2. Query public profiles (PRIVACY: Never query /users directly in feed)
       const publicCol = collection(db, 'publicProfiles');
       const publicSnap = await getDocs(publicCol);
-      const users: User[] = [];
       publicSnap.forEach(d => {
         const u = d.data() as User;
-        if (matchesPreference(u)) {
-          users.push({
-            ...u,
-            photos: (u.photos && u.photos.length > 0) ? u.photos : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
-            interests: u.interests || [],
-            name: u.name || 'Usuario',
-            email: '' // Strictly stripped for privacy
-          });
+        if (u && u.id) {
+          candidatePool.set(u.id, u);
         }
       });
-
-      if (users.length > 0) {
-        users.forEach(u => this.cacheUser(u));
-        return users;
-      }
     } catch (err) {
-      console.warn('[Firestore] Error loading feed:', err);
+      console.warn('[Firestore] Error loading feed from Firestore, using local & seed pool:', err);
     }
 
-    // Fallback to all seed and local store profiles with strict preference and swiped filtering
-    const combinedCandidates = [...INITIAL_SEED_USERS, ...localDb.getUsers()];
-    const uniqueMap = new Map<string, User>();
-    
-    combinedCandidates.forEach(u => {
+    // 3. Always merge Initial Seed Users (profiles with all distances: 0 to 1400+ km) & local DB
+    for (const su of INITIAL_SEED_USERS) {
+      if (su && su.id && !candidatePool.has(su.id)) {
+        candidatePool.set(su.id, su);
+      }
+    }
+    for (const lu of localDb.getUsers()) {
+      if (lu && lu.id && !candidatePool.has(lu.id)) {
+        candidatePool.set(lu.id, lu);
+      }
+    }
+
+    const filteredCandidates: User[] = [];
+    candidatePool.forEach(u => {
       if (matchesPreference(u)) {
-        uniqueMap.set(u.id, {
+        filteredCandidates.push({
           ...u,
           photos: (u.photos && u.photos.length > 0) ? u.photos : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
           interests: u.interests || [],
           name: u.name || 'Usuario',
-          email: ''
+          distanceKm: u.distanceKm !== undefined ? u.distanceKm : 0,
+          email: '' // Strictly stripped for privacy in public feed
         });
       }
     });
 
-    const candidateList = Array.from(uniqueMap.values());
-    candidateList.forEach(u => this.cacheUser(u));
-    return candidateList;
+    filteredCandidates.forEach(u => this.cacheUser(u));
+    return filteredCandidates;
   }
 
   async recordSwipe(
@@ -2410,18 +2416,23 @@ class FirebaseService {
     // 1. First add Initial Seed Users & Local DB users so we ALWAYS have a complete base (excluding deleted)
     for (const u of INITIAL_SEED_USERS) {
       if (u && u.id && !locallyDeleted.has(u.email.toLowerCase())) {
-        userMap.set(u.id, { ...u });
+        userMap.set(u.id, { ...u, distanceKm: u.distanceKm !== undefined ? u.distanceKm : 0 });
       }
     }
     for (const u of localDb.getUsers()) {
       if (u && u.id && !locallyDeleted.has((u.email || '').toLowerCase())) {
-        userMap.set(u.id, { ...userMap.get(u.id), ...u });
+        const prev = userMap.get(u.id);
+        userMap.set(u.id, {
+          ...prev,
+          ...u,
+          distanceKm: u.distanceKm !== undefined ? u.distanceKm : (prev?.distanceKm ?? 0)
+        });
       }
     }
 
     // Ensure Owner Admin is present in the list
     if (!userMap.has(INITIAL_ADMIN.id)) {
-      userMap.set(INITIAL_ADMIN.id, { ...INITIAL_ADMIN });
+      userMap.set(INITIAL_ADMIN.id, { ...INITIAL_ADMIN, distanceKm: 0 });
     }
 
     // 2. Fetch from Firestore public profiles
@@ -2430,7 +2441,12 @@ class FirebaseService {
       pubSnap.forEach(d => {
         const p = d.data() as User;
         if (p && p.id && !locallyDeleted.has((p.email || '').toLowerCase())) {
-          userMap.set(p.id, { ...userMap.get(p.id), ...p });
+          const prev = userMap.get(p.id);
+          userMap.set(p.id, {
+            ...prev,
+            ...p,
+            distanceKm: p.distanceKm !== undefined ? p.distanceKm : (prev?.distanceKm ?? 0)
+          });
         }
       });
     } catch (err) {
@@ -2443,7 +2459,12 @@ class FirebaseService {
       snap.forEach(d => {
         const u = d.data() as User;
         if (u && u.id && !locallyDeleted.has((u.email || '').toLowerCase())) {
-          userMap.set(u.id, { ...userMap.get(u.id), ...u });
+          const prev = userMap.get(u.id);
+          userMap.set(u.id, {
+            ...prev,
+            ...u,
+            distanceKm: u.distanceKm !== undefined ? u.distanceKm : (prev?.distanceKm ?? 0)
+          });
         }
       });
     } catch (err) {
@@ -2454,6 +2475,7 @@ class FirebaseService {
       .filter(u => !locallyDeleted.has((u.email || '').toLowerCase()) && u.status !== 'deleted')
       .map(u => ({
         ...u,
+        distanceKm: u.distanceKm !== undefined ? u.distanceKm : 0,
         photos: (u.photos && u.photos.length > 0)
           ? u.photos
           : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'],

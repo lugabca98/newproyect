@@ -1,5 +1,6 @@
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, UserCredential, OtpRecord, PendingRegistration } from './types';
 import { DEFAULT_ADMIN_EMAIL, DEMO_ACCOUNTS, hashPassword, hashPasswordSync } from './utils/security';
+import { SEED_PROFILES_WITH_DISTANCES } from './seedUsers';
 
 const STORAGE_KEY_USERS = 'mv_db_users';
 const STORAGE_KEY_SWIPES = 'mv_db_swipes';
@@ -42,7 +43,7 @@ export const INITIAL_ADMIN: User = {
   }
 };
 
-export const INITIAL_SEED_USERS: User[] = [];
+export const INITIAL_SEED_USERS: User[] = SEED_PROFILES_WITH_DISTANCES;
 
 const INITIAL_MATCHES: Match[] = [];
 
@@ -138,21 +139,27 @@ class LocalDatabaseStore {
     const users = this.getStored<User[]>(STORAGE_KEY_USERS, []);
     if (users.length === 0) {
       const filteredSeed = INITIAL_SEED_USERS.filter(u => !deletedEmails.has(u.email.toLowerCase()));
-      this.setStored(STORAGE_KEY_USERS, filteredSeed);
+      this.setStored(STORAGE_KEY_USERS, [INITIAL_ADMIN, ...filteredSeed]);
       this.setStored(STORAGE_KEY_MATCHES, INITIAL_MATCHES);
       this.setStored(STORAGE_KEY_MESSAGES, INITIAL_MESSAGES);
       this.setStored(STORAGE_KEY_LOGS, INITIAL_LOGS);
     } else {
-      // Ensure seed users have updated neurodivergences if previously seeded with old professions
       let changed = false;
       const seedMap = new Map(INITIAL_SEED_USERS.map(s => [s.email.toLowerCase(), s]));
       
+      // Update neurodivergences and ensure distanceKm is populated for existing users
       users.forEach(u => {
-        const seed = seedMap.get(u.email.toLowerCase());
-        if (seed && (!u.occupation || u.occupation.includes('Diseñadora') || u.occupation.includes('Developer') || u.occupation.includes('Arquitecta') || u.occupation.includes('Fotógrafo') || u.occupation.includes('Medicina') || u.occupation.includes('Sommelier') || u.occupation.includes('Danza') || u.occupation.includes('Operaciones'))) {
-          u.occupation = seed.occupation;
-          u.bio = seed.bio;
-          changed = true;
+        const seed = seedMap.get((u.email || '').toLowerCase());
+        if (seed) {
+          if (!u.occupation || u.occupation.includes('Diseñadora') || u.occupation.includes('Developer') || u.occupation.includes('Arquitecta') || u.occupation.includes('Fotógrafo') || u.occupation.includes('Medicina') || u.occupation.includes('Sommelier') || u.occupation.includes('Danza') || u.occupation.includes('Operaciones')) {
+            u.occupation = seed.occupation;
+            u.bio = seed.bio;
+            changed = true;
+          }
+          if (u.distanceKm === undefined || u.distanceKm === null) {
+            u.distanceKm = seed.distanceKm;
+            changed = true;
+          }
         }
       });
 
@@ -161,6 +168,18 @@ class LocalDatabaseStore {
       if (validUsers.length !== users.length) {
         changed = true;
       }
+
+      // Ensure seed users (especially from other kilometers) are present
+      INITIAL_SEED_USERS.forEach(seed => {
+        const emailLower = (seed.email || '').toLowerCase();
+        if (!deletedEmails.has(emailLower)) {
+          const exists = validUsers.some(u => (u.email || '').toLowerCase() === emailLower || u.id === seed.id);
+          if (!exists) {
+            validUsers.push({ ...seed });
+            changed = true;
+          }
+        }
+      });
 
       // Ensure admin exists with admin role
       const adminIdx = validUsers.findIndex(u => u.email.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase());
