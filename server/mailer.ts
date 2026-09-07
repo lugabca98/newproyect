@@ -1,4 +1,14 @@
 import nodemailer from 'nodemailer';
+import fs from 'fs';
+import path from 'path';
+
+let appletConfig: any = null;
+try {
+  const cfgPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(cfgPath)) {
+    appletConfig = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  }
+} catch {}
 
 export interface SendOtpMailParams {
   email: string;
@@ -422,7 +432,8 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
   }
 
   // 4. Try Google Firebase Identity Toolkit (sends real email directly to Gmail / external inboxes from Google servers)
-  const googleApiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyDQ3y2kU-0dQbSYMKbeAFqEGiDg_wyquQ0";
+  const googleApiKey = process.env.VITE_FIREBASE_API_KEY || appletConfig?.apiKey || "AIzaSyDC017ldRBZJfxTqtDtdkew9VQMFuE8AV0";
+  const projectAuthDomain = appletConfig?.authDomain || "noble-voltage-37dgj.firebaseapp.com";
   const hasCustomSmtp = Boolean(process.env.GMAIL_USER || process.env.SMTP_HOST || process.env.SMTP_USER);
 
   // If no custom SMTP/Gmail is provided, try Firebase Identity Toolkit to deliver directly from Google to external inbox
@@ -480,7 +491,7 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
 
       if (authToken) {
         try {
-          const continueUrl = actionUrl || `https://vulnerable-app-e942a.firebaseapp.com/?emailVerified=true&email=${encodeURIComponent(email)}`;
+          const continueUrl = actionUrl || `https://${projectAuthDomain}/?emailVerified=true&email=${encodeURIComponent(email)}`;
           const oobRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${googleApiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -518,7 +529,7 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
           body: JSON.stringify({
             requestType: "PASSWORD_RESET",
             email,
-            continueUrl: actionUrl || "https://vulnerable-app-e942a.firebaseapp.com/?mode=reset-password"
+            continueUrl: actionUrl || `https://${projectAuthDomain}/?mode=reset-password`
           })
         });
         const oobData = await oobRes.json();

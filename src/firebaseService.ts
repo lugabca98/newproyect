@@ -250,7 +250,7 @@ class FirebaseService {
     let emailVerified = false;
 
     // Use project authDomain which is permanently whitelisted in Firebase Auth
-    const authDomainUrl = `https://vulnerable-app-e942a.firebaseapp.com/?emailVerified=true&email=${encodeURIComponent(email)}`;
+    const authDomainUrl = `https://${firebaseConfig.authDomain || 'noble-voltage-37dgj.firebaseapp.com'}/?emailVerified=true&email=${encodeURIComponent(email)}`;
     const actionCodeSettings: ActionCodeSettings = {
       url: authDomainUrl,
       handleCodeInApp: true
@@ -859,7 +859,7 @@ class FirebaseService {
       await deleteDoc(doc(db, 'deletedAccounts', cleanEmail)).catch(() => {});
     } catch {}
 
-    const authDomainUrl = `https://vulnerable-app-e942a.firebaseapp.com/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}`;
+    const authDomainUrl = `https://${firebaseConfig.authDomain || 'noble-voltage-37dgj.firebaseapp.com'}/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}`;
     const actionCodeSettings: ActionCodeSettings = {
       url: authDomainUrl,
       handleCodeInApp: true

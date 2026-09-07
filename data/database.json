@@ -4,8 +4,8 @@
       "id": "admin-owner",
       "name": "Admin Propietario",
       "email": "lugabca98@gmail.com",
-      "passwordHash": "91f23e93d30f2ac31695616fb0e5dc280569261d155d98211ea765bbee736cba",
-      "passwordSalt": "294ebad378a0d2c36175f5d58dc957e1",
+      "passwordHash": "e004dcc376684b33d1306b4d3d389743ad00ad0df6e5699c854a6972d03c094a96b9228559cb4925f89122a9ba26630659090dd08400419bb5d8fb158766ff25",
+      "passwordSalt": "a06706c051d25b2246d3eb2396208554",
       "age": 28,
       "gender": "other",
       "bio": "Propietario y Administrador de Vulnerable. Espacio seguro y empático para personas neurodivergentes.",
@@ -25,20 +25,20 @@
       "emailVerified": true,
       "status": "active",
       "role": "admin",
-      "createdAt": "2026-01-01T00:00:00.000Z",
-      "lastActive": "2026-08-29T17:58:00.347Z",
+      "createdAt": "2026-09-07T23:24:21.330Z",
+      "lastActive": "2026-09-07T23:24:21.330Z",
       "likesCount": 142,
       "matchesCount": 28,
       "preferences": {
         "minAge": 18,
+        "maxAge": 99,
         "interestedIn": [
           "female",
           "male",
           "non-binary",
           "other"
         ],
-        "maxAge": 99,
-        "maxDistanceKm": 140
+        "maxDistanceKm": 1500
       }
     },
     {
@@ -47,7 +47,7 @@
       "email": "valeria@ejemplo.com",
       "age": 24,
       "gender": "female",
-      "bio": "TDAH creativa 🎨. Amante del café filtrado, hiperfoco en diseño, museos de arte contemporáneo y pasear a mi perrito Milo 🐶.",
+      "bio": "Diseñadora UX/UI 🎨. Amante del café filtrado, museos de arte contemporáneo y pasear a mi perrito Milo 🐶.",
       "photos": [
         "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
@@ -55,7 +55,7 @@
       ],
       "location": "Palermo, CABA",
       "distanceKm": 3,
-      "occupation": "TDAH & Ansiedad",
+      "occupation": "Diseñadora de Producto",
       "interests": [
         "Diseño",
         "Fotografía",
@@ -67,21 +67,22 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-15T18:51:57.893Z",
-      "lastActive": "2026-08-27T19:00:38.818Z",
+      "createdAt": "2026-08-26T23:24:21.327Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 89,
       "matchesCount": 14,
       "preferences": {
-        "maxAge": 32,
-        "minAge": 22,
-        "maxDistanceKm": 25,
+        "minAge": 20,
+        "maxAge": 35,
         "interestedIn": [
           "male",
+          "female",
           "non-binary"
-        ]
+        ],
+        "maxDistanceKm": 1000
       },
-      "passwordHash": "50d4a735593eaa8f4ac979047af90df4e58ea445594635e4abd7ed8241e2ad3c01a68b865df4f0b9b0ac1cc3f1239e1b13c70e7ee3c1f069aa303348780bb8c8",
-      "passwordSalt": "42d73913ff67496bbc2ebdf17fe66a88"
+      "passwordHash": "f0d4247c33fe089d868027ac7e443aec425dd28c8c764551ea10b550483dd9b8addf15b27c094f4cfd89caef87679921ace9415a36abc79a79d9f7cae4b11db6",
+      "passwordSalt": "55975f14d0b38e3a1634e082b71b2e76"
     },
     {
       "id": "user-mateo",
@@ -89,14 +90,14 @@
       "email": "mateo@ejemplo.com",
       "age": 29,
       "gender": "male",
-      "bio": "Fotógrafo & navegando la depresión y el TDAH 📸. Los viajes y capturar luces me ayudan a reconectar con el presente.",
+      "bio": "Fotógrafo documental & viajero empedernido 📸. 28 países y contando. Charlas profundas y escapadas improvisadas.",
       "photos": [
         "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80"
       ],
       "location": "San Telmo, CABA",
       "distanceKm": 4,
-      "occupation": "Depresión & TDAH",
+      "occupation": "Fotógrafo Profesional",
       "interests": [
         "Fotografía",
         "Viajes",
@@ -108,21 +109,21 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-12T18:51:57.893Z",
-      "lastActive": "2026-08-27T19:00:41.637Z",
+      "createdAt": "2026-08-23T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 94,
       "matchesCount": 18,
       "preferences": {
-        "minAge": 23,
-        "maxDistanceKm": 40,
+        "minAge": 22,
+        "maxAge": 35,
         "interestedIn": [
           "female",
           "non-binary"
         ],
-        "maxAge": 33
+        "maxDistanceKm": 1000
       },
-      "passwordHash": "f119ae0fae8309e960cbb9f70129915b1b7fd2d322ffb72916e519433713fa83b0e596efc7f85b65e0d7f0f3598eae5e0a590fc4a9e0cbccb073df52e8d346ed",
-      "passwordSalt": "e174efb638bae78f554152dd114c867d"
+      "passwordHash": "33a021e43d2b2cc1a22fea24d4e1324b49756c1b48897274104e4010622534d626f1f82985d36fb9025de43cfd7572bfefa6113fc5997debeeeafd50c99446d6",
+      "passwordSalt": "14c309dc2dc5c61f3520f6ee48fc03c7"
     },
     {
       "id": "user-elena",
@@ -130,14 +131,14 @@
       "email": "elena@ejemplo.com",
       "age": 25,
       "gender": "female",
-      "bio": "Navegando episodios de depresión & ansiedad social a través del movimiento y la danza contemporánea 🩰🌿. Empatía ante todo.",
+      "bio": "Bailarina contemporánea e instructora de Pilates 🩰🌿. En busca de buenas energías, risas espontáneas y conexión genuina.",
       "photos": [
         "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
       ],
       "location": "Colegiales, CABA",
       "distanceKm": 4,
-      "occupation": "Depresión & Ansiedad",
+      "occupation": "Instructora de Danza",
       "interests": [
         "Danza",
         "Pilates",
@@ -149,21 +150,21 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-23T18:51:57.893Z",
-      "lastActive": "2026-08-27T19:00:44.388Z",
+      "createdAt": "2026-09-03T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 132,
       "matchesCount": 26,
       "preferences": {
-        "maxDistanceKm": 25,
-        "maxAge": 32,
+        "minAge": 22,
+        "maxAge": 35,
         "interestedIn": [
           "male",
           "female"
         ],
-        "minAge": 23
+        "maxDistanceKm": 1000
       },
-      "passwordHash": "05fd8554a23085a9198dbe93983d0e359427aa0a0e6b440da8987daa56c112afb26414ca2a26aa0e2e002b56599125cd928496a79ba66aa7e415dcb19dc57aa6",
-      "passwordSalt": "e57b40c587e900bc0966462c4f30b665"
+      "passwordHash": "4195311dd415453476f429d9e05525bfa9b3a270d356dc1e4e8c82f33e45bf8cd7b2a077c4331c708de3511a486f09457baf9f3ee31f622ff675fcfaf3973810",
+      "passwordSalt": "ae6f0f754b5fc1857d445f765f90042c"
     },
     {
       "id": "user-lucas",
@@ -171,15 +172,14 @@
       "email": "lucas@ejemplo.com",
       "age": 27,
       "gender": "male",
-      "bio": "En el espectro autista (TEA) & apasionado por la programación y la escalada en roca 🧗. Valoro la comunicación directa y honesta.",
+      "bio": "Ingeniero de software & escalador en roca 🧗. Apasionado por la cocina italiana casera 🍝 y tocar la guitarra.",
       "photos": [
         "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80"
+        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80"
       ],
       "location": "Recoleta, CABA",
       "distanceKm": 5,
-      "occupation": "Autismo / TEA & Hiperfoco",
+      "occupation": "Backend Developer",
       "interests": [
         "Trekking",
         "Guitarra",
@@ -191,20 +191,20 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-07T18:51:57.893Z",
-      "lastActive": "2026-08-27T19:00:39.812Z",
+      "createdAt": "2026-08-18T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 65,
       "matchesCount": 9,
       "preferences": {
+        "minAge": 21,
+        "maxAge": 32,
         "interestedIn": [
           "female"
         ],
-        "minAge": 21,
-        "maxAge": 30,
-        "maxDistanceKm": 30
+        "maxDistanceKm": 1000
       },
-      "passwordHash": "c119f0fadd77523f082d652f3c66f333b5b6521362c223380c0c1bcb4dd41c68dca6b9bed4e24c757c3cf6609bd044f1f5222fd4f04903c5cfa03752e5eae2a8",
-      "passwordSalt": "7cc2f196b889073648492905d9d940a5"
+      "passwordHash": "f59233da7bf49f8fa72b9172398bf85f44eaeb6eae2535cc7b083890129370d74aeaa1d6f618490061215c2bb958f469241390bfd1d561401bf2210e54af7565",
+      "passwordSalt": "f2fdae0a377d18d15f48bee969e1daa0"
     },
     {
       "id": "user-sofia",
@@ -212,14 +212,14 @@
       "email": "sofia@ejemplo.com",
       "age": 23,
       "gender": "female",
-      "bio": "Altas capacidades (AACC) & maratonista aficionada 🏃‍♀️🩺. Curiosidad insaciable por aprender todo sobre el mundo.",
+      "bio": "Estudiante de Medicina & maratonista aficionada 🏃‍♀️🩺. Si sobreviví a anatomía, puedo sobrevivir a una primera cita divertida.",
       "photos": [
         "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80"
       ],
       "location": "Caballito, CABA",
       "distanceKm": 6,
-      "occupation": "Altas Capacidades (AACC)",
+      "occupation": "Estudiante de Medicina",
       "interests": [
         "Running",
         "Medicina",
@@ -231,20 +231,21 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-22T18:51:57.893Z",
-      "lastActive": "2026-08-27T19:00:42.527Z",
+      "createdAt": "2026-09-02T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 154,
       "matchesCount": 31,
       "preferences": {
-        "interestedIn": [
-          "male"
-        ],
-        "maxAge": 29,
         "minAge": 22,
-        "maxDistanceKm": 20
+        "maxAge": 32,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
       },
-      "passwordHash": "2dca474fcf4daccd8fce11eed1b4f52d4ed13e1b9c51e679a2be09079501ed0f18491ae81b23d929ff78c868a3d8980f16b6e71bbc83196cb660a14c343a6c39",
-      "passwordSalt": "5e9e96828e1aba1ebf286f864ba71ed5"
+      "passwordHash": "94f10dcb08f5e4418ca3d0a360f454c9ca039478269f57988581a06858785c6a15ea7807f09a926d671cb2bf31bf011137f602a6734083d504dfdf199b4d0d51",
+      "passwordSalt": "a44e779d7cbb08e6227447419db8f1d7"
     },
     {
       "id": "user-camila",
@@ -252,14 +253,14 @@
       "email": "camila@ejemplo.com",
       "age": 26,
       "gender": "female",
-      "bio": "Bipolar tipo II & mente creativa 🍷✨. Busco conexiones genuinas sin máscaras, charlas profundas y explorar nuevos restaurantes.",
+      "bio": "Arquitecta de día, exploradora gastronómica de noche 🍷✨. Busco a alguien para probar nuevos restaurantes.",
       "photos": [
         "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80"
       ],
       "location": "Belgrano, CABA",
       "distanceKm": 7,
-      "occupation": "Bipolaridad",
+      "occupation": "Arquitecta",
       "interests": [
         "Arquitectura",
         "Vino Tinto",
@@ -267,25 +268,25 @@
         "Libros",
         "Gimnasio"
       ],
-      "verified": false,
+      "verified": true,
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-19T18:51:57.893Z",
-      "lastActive": "2026-08-27T19:00:40.704Z",
+      "createdAt": "2026-08-30T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 110,
       "matchesCount": 22,
       "preferences": {
-        "maxDistanceKm": 50,
-        "minAge": 24,
+        "minAge": 23,
         "maxAge": 35,
         "interestedIn": [
           "male",
           "female"
-        ]
+        ],
+        "maxDistanceKm": 1000
       },
-      "passwordHash": "971c287c9af9ce708c55e7932889303108c4a1f82224ae58676f52b44531022ac07cf6f057f91cee6f44261fee2328743964f027a43f1c9fbd9a66073c822f7f",
-      "passwordSalt": "21148ac8aaae6949531594be2ff04e4d"
+      "passwordHash": "8c2c92c3700196395384a1a74d6b0a52b82a6e032166e5b691b016399e20e0ffbdbbb9f01f52e5972b53dcf76720e987c38e636f9c0ae5c58a1a8938c7ef3504",
+      "passwordSalt": "c6a1150ab89f7b16b7e29adb967ecc6b"
     },
     {
       "id": "user-ignacio",
@@ -293,14 +294,14 @@
       "email": "ignacio@ejemplo.com",
       "age": 31,
       "gender": "male",
-      "bio": "TOC & Bipolaridad. Coleccionista de vinilos 🎧🍇. Fanático del jazz, los atardeceres y los entornos tranquilos con buena música.",
+      "bio": "Sommelier y DJ de vinilos en mis tiempos libres 🎧🍇. Fanático del jazz, los atardeceres y las charlas largas.",
       "photos": [
         "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80"
       ],
       "location": "Nuñez, CABA",
       "distanceKm": 8,
-      "occupation": "TOC & Bipolaridad",
+      "occupation": "Sommelier & Gestor Cultural",
       "interests": [
         "Música",
         "Vinos",
@@ -308,25 +309,25 @@
         "Arte",
         "Lectura"
       ],
-      "verified": false,
+      "verified": true,
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-09T18:51:57.893Z",
-      "lastActive": "2026-08-27T19:00:43.435Z",
+      "createdAt": "2026-08-20T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 78,
       "matchesCount": 12,
       "preferences": {
+        "minAge": 25,
         "maxAge": 38,
         "interestedIn": [
           "female",
           "other"
         ],
-        "minAge": 25,
-        "maxDistanceKm": 35
+        "maxDistanceKm": 1000
       },
-      "passwordHash": "38dea316e42c114b8a2831fa56b71f3614c899c2417031a461da90d017466b8bfe2e00d813f8b9abed4cc4dfaaaea381fd1865a70d94266579787f1d74e7a068",
-      "passwordSalt": "cccf8a38da646bc2c5a8a3decbd19c54"
+      "passwordHash": "a4409a2092bc3cb3cc04ae447ed4e359799dd001a32781e77cfcf9b50c750d77221481547e2b68d3f41d90fdfda849955c494795ae4d75bf65588dd7c84df26e",
+      "passwordSalt": "01b7fd52fb176b8f58f1b0c99ea6ac74"
     },
     {
       "id": "user-alex",
@@ -353,8 +354,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-29T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-29T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 104,
       "matchesCount": 17,
       "preferences": {
@@ -368,8 +369,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "0bdd41e5b42c13539e6016be0c88fff29c199f9c14b7837a540f131a5d119c5f7d76577334a944b2aa44303e41d149487cfddcb1ddbc9b89f2c5f032b95d6fa6",
-      "passwordSalt": "6746fba46521680c3adba7b5f07677a8"
+      "passwordHash": "4d09e226abb3ba2bcb8ed92841d438e56c5a221eb0fed0f521c3bbcd2420ec826ee7bd41da67c406fbd43bb78000e17286bf6ae1b83673162c90cb98dc2a2b0b",
+      "passwordSalt": "c5b74b8d6a5a11a405075fcbcb58278f"
     },
     {
       "id": "user-lucia",
@@ -396,8 +397,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-31T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-31T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 121,
       "matchesCount": 23,
       "preferences": {
@@ -409,8 +410,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "249e4304a872c83893490feada6485b3060c46e471e6c66af515c9bfad81d1c86b8ee875a0c6d1b4ee6ae40eab396e1e7592b4d9034c341ff25e4cec20a7ce2c",
-      "passwordSalt": "60f6a76ef618d3ca47b13fcb194172f3"
+      "passwordHash": "6ad8d62f38858668d06bcc9ee2b289e3b01fa25fd9e49368c342423e5e9781e4039da8f6be891c7fd4d0175ad0f14751e2fdd81666833e404987f2c4e766d3da",
+      "passwordSalt": "3559e7bd71f5f385b15524242744ded8"
     },
     {
       "id": "user-nicolas",
@@ -437,8 +438,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-24T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-24T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 88,
       "matchesCount": 15,
       "preferences": {
@@ -449,8 +450,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "479ed5dfdf1dcc5d0a2dae423ba8bcb5f7e148dc49326123221b8e111f3e6f989a3bf36753b00d2398247379913ddc1588790cbe2ccab9d31205d80c8d360b14",
-      "passwordSalt": "f325f4b642f8287f080b741be51efdb8"
+      "passwordHash": "7998b5363b7f1c1c55e6da68580f7e5e241ad075ed4f0a8e92d8fb170fbb1069ef102f09215d32ae8c0773d1076bcf2a724159b0db2ae16f5ab78a7b723fd334",
+      "passwordSalt": "4a075452a71f4b31fa70ab4e2c33ab38"
     },
     {
       "id": "user-romina",
@@ -477,8 +478,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-27T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-27T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 97,
       "matchesCount": 19,
       "preferences": {
@@ -490,8 +491,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "f8e9c4df6d58996b547629a11da12b5921064550a62038e21e663548187c3501c88ed00f2ade845a241c33bf90a05b0dbe1f6a456051c4667ba4fb2037c8659b",
-      "passwordSalt": "9e724d2b36b72cf1adc84be3d3b1593b"
+      "passwordHash": "b50f8f6f21440979b400b0aba498a73991b2c91b896ebb1b76ad8ef31f57a6fe1133f9b4a51f5f6b1e1fdeaaa834f04dbb19cb04506fbf5c1425de6c4da97fd5",
+      "passwordSalt": "076ab4d62bc269a23df0ead327c9ea28"
     },
     {
       "id": "user-diego",
@@ -514,12 +515,12 @@
         "Fogones",
         "Trekking"
       ],
-      "verified": false,
+      "verified": true,
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-22T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-22T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 62,
       "matchesCount": 11,
       "preferences": {
@@ -530,8 +531,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "6315ffe9e45510aca97510950fb866511a976e4fde7b551a74338afef6b6fd014c7d35967f716e4f5e4f68e510406337417521c9d272ea4a8d4eafbcb3e9a7de",
-      "passwordSalt": "fc686fdae543d941ec71a07381d94e6e"
+      "passwordHash": "9c7cdcb837ecc2671640c95009761d598cba92a102d173516e0a0be29d4834d3d98dd2d926628a5b67015d079c0cc90ec45c4b62e8f95b421cdf9b2b46971d45",
+      "passwordSalt": "021892a0a781beb9559113c41f28c7cb"
     },
     {
       "id": "user-martina",
@@ -558,8 +559,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-09-01T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-09-01T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 140,
       "matchesCount": 29,
       "preferences": {
@@ -571,8 +572,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "01db028ca77123a235a8a1ebd4c8e617b95cb89d40167cfd488e059ba7ce4fe3a3aeee6eac8fab3878a67de931b9736a58377ee8da590ca1d8d584f1baec0893",
-      "passwordSalt": "8218f7eefd9180d8bcbcae1b20c9fbd5"
+      "passwordHash": "af9e45f796b396bcc659ba493b9dea5d70611d485b400361d960cbbf1c21f95c3f9f208457464db0c5cd696d06d22841cfa9a17da0de63102c03b5e54121109e",
+      "passwordSalt": "591d16a47c3e7163f026cbdcc13905be"
     },
     {
       "id": "user-tomas",
@@ -599,8 +600,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-25T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-25T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 75,
       "matchesCount": 14,
       "preferences": {
@@ -612,8 +613,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "381cd3d9e74ce947b345181f9f12206c9c4d7ed49d708269d13fd107aaf5c8c314a6d577ebdaee1622ebbe7963cff5656130c859f92b719e3e33f947f0d4df6e",
-      "passwordSalt": "ad4c71f0bfed55faf1550791c30c88ec"
+      "passwordHash": "bb0716abba33e0e743b4af1265919764d892470f936341fd2496c891efb1d462c8a5b3c462e5c04968a5ea6c503054d7c2d258bf385f3d4452122bce302d1bb7",
+      "passwordSalt": "c96b5fdbf4423e54b2361ccd36a93797"
     },
     {
       "id": "user-carolina",
@@ -640,8 +641,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-28T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-28T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 115,
       "matchesCount": 21,
       "preferences": {
@@ -653,8 +654,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "14a5b83fc706686af1b196af243f2a84fe079e1d36a759c613a6435adc8cafeeac3175ec4079efee760cf63f07446a461a5bc2151a9ebae2652aad016d7b7408",
-      "passwordSalt": "ba654e38ed87ef2954cec8ea902163ab"
+      "passwordHash": "fdd18fa06847cbd08a5045bb2b7dd1cfca6c27e8f134aae0f907d2bbb78fb02c089f86d488e7cc0ccd72b8c0264fec321baaf6684c3c2a1dbf1d85431d605407",
+      "passwordSalt": "deeaf751dfa879ed3daa3543d26d2dcc"
     },
     {
       "id": "user-santiago",
@@ -677,12 +678,12 @@
         "Antigüedades",
         "Música Folclórica"
       ],
-      "verified": false,
+      "verified": true,
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-16T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-16T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 54,
       "matchesCount": 8,
       "preferences": {
@@ -693,8 +694,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "a1cc8707504935d3be2ed3c7dca94ddd9509c4a90fd09e828d0436b5b8352343768f1b1e48e0e64691ec9f34a1baf050472780dc55aa5ac9ee50add345da5a24",
-      "passwordSalt": "7a03a7aab8cf9f0f87e3f9b94ede60b3"
+      "passwordHash": "bd217fc776688523c7fe0c4ca838bcabc633f5c1e5b23d303b30f9bb8683e0db46ff83be8b2b75594da93bd7f78581a20261c5d57580344c883db333611a6012",
+      "passwordSalt": "112675b4eda62d3eb01d710acb152ae0"
     },
     {
       "id": "user-julieta",
@@ -721,8 +722,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-30T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-30T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 168,
       "matchesCount": 34,
       "preferences": {
@@ -734,8 +735,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "7b86ade7c6261042bbc18eb5790f35832664430d6ad798f82484800ca6abfb95c43372ea19ad5014e7e90ee26dd5c9299de7eea125cb25e0c546b1b61b251cfe",
-      "passwordSalt": "addb5877166195cdcf928bfbe51f6f85"
+      "passwordHash": "1885beaf4cb6ca5870f5410252032b78ab9f6d84814166170603a3920892ece530c9cd5ad9767594835b41305e2050503f39f5d7878d674c5dd6edc6ae6c8f1b",
+      "passwordSalt": "8122d122ab1660809f18b8498e59365c"
     },
     {
       "id": "user-facundo",
@@ -762,8 +763,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-21T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-21T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 92,
       "matchesCount": 16,
       "preferences": {
@@ -774,8 +775,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "bc39afc75d139beefcdba5a0a1b8c9dde8ec2df9a31639500b195cfa7d8aed9c77ffec42be0947242dd8d6bb54088e9a220a3452a54c9e437cd9dde0e151efbc",
-      "passwordSalt": "7365dafe73e8ef7e6302c82c89ee09b7"
+      "passwordHash": "20a75d5f11f5c45a20974bf62c963d0f1ce3531b96a7786083c697cbcbf136552974b8709d3a128dd835ba205586a6f07d79ec3a887f00ba2c863d42419338cc",
+      "passwordSalt": "2095add9855c266d536c444b05f5b487"
     },
     {
       "id": "user-micaela",
@@ -802,8 +803,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-09-02T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-09-02T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 182,
       "matchesCount": 38,
       "preferences": {
@@ -815,8 +816,8 @@
         ],
         "maxDistanceKm": 1000
       },
-      "passwordHash": "b966cec9c76bcf7fb695424d6e1d3e895bf161ba1d48b1d9fd531a06fa3f36075561623d3627e5bb219ba9e4a5e2609c758417c008439bacc1330d5a091b6a1b",
-      "passwordSalt": "b47e34bf49854db4b2e40a964fe85d18"
+      "passwordHash": "f8c13affdbd4f37eb661ff39be62aaf6c2380c0989b4dbccf69ebd001656003d2a194884aee081f4e118e310c1416a68dcb26ba625bb7fa80bd5b2080c312c68",
+      "passwordSalt": "5602a06e289c02e8e0fd3e6d91109609"
     },
     {
       "id": "user-valentina",
@@ -843,8 +844,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-09-04T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-09-04T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 195,
       "matchesCount": 42,
       "preferences": {
@@ -856,8 +857,8 @@
         ],
         "maxDistanceKm": 1500
       },
-      "passwordHash": "6ef3dd0f7eef8b6c6dc5f27401358ad3c3192808bcc67414a6c74dac58a42483f0b7c3a8a2c8b2a72a71133a6b115b66b940f6bd1f9ebf1c8c7542cb79e3d95a",
-      "passwordSalt": "ba37b0fc5dab97b5acf3f8eca1104874"
+      "passwordHash": "6b196d52aef4cf55cb0e3973f3709efd5248003b343a248247990603d1eed963b120195af979f4b6c1e12f9f8f5384f26f54cffabbe4cf96f7730ed63f524bfd",
+      "passwordSalt": "84055355595bf8e7fb44a12099dc4c5d"
     },
     {
       "id": "user-joaquin",
@@ -884,8 +885,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-19T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-19T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 86,
       "matchesCount": 17,
       "preferences": {
@@ -896,8 +897,8 @@
         ],
         "maxDistanceKm": 1500
       },
-      "passwordHash": "bc7d96d9f10ace18c1b667254e7e4a4fc6776f0409bff527d58802191254829d3d4b586d5ce2341db9bcd366c8808979c4ac8b7d3853eca8f0a0ed357a13ccd6",
-      "passwordSalt": "cfd50b0a16db645b9c54cfd4d05ddc51"
+      "passwordHash": "ca578c55a414ff21ed19d389690670255bb8423dfb36bce04ef40f5c113cadca0e7aec81a93c5f6b6e128ee0552a0115c56f6acd5fd64a655374861cf9d5961d",
+      "passwordSalt": "ff9de8dbb85b39477408f823801c8850"
     },
     {
       "id": "user-agustina",
@@ -924,8 +925,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-31T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-31T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 165,
       "matchesCount": 32,
       "preferences": {
@@ -937,8 +938,8 @@
         ],
         "maxDistanceKm": 1500
       },
-      "passwordHash": "0905b129b306b22a5386cea2c61440a76ea96ee7a026a1f368c4a10199089fe31dba13ba2249986e430bde1244d0ca3a05801e4f1e7cf9e3d79da8f63995cf5a",
-      "passwordSalt": "9defa6756bda793b7fd6a0cdecf7b785"
+      "passwordHash": "1c7313b3dfc1bca1a90a6fdc8b3a05aefd712493eabd2b46ad97121ec1b693286deb476b04cb8bd1ebdb0640c969fe04c5204b2a0851075c7f784f8a45792967",
+      "passwordSalt": "7483c7d3e119d1564ae8864c51765dfa"
     },
     {
       "id": "user-sol",
@@ -965,8 +966,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-09-05T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-09-05T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 210,
       "matchesCount": 45,
       "preferences": {
@@ -979,8 +980,8 @@
         ],
         "maxDistanceKm": 2000
       },
-      "passwordHash": "43b74b341cef9ba42e6cdc83eb75216406fb47d0cef765005c5527c809e0ea038ffe9b9d05956da18830329a514ea6abd89deba393cb00ec4197ccc14ff9ee9c",
-      "passwordSalt": "f7a4ba6cf8ff9a96b87585e4737efc2f"
+      "passwordHash": "ab0013cb298a7cd8f1b1717e13d4ce170d77759854da479bac13dd2bf58bc109c4f0e3381ce5498565c8f23ae153067dc934d4e188d1b122faf315de5f47e241",
+      "passwordSalt": "ab6866d802a889fc3eddd233f2e941a6"
     },
     {
       "id": "user-kevin",
@@ -1007,8 +1008,8 @@
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-08-13T21:07:50.941Z",
-      "lastActive": "2026-09-07T21:07:50.941Z",
+      "createdAt": "2026-08-13T23:24:21.328Z",
+      "lastActive": "2026-09-07T23:24:21.328Z",
       "likesCount": 71,
       "matchesCount": 13,
       "preferences": {
@@ -1019,13 +1020,13 @@
         ],
         "maxDistanceKm": 2000
       },
-      "passwordHash": "5a3dff72a978fb8f94e0ccd6d3458bf7c82600b5a8871da380fc574558351ea443012b9fca13ef00f35875c322c0b006bd097b611942e2ac529ea5458055c0a1",
-      "passwordSalt": "7ffc1a73d3c769400cb6e79b5e1de82a"
+      "passwordHash": "1143f5290215dea26688af83370c11b3f4d03b000e945d649207ca8f69008aef853d20b8ed51a918d37a29ccb85f4949e9e0a55d01264ccab66e3dd54509381b",
+      "passwordSalt": "261cdbe433d77689644aeee518db1f9c"
     },
     {
       "id": "user-1787775886659-e8ped",
       "name": "Luciano2",
-      "email": "lucianocass1998@gmail.com",
+      "email": "user-1787775886659-e8ped@vulnerable.app",
       "passwordHash": "",
       "passwordSalt": "",
       "age": 27,
@@ -1052,6 +1053,7 @@
       "likesCount": 0,
       "matchesCount": 0,
       "preferences": {
+        "minAge": 18,
         "maxAge": 60,
         "interestedIn": [
           "female",
@@ -1059,16 +1061,14 @@
           "non-binary",
           "other"
         ],
-        "minAge": 18,
-        "maxDistanceKm": 50
-      },
-      "password": "l4queand4"
+        "maxDistanceKm": 1500
+      }
     },
     {
       "id": "usr_eirkym",
       "name": "Luciano",
-      "email": "lucianocassok@gmail.com",
-      "passwordHash": "479d39ad7f7fc83e3f0393ae9a16ef2121951106f321126338dcd437da7202dc",
+      "email": "usr_eirkym@vulnerable.app",
+      "passwordHash": "",
       "passwordSalt": "",
       "age": 27,
       "gender": "male",
@@ -1091,36 +1091,104 @@
       "likesCount": 0,
       "matchesCount": 0,
       "preferences": {
-        "maxDistanceKm": 50,
+        "minAge": 18,
+        "maxAge": 60,
         "interestedIn": [
           "female",
           "male",
           "non-binary",
           "other"
         ],
-        "maxAge": 60,
-        "minAge": 18
+        "maxDistanceKm": 1500
       }
     }
   ],
-  "pendingRegistrations": [],
+  "pendingRegistrations": [
+    {
+      "id": "user-1788823573179-d7253559",
+      "email": "lucianocassok@gmail.com",
+      "user": {
+        "id": "user-1788823573179-d7253559",
+        "name": "Luciano Cassano",
+        "email": "lucianocassok@gmail.com",
+        "passwordHash": "3a4e9333d7c4b034a91b83db8660f040b7e47d8180cab7b731430938b593e0908f6eec5381e7ce845456349026a727ffeb961fcd7b6059940ae46f5ce8c3e936",
+        "passwordSalt": "1968efcc4eaa7c2c433bbcff610744e8",
+        "age": 26,
+        "gender": "male",
+        "bio": "Amante del diseño y la neurodiversidad",
+        "photos": [
+          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+        ],
+        "location": "Buenos Aires, Argentina",
+        "distanceKm": 11,
+        "occupation": "Desarrollador",
+        "interests": [
+          "Música",
+          "Café",
+          "Viajes"
+        ],
+        "verified": false,
+        "emailVerified": false,
+        "status": "active",
+        "role": "user",
+        "createdAt": "2026-09-07T23:26:13.180Z",
+        "lastActive": "2026-09-07T23:26:13.180Z",
+        "likesCount": 0,
+        "matchesCount": 0,
+        "preferences": {
+          "minAge": 18,
+          "maxAge": 45,
+          "interestedIn": [
+            "female"
+          ],
+          "maxDistanceKm": 50
+        }
+      },
+      "createdAt": "2026-09-07T23:26:13.180Z"
+    }
+  ],
   "deletedAccounts": [],
   "serverCredentials": {
-    "lugabca98@gmail.com": "admin1234"
+    "lugabca98@gmail.com": "admin1234",
+    "valeria@ejemplo.com": "password123",
+    "mateo@ejemplo.com": "password123",
+    "elena@ejemplo.com": "password123",
+    "lucas@ejemplo.com": "password123",
+    "sofia@ejemplo.com": "password123",
+    "camila@ejemplo.com": "password123",
+    "ignacio@ejemplo.com": "password123",
+    "alex.romero@ejemplo.com": "password123",
+    "lucia.morales@ejemplo.com": "password123",
+    "nicolas.vega@ejemplo.com": "password123",
+    "romina.juarez@ejemplo.com": "password123",
+    "diego.albornoz@ejemplo.com": "password123",
+    "martina.ferreyra@ejemplo.com": "password123",
+    "tomas.navarro@ejemplo.com": "password123",
+    "carolina.mendez@ejemplo.com": "password123",
+    "santiago.brizuela@ejemplo.com": "password123",
+    "julieta.soria@ejemplo.com": "password123",
+    "facundo.castro@ejemplo.com": "password123",
+    "micaela.ramos@ejemplo.com": "password123",
+    "valentina.diaz@ejemplo.com": "password123",
+    "joaquin.herrera@ejemplo.com": "password123",
+    "agustina.paz@ejemplo.com": "password123",
+    "sol.roldan@ejemplo.com": "password123",
+    "kevin.arganaraz@ejemplo.com": "password123"
   },
   "swipes": [],
   "matches": [],
   "messages": [],
   "auditLogs": [
     {
-      "id": "log-initial-scratch",
+      "id": "audit-1788823447582",
+      "adminUid": "admin-owner",
       "adminEmail": "lugabca98@gmail.com",
       "action": "SYSTEM_RESET",
       "targetUserId": "system",
-      "targetUserName": "Plataforma Vulnerable",
-      "timestamp": "2026-09-06T16:00:00.000Z",
-      "details": "Inicialización de la aplicación desde el principio: base de datos restablecida a cero, lista para nuevos registros."
+      "targetUserName": "Sistema General",
+      "details": "Reinicio total desde cero de la aplicación. Cuentas restablecidas para permitir nuevos registros.",
+      "timestamp": "2026-09-07T23:24:07.582Z"
     }
   ],
-  "updatedAt": "2026-09-07T23:11:12.337Z"
+  "updatedAt": "2026-09-07T23:26:13.180Z"
 }

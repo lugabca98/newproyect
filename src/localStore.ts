@@ -80,7 +80,7 @@ class LocalDatabaseStore {
   }
 
   init(): void {
-    if (typeof window !== 'undefined' && localStorage.getItem('vulnerable_zero_reset_v7') !== 'true') {
+    if (typeof window !== 'undefined' && localStorage.getItem('vulnerable_zero_reset_v8') !== 'true') {
       this.resetToZero();
       return;
     }
@@ -603,7 +603,7 @@ class LocalDatabaseStore {
         }
       };
 
-      this.setStored(STORAGE_KEY_USERS, [INITIAL_ADMIN]);
+      this.setStored(STORAGE_KEY_USERS, [INITIAL_ADMIN, ...INITIAL_SEED_USERS]);
       this.setStored(STORAGE_KEY_MATCHES, []);
       this.setStored(STORAGE_KEY_MESSAGES, []);
       this.setStored(STORAGE_KEY_SWIPES, []);
@@ -621,7 +621,7 @@ class LocalDatabaseStore {
           details: 'Inicialización total desde el principio: base de datos local restablecida a cero, lista para nuevos registros.'
         }
       ]);
-      localStorage.setItem('vulnerable_zero_reset_v7', 'true');
+      localStorage.setItem('vulnerable_zero_reset_v8', 'true');
     } catch (e) {
       console.warn('resetToZero error:', e);
     }
