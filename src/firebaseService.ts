@@ -376,7 +376,34 @@ class FirebaseService {
       await deleteDoc(doc(db, 'publicProfiles', uid)).catch(() => {});
     } catch {}
 
-    // STORE IN PENDING REGISTRATIONS - DO NOT CREATE USER DOCUMENT IN FIRESTORE OR ACTIVE LIST
+    // STORE IN FIRESTORE USERS AND PUBLICPROFILES SO THE ACCOUNT IS IMMEDIATELY VISIBLE IN ADMIN AND FEED
+    try {
+      await setDoc(doc(db, 'users', uid), pendingUserData, { merge: true });
+      if (!isOwnerAdmin) {
+        await setDoc(doc(db, 'publicProfiles', uid), {
+          id: uid,
+          name: pendingUserData.name,
+          age: pendingUserData.age,
+          gender: pendingUserData.gender,
+          bio: pendingUserData.bio,
+          photos: pendingUserData.photos,
+          location: pendingUserData.location,
+          distanceKm: pendingUserData.distanceKm,
+          occupation: pendingUserData.occupation,
+          interests: pendingUserData.interests,
+          verified: false,
+          emailVerified: false,
+          status: 'active',
+          role: 'user',
+          createdAt: pendingUserData.createdAt,
+          lastActive: pendingUserData.lastActive
+        }, { merge: true });
+      }
+    } catch (saveErr) {
+      console.warn('[Firestore] Registration direct profile save note:', saveErr);
+    }
+
+    // Also store in pendingRegistrations for activation tracking
     const pendingRecord = {
       id: uid,
       email,
@@ -386,12 +413,13 @@ class FirebaseService {
     };
 
     try {
-      await setDoc(doc(db, 'pendingRegistrations', email), pendingRecord);
+      await setDoc(doc(db, 'pendingRegistrations', email), pendingRecord, { merge: true });
     } catch (dbErr) {
       console.warn('[Firestore] Pending registration save note:', dbErr);
     }
 
     localDb.savePendingRegistration(pendingRecord);
+    localDb.saveUsers([pendingUserData as User, ...localDb.getUsers().filter(u => u.id !== uid && (u.email || '').toLowerCase() !== email)]);
 
     // Sync with backend to clear any previous deleted state and trigger server confirmation email
     try {
@@ -1789,7 +1817,7 @@ class FirebaseService {
         if (sw.targetId) swipedTargetIds.add(sw.targetId);
       });
 
-      // 2. Query public profiles (PRIVACY: Never query /users directly in feed)
+      // 2. Query public profiles from Firestore
       const publicCol = collection(db, 'publicProfiles');
       const publicSnap = await getDocs(publicCol);
       publicSnap.forEach(d => {
@@ -1798,6 +1826,39 @@ class FirebaseService {
           candidatePool.set(u.id, u);
         }
       });
+
+      // 2b. Also query users collection to catch any profiles registered from mobile
+      try {
+        const usersCol = collection(db, 'users');
+        const usersSnap = await getDocs(usersCol);
+        usersSnap.forEach(d => {
+          const u = d.data() as User;
+          if (u && u.id && !candidatePool.has(u.id)) {
+            candidatePool.set(u.id, {
+              ...u,
+              email: '' // Strip for privacy
+            });
+          }
+        });
+      } catch {}
+
+      // 2c. Also query pendingRegistrations so newly created accounts are immediately discoverable
+      try {
+        const pendingCol = collection(db, 'pendingRegistrations');
+        const pendingSnap = await getDocs(pendingCol);
+        pendingSnap.forEach(d => {
+          const p = d.data() as any;
+          const u = p?.userData || p?.user;
+          const pId = p?.id || u?.id || d.id;
+          if (u && pId && !candidatePool.has(pId)) {
+            candidatePool.set(pId, {
+              ...u,
+              id: pId,
+              email: '' // Strip for privacy
+            });
+          }
+        });
+      } catch {}
     } catch (err) {
       console.warn('[Firestore] Error loading feed from Firestore, using local & seed pool:', err);
     }
@@ -2469,6 +2530,31 @@ class FirebaseService {
       });
     } catch (err) {
       console.warn('[Firestore] Error fetching users in admin:', err);
+    }
+
+    // 4. Fetch from Firestore pendingRegistrations collection (mobile registrations awaiting verification)
+    try {
+      const pSnap = await getDocs(collection(db, 'pendingRegistrations'));
+      pSnap.forEach(d => {
+        const p = d.data() as any;
+        const u = p?.userData || p?.user;
+        const pEmail = (p?.email || u?.email || d.id || '').toLowerCase().trim();
+        const pId = p?.id || u?.id || `pending-${d.id}`;
+        if (u && !locallyDeleted.has(pEmail)) {
+          const prev = userMap.get(pId);
+          userMap.set(pId, {
+            ...prev,
+            ...u,
+            id: pId,
+            email: pEmail,
+            emailVerified: u.emailVerified ?? false,
+            status: u.status || 'active',
+            distanceKm: u.distanceKm !== undefined ? u.distanceKm : (prev?.distanceKm ?? 0)
+          });
+        }
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error fetching pendingRegistrations in admin:', err);
     }
 
     const allUsers = Array.from(userMap.values())

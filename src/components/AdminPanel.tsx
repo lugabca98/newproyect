@@ -23,7 +23,9 @@ import {
   Lock,
   Unlock,
   BadgeCheck,
-  LogOut
+  LogOut,
+  Clock,
+  Zap
 } from 'lucide-react';
 import { User, AdminStats, AuditLog } from '../types';
 import { api } from '../api';
@@ -213,6 +215,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  const handleDirectActivateUser = async (user: User) => {
+    try {
+      const res = await api.adminActivateUser(user.id, user.email);
+      showToast(res.message, 'success');
+      if (inspectedUser?.id === user.id) {
+        setInspectedUser(res.user);
+      }
+      fetchAdminData();
+    } catch (err: any) {
+      showToast(err?.message || 'Error al activar cuenta.', 'error');
+    }
+  };
+
+  const handleSyncFirebase = async () => {
+    setLoading(true);
+    try {
+      const res = await api.adminSyncFirebase();
+      showToast(res.message || 'Sincronización completada', 'success');
+      await fetchAdminData();
+    } catch (err: any) {
+      showToast(err?.message || 'Error al sincronizar con Firebase.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!isAuthorizedAdmin) {
     return null;
   }
@@ -251,6 +279,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           >
             <Trash2 className={`w-3.5 h-3.5 ${resetting ? 'animate-spin' : ''}`} />
             <span>{resetting ? 'Reiniciando...' : 'Reiniciar desde 0'}</span>
+          </button>
+
+          <button
+            id="btn-admin-sync-firebase"
+            onClick={handleSyncFirebase}
+            disabled={loading || resetting}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 shadow-md transition"
+            title="Sincronizar cuentas registradas desde otros celulares con Firebase"
+          >
+            <Zap className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-amber-400' : 'text-amber-400'}`} />
+            <span>Sincronizar Firebase</span>
           </button>
 
           <button
@@ -421,7 +460,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
               
               <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-                {['all', 'active', 'blocked'].map(st => (
+                {['all', 'active', 'pending', 'blocked'].map(st => (
                   <button
                     key={st}
                     onClick={() => setStatusFilter(st)}
@@ -431,7 +470,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    {st === 'all' ? 'Todos' : st === 'active' ? 'Activos' : 'Bloqueados'}
+                    {st === 'all' ? 'Todos' : st === 'active' ? 'Activos' : st === 'pending' ? 'Pendientes OTP' : 'Bloqueados'}
                   </button>
                 ))}
               </div>
@@ -495,15 +534,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
                         <h4 className="font-bold text-sm text-white truncate">{user.name}, {user.age}</h4>
-                        {user.status === 'active' ? (
-                          <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            <CheckCircle className="w-2.5 h-2.5" />
-                            <span>Activo</span>
-                          </span>
-                        ) : (
+                        {user.status === 'blocked' ? (
                           <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30">
                             <Ban className="w-2.5 h-2.5" />
                             <span>Bloqueado</span>
+                          </span>
+                        ) : !user.emailVerified ? (
+                          <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            <Clock className="w-2.5 h-2.5" />
+                            <span>Pendiente OTP</span>
+                          </span>
+                        ) : (
+                          <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle className="w-2.5 h-2.5" />
+                            <span>Activo</span>
                           </span>
                         )}
                       </div>
@@ -533,7 +577,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
 
                   {/* Mobile Actions */}
-                  <div className="flex items-center gap-1.5 pt-1">
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <button
                       id={`btn-admin-mobile-inspect-${user.id}`}
                       onClick={() => handleInspectUser(user)}
@@ -542,6 +586,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <Eye className="w-3.5 h-3.5 text-slate-300" />
                       <span>Inspeccionar</span>
                     </button>
+
+                    {!user.emailVerified && user.role !== 'admin' && (
+                      <button
+                        id={`btn-admin-mobile-activate-${user.id}`}
+                        onClick={() => handleDirectActivateUser(user)}
+                        className="px-3 py-2 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1 shadow-sm transition"
+                        title="Activar cuenta inmediatamente"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Activar</span>
+                      </button>
+                    )}
 
                     <button
                       id={`btn-admin-mobile-verify-${user.id}`}
@@ -682,15 +738,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                       {/* Status */}
                       <td className="px-4 py-3.5">
-                        {user.status === 'active' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            <CheckCircle className="w-3 h-3" />
-                            <span>Activo</span>
-                          </span>
-                        ) : (
+                        {user.status === 'blocked' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30">
                             <Ban className="w-3 h-3" />
                             <span>Bloqueado</span>
+                          </span>
+                        ) : !user.emailVerified ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            <Clock className="w-3 h-3" />
+                            <span>Pendiente OTP</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle className="w-3 h-3" />
+                            <span>Activo</span>
                           </span>
                         )}
                       </td>
@@ -713,6 +774,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <td className="px-5 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           
+                          {/* Direct Activate if pending OTP */}
+                          {!user.emailVerified && user.role !== 'admin' && (
+                            <button
+                              id={`btn-admin-activate-${user.id}`}
+                              onClick={() => handleDirectActivateUser(user)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1 transition shadow-sm"
+                              title="Confirmar y activar cuenta inmediatamente (sin necesidad de que el usuario verifique email)"
+                            >
+                              <Zap className="w-3 h-3 text-emerald-400" />
+                              <span>Activar</span>
+                            </button>
+                          )}
+
                           {/* View Profile */}
                           <button
                             id={`btn-admin-inspect-${user.id}`}
@@ -975,6 +1049,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             {/* Moderation Controls within Inspector */}
+            {!inspectedUser.emailVerified && inspectedUser.role !== 'admin' && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                    <Clock className="w-4 h-4" />
+                    Cuenta pendiente de confirmación de email (OTP)
+                  </span>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Puedes activar y verificar esta cuenta de inmediato para que aparezca activa sin esperar el correo.
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleDirectActivateUser(inspectedUser)}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-lg shadow-emerald-900/30 transition"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Activar Ahora</span>
+                </button>
+              </div>
+            )}
+
             <div className="flex gap-2 pt-3 border-t border-slate-800">
               {inspectedUser.role !== 'admin' && (
                 inspectedUser.status === 'active' ? (

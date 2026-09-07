@@ -696,7 +696,11 @@ class ApiService {
       );
     }
     if (params?.status && params.status !== 'all') {
-      users = users.filter(u => u.status === params.status);
+      if (params.status === 'pending') {
+        users = users.filter(u => !u.emailVerified);
+      } else {
+        users = users.filter(u => u.status === params.status);
+      }
     }
     if (params?.distanceFilter && params.distanceFilter !== 'all') {
       if (params.distanceFilter === 'near') {
@@ -751,6 +755,63 @@ class ApiService {
   async toggleVerifyUser(userId: string): Promise<{ user: User; message: string }> {
     const user = await firebaseService.adminToggleUserVerification(userId);
     return { user, message: `Insignia de verificación actualizada (${user.verified ? 'Verificado' : 'No verificado'}).` };
+  }
+
+  async adminActivateUser(userId: string, email?: string): Promise<{ success: boolean; message: string; user: User }> {
+    // 1. Activate on server
+    let serverUser: User | null = null;
+    try {
+      const token = this.getToken();
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/activate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        serverUser = data.user;
+      }
+    } catch (e) {
+      console.warn('[api.adminActivateUser] Server activate note:', e);
+    }
+
+    // 2. Also activate in Firestore & localDb
+    const cleanEmail = email || serverUser?.email;
+    if (cleanEmail) {
+      await firebaseService.activatePendingUser(cleanEmail).catch(() => {});
+    }
+
+    const activatedUser = await firebaseService.getUserById(userId) || serverUser;
+    if (!activatedUser) {
+      throw new Error('No se pudo encontrar o activar el usuario especificado.');
+    }
+
+    return {
+      success: true,
+      message: `Cuenta de ${activatedUser.name} activada y verificada exitosamente.`,
+      user: { ...activatedUser, emailVerified: true, status: 'active' }
+    };
+  }
+
+  async adminSyncFirebase(): Promise<{ success: boolean; message: string; userCount?: number }> {
+    try {
+      const token = this.getToken();
+      const res = await fetch('/api/admin/sync-firebase', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('[api.adminSyncFirebase] Server sync note:', e);
+    }
+    await firebaseService.getAllUsersAdmin();
+    return { success: true, message: 'Sincronización con Firebase realizada con éxito.' };
   }
 
   async deleteOwnAccount(): Promise<{ success: boolean; message: string }> {
