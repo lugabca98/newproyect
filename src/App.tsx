@@ -114,7 +114,8 @@ export function App() {
       const token = api.getToken();
       if (token) {
         const me = await api.getMe();
-        if (!me.user.emailVerified) {
+        const isOwner = me.isAdmin || isUserAdmin(me.user) || (me.user.email || '').trim().toLowerCase() === 'lugabca98@gmail.com';
+        if (!me.user.emailVerified && !isOwner) {
           api.setToken(null);
           setCurrentUser(null);
           setAuthModalMode('login');
@@ -123,15 +124,16 @@ export function App() {
         }
         const safeUser: User = {
           ...me.user,
+          role: isOwner ? 'admin' : (me.user.role || 'user'),
           photos: (me.user.photos && me.user.photos.length > 0)
             ? me.user.photos
             : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
-          name: me.user.name || 'Usuario',
+          name: me.user.name || (isOwner ? 'Admin Propietario' : 'Usuario'),
           emailVerified: true
         };
         setCurrentUser(safeUser);
         setAuthModalOpen(false);
-        if (me.isAdmin && isUserAdmin(safeUser)) {
+        if (isOwner) {
           setCurrentTab('admin');
         } else {
           setCurrentTab('discover');
@@ -412,18 +414,20 @@ export function App() {
   };
 
   const handleAuthSuccess = (user: User, isAdmin: boolean) => {
-    if (!user.emailVerified) {
+    const isOwner = isAdmin || isUserAdmin(user) || (user.email || '').trim().toLowerCase() === 'lugabca98@gmail.com';
+    const isVerified = isOwner ? true : Boolean(user.emailVerified);
+    if (!isVerified) {
       setAuthModalMode('login');
       setAuthModalOpen(true);
       return;
     }
-    const isOwner = isAdmin || isUserAdmin(user);
     const safeUser: User = {
       ...user,
+      role: isOwner ? 'admin' : (user.role || 'user'),
       photos: (user.photos && user.photos.length > 0)
         ? user.photos
         : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
-      name: user.name || 'Usuario',
+      name: user.name || (isOwner ? 'Admin Propietario' : 'Usuario'),
       emailVerified: true
     };
     setCurrentUser(safeUser);
@@ -625,13 +629,11 @@ export function App() {
 
       {/* AUTHENTICATION MODAL (REGISTER / LOGIN / OWNER) */}
       <AuthModal
-        isOpen={authModalOpen || !currentUser || !currentUser.emailVerified}
+        isOpen={authModalOpen || !currentUser || (!currentUser.emailVerified && !isUserAdmin(currentUser))}
         initialMode={authModalMode}
-        canClose={!!currentUser && !!currentUser.emailVerified}
+        canClose={!!currentUser && (!!currentUser.emailVerified || isUserAdmin(currentUser))}
         onClose={() => {
-          if (currentUser && currentUser.emailVerified) {
-            setAuthModalOpen(false);
-          }
+          setAuthModalOpen(false);
         }}
         onSuccess={handleAuthSuccess}
       />

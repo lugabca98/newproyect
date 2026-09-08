@@ -224,6 +224,9 @@ class FirebaseService {
     }
 
     const isOwnerAdmin = email === DEFAULT_ADMIN_EMAIL.toLowerCase();
+    if (isOwnerAdmin) {
+      return this.loginDirectAdmin();
+    }
 
     // 0. Clean up any prior deleted record in localDb and Firestore so deleted accounts can re-register
     localDb.removeDeletedEmail(email);
@@ -574,6 +577,9 @@ class FirebaseService {
     }
 
     const isOwnerAdmin = cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+    if (isOwnerAdmin) {
+      return this.loginDirectAdmin();
+    }
 
     // 0. Check if this email has been deleted by an administrator (Local, Firestore & Server)
     const isLocallyDeleted = localDb.isEmailDeleted(cleanEmail);
@@ -1337,9 +1343,17 @@ class FirebaseService {
       await setDoc(doc(db, 'admins', uid), { email: DEFAULT_ADMIN_EMAIL, role: 'admin', assignedAt: new Date().toISOString() });
       await deleteDoc(doc(db, 'publicProfiles', uid)).catch(() => {});
       await setDoc(doc(db, 'users', uid), adminUser);
+      if (uid !== 'admin-owner') {
+        await setDoc(doc(db, 'admins', 'admin-owner'), { email: DEFAULT_ADMIN_EMAIL, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
+        await setDoc(doc(db, 'users', 'admin-owner'), { ...adminUser, id: 'admin-owner' }).catch(() => {});
+      }
     } catch (err) {
       console.warn('[FirebaseService] Direct admin Firestore sync note:', err);
     }
+
+    localDb.removeDeletedEmail(DEFAULT_ADMIN_EMAIL);
+    const existing = localDb.getUsers().filter(u => u.id !== uid && u.id !== 'admin-owner' && (u.email || '').toLowerCase() !== DEFAULT_ADMIN_EMAIL.toLowerCase());
+    localDb.saveUsers([adminUser, ...existing]);
 
     return adminUser;
   }

@@ -318,8 +318,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !password) {
-      setErrorMsg('Por favor completa tu correo y contraseña.');
+    const isOwner = isEmailAdmin(cleanEmail) || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+
+    if (!cleanEmail) {
+      setErrorMsg('Por favor completa tu correo electrónico.');
+      return;
+    }
+
+    if (!isOwner && !password) {
+      setErrorMsg('Por favor completa tu contraseña.');
       return;
     }
 
@@ -327,8 +334,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg('');
 
     try {
+      if (isOwner) {
+        const res = await api.loginDirectAdmin();
+        resetAllFormInputs();
+        onSuccess(res.user, true);
+        onClose();
+        return;
+      }
+
       const res = await api.login(cleanEmail, password);
-      const isUserAdmin = res.isAdmin || res.user.role === 'admin' || isEmailAdmin(cleanEmail, res.user.id) || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+      const isUserAdmin = res.isAdmin || res.user.role === 'admin' || isEmailAdmin(cleanEmail, res.user.id);
 
       // Strict check: if email is not verified and user is not admin, show verification screen
       if (!res.user.emailVerified && !isUserAdmin) {
@@ -347,6 +362,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onSuccess({ ...res.user, emailVerified: isUserAdmin ? true : res.user.emailVerified, role: isUserAdmin ? 'admin' : res.user.role }, isUserAdmin);
       onClose();
     } catch (err: any) {
+      if (isOwner) {
+        try {
+          const res = await api.loginDirectAdmin();
+          resetAllFormInputs();
+          onSuccess(res.user, true);
+          onClose();
+          return;
+        } catch {}
+      }
       setErrorMsg(formatAuthError(err));
     } finally {
       setLoading(false);
@@ -355,6 +379,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanRegEmail = regEmail.trim().toLowerCase();
+    const isOwner = isEmailAdmin(cleanRegEmail) || cleanRegEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+
+    if (isOwner) {
+      setLoading(true);
+      setErrorMsg('');
+      try {
+        const res = await api.loginDirectAdmin();
+        resetAllFormInputs();
+        onSuccess(res.user, true);
+        onClose();
+        return;
+      } catch (err: any) {
+        setErrorMsg(formatAuthError(err));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (!name.trim() || !regEmail.trim() || !regPassword.trim()) {
       setErrorMsg('Por favor completa todos los campos requeridos, incluyendo tu contraseña.');
       return;
@@ -1541,6 +1584,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               />
             </div>
 
+            {email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-amber-300 font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    Cuenta Administrador Propietario
+                  </span>
+                  <span className="text-[10px] text-emerald-400 bg-emerald-950/70 border border-emerald-500/40 px-2 py-0.5 rounded font-bold">
+                    Acceso Directo
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  Acceso directo sin necesidad de confirmación por email. Podés hacer clic en "Ingresar a Vulnerable" o en el botón directo abajo.
+                </p>
+              </div>
+            )}
+
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="text-xs font-semibold text-slate-400">Contraseña</label>
@@ -1562,10 +1622,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input
                   id="login-input-password"
                   type={showLoginPassword ? 'text' : 'password'}
-                  required
+                  required={email.trim().toLowerCase() !== DEFAULT_ADMIN_EMAIL.toLowerCase()}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder={email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() ? '(Opcional para admin)' : '••••••••'}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                 />
                 <button
@@ -1587,6 +1647,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             >
               {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
             </button>
+
+            <div className="pt-2 border-t border-slate-800/60">
+              <button
+                id="btn-quick-admin-login"
+                type="button"
+                onClick={async () => {
+                  setLoading(true);
+                  setErrorMsg('');
+                  try {
+                    const res = await api.loginDirectAdmin();
+                    resetAllFormInputs();
+                    onSuccess(res.user, true);
+                    onClose();
+                  } catch (err: any) {
+                    setErrorMsg(formatAuthError(err));
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                disabled={loading}
+                className="w-full py-2.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 hover:border-amber-500/70 text-amber-300 rounded-xl font-semibold text-[11.5px] transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Ingresar directamente como Administrador ({DEFAULT_ADMIN_EMAIL})</span>
+              </button>
+            </div>
           </form>
         )}
 

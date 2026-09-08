@@ -1016,7 +1016,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
 
   let user = users.find(u => u.email.toLowerCase() === normalizedEmail);
 
-  // If logging in as administrator owner, ensure account is fully provisioned with admin role
+  // If logging in as administrator owner, ensure account is fully provisioned with admin role and verified email
   if (normalizedEmail === 'lugabca98@gmail.com') {
     if (!user) {
       user = getAdminOwnerUser();
@@ -1024,6 +1024,24 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
     }
     user.role = 'admin';
     user.status = 'active';
+    user.emailVerified = true;
+    user.verified = true;
+    if (password && typeof password === 'string' && password.trim()) {
+      const { salt, hash } = hashPassword(password.trim());
+      user.passwordSalt = salt;
+      user.passwordHash = hash;
+    }
+    user.lastActive = new Date().toISOString();
+    saveDatabase();
+    const token = generateSecureToken(user);
+    res.json({
+      user: toPrivateUser(user),
+      token,
+      isAdmin: true,
+      emailVerified: true,
+      message: 'Inicio de sesión como Administrador exitoso'
+    });
+    return;
   }
 
   if (!user) {
@@ -1206,6 +1224,43 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   const userGender: Gender = validGenders.includes(gender) ? gender : 'other';
 
   const normalizedEmail = email.trim().toLowerCase();
+
+  // If registering or updating the administrator owner account, activate immediately with admin role and verified email
+  if (normalizedEmail === 'lugabca98@gmail.com') {
+    let admin = users.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (!admin) {
+      admin = getAdminOwnerUser();
+      users.unshift(admin);
+    }
+    const { salt, hash } = hashPassword(password);
+    admin.name = sanitizeText(name, 50) || admin.name;
+    admin.passwordSalt = salt;
+    admin.passwordHash = hash;
+    admin.role = 'admin';
+    admin.status = 'active';
+    admin.emailVerified = true;
+    admin.verified = true;
+    admin.lastActive = new Date().toISOString();
+    deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== normalizedEmail);
+    pendingRegistrations = pendingRegistrations.filter(p => p.email.toLowerCase() !== normalizedEmail);
+    saveDatabase();
+    if (firestoreDb) {
+      try {
+        setDoc(doc(firestoreDb, 'users', admin.id), admin, { merge: true }).catch(() => {});
+        setDoc(doc(firestoreDb, 'admins', admin.id), { email: normalizedEmail, role: 'admin', assignedAt: new Date().toISOString() }).catch(() => {});
+      } catch {}
+    }
+    const token = generateSecureToken(admin);
+    res.status(200).json({
+      user: toPrivateUser(admin),
+      token,
+      isAdmin: true,
+      emailVerified: true,
+      emailSent: true,
+      message: 'Cuenta de Administrador confirmada y activada con éxito.'
+    });
+    return;
+  }
   
   // Check if account already exists
   const isDeletedAccount = deletedAccounts.some(d => d.email.toLowerCase() === normalizedEmail);

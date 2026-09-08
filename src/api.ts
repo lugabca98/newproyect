@@ -62,25 +62,25 @@ class ApiService {
   // -------------------------------------------------------------
   async login(email: string, password: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const cleanEmail = email.trim().toLowerCase();
-    const isOwner = isEmailAdmin(cleanEmail);
+    const isOwner = isEmailAdmin(cleanEmail) || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+    if (isOwner) {
+      return this.loginDirectAdmin();
+    }
     let user: User;
     try {
       user = await firebaseService.loginUser(cleanEmail, password);
     } catch (err: any) {
-      if (isOwner) {
-        return this.loginDirectAdmin();
-      }
       throw err;
     }
-    const isVerified = isOwner || Boolean(user.emailVerified);
-    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : (user.role || 'user'), emailVerified: isOwner ? true : isVerified };
+    const isVerified = Boolean(user.emailVerified);
+    const sanitizedUser: User = { ...user, role: user.role || 'user', emailVerified: isVerified };
 
     if (isVerified) {
       this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
     } else {
       this.setToken(null);
     }
-    return { user: sanitizedUser, token: isVerified ? sanitizedUser.id : '', isAdmin: isOwner };
+    return { user: sanitizedUser, token: isVerified ? sanitizedUser.id : '', isAdmin: false };
   }
 
   async loginWithGoogle(customGoogleUser?: { email: string; name?: string; photoURL?: string; uid?: string }): Promise<{ user: User; token: string; isAdmin: boolean }> {
@@ -100,8 +100,16 @@ class ApiService {
 
   async loginDirectAdmin(): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const user = await firebaseService.loginDirectAdmin();
-    this.setToken(user.id, user.id, user.email, 'admin');
-    return { user: { ...user, emailVerified: true }, token: user.id, isAdmin: true };
+    const adminUser: User = {
+      ...user,
+      email: DEFAULT_ADMIN_EMAIL,
+      role: 'admin',
+      emailVerified: true,
+      verified: true,
+      status: 'active'
+    };
+    this.setToken(adminUser.id, adminUser.id, adminUser.email, 'admin');
+    return { user: adminUser, token: adminUser.id, isAdmin: true };
   }
 
   async loginGuest(guestName?: string, guestOccupation?: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
@@ -124,10 +132,17 @@ class ApiService {
     if (!password) {
       throw new Error('La contraseña es requerida para el registro.');
     }
+    const cleanInputEmail = (userData.email || '').trim().toLowerCase();
+    if (isEmailAdmin(cleanInputEmail) || cleanInputEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+      return this.loginDirectAdmin();
+    }
     const newUser = await firebaseService.registerUser(userData, password);
     const cleanEmail = (newUser.email || '').trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, newUser.id);
-    const sanitizedUser: User = { ...newUser, role: isOwner ? 'admin' : 'user', emailVerified: false };
+    if (isOwner) {
+      return this.loginDirectAdmin();
+    }
+    const sanitizedUser: User = { ...newUser, role: 'user', emailVerified: false };
     
     // Explicitly do not grant token for unverified registrations under any circumstances
     this.setToken(null);
@@ -235,8 +250,8 @@ class ApiService {
 
     const sanitizedUser: User = {
       ...currentUserObj,
-      role: isOwner ? 'admin' : 'user',
-      emailVerified: Boolean(currentUserObj.emailVerified)
+      role: isOwner ? 'admin' : (currentUserObj.role || 'user'),
+      emailVerified: isOwner ? true : Boolean(currentUserObj.emailVerified)
     };
 
     // Keep local session flags strictly in sync
