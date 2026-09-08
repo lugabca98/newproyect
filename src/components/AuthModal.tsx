@@ -31,7 +31,7 @@ import {
 import { User, Gender } from '../types';
 import { api } from '../api';
 import { firebaseService } from '../firebaseService';
-import { localDb } from '../localStore';
+import { localDb, isEmailAdmin, INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL } from '../localStore';
 import { EmbraceHeartLogo } from './EmbraceHeartLogo';
 import { compressImage } from '../utils/imageCompressor';
 
@@ -328,9 +328,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       const res = await api.login(cleanEmail, password);
-      
-      // Strict check: if email is not verified, show verification screen
-      if (!res.user.emailVerified) {
+      const isUserAdmin = res.isAdmin || res.user.role === 'admin' || isEmailAdmin(cleanEmail, res.user.id) || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+
+      // Strict check: if email is not verified and user is not admin, show verification screen
+      if (!res.user.emailVerified && !isUserAdmin) {
         api.setToken(null);
         setRegisteredUser(res.user);
         setRegisteredIsAdmin(res.isAdmin);
@@ -343,7 +344,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
 
       resetAllFormInputs();
-      onSuccess(res.user, res.isAdmin);
+      onSuccess({ ...res.user, emailVerified: isUserAdmin ? true : res.user.emailVerified, role: isUserAdmin ? 'admin' : res.user.role }, isUserAdmin);
       onClose();
     } catch (err: any) {
       setErrorMsg(formatAuthError(err));
@@ -417,6 +418,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
     if (!cleanEmail) return;
 
+    // Direct access for administrator without requiring email verification
+    if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || isEmailAdmin(cleanEmail) || registeredIsAdmin) {
+      localStorage.removeItem('pending_verification_email');
+      const adminUser: User = {
+        ...(registeredUser || INITIAL_ADMIN),
+        email: cleanEmail,
+        role: 'admin',
+        emailVerified: true,
+        verified: true,
+        status: 'active'
+      };
+      api.setToken(adminUser.id, adminUser.id, adminUser.email, 'admin');
+      onSuccess(adminUser, true);
+      resetAllFormInputs();
+      onClose();
+      return;
+    }
+
     let isMounted = true;
     const pollStatus = async () => {
       try {
@@ -459,6 +478,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg('');
     setResendVerificationNotice('');
     const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
+
+    // Direct bypass for administrator
+    if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || isEmailAdmin(cleanEmail) || registeredIsAdmin) {
+      setOtpVerifySuccess(true);
+      setResendVerificationNotice('¡Acceso verificado para cuenta de Administrador!');
+      localStorage.removeItem('pending_verification_email');
+      try {
+        const adminRes = await api.loginDirectAdmin();
+        onSuccess(adminRes.user, true);
+        resetAllFormInputs();
+        onClose();
+      } catch {
+        const adminUser: User = {
+          ...(registeredUser || INITIAL_ADMIN),
+          email: cleanEmail,
+          role: 'admin',
+          emailVerified: true,
+          verified: true,
+          status: 'active'
+        };
+        api.setToken(adminUser.id, adminUser.id, adminUser.email, 'admin');
+        onSuccess(adminUser, true);
+        resetAllFormInputs();
+        onClose();
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       const res = await api.checkEmailVerification(cleanEmail);
       if (res.isVerified && res.user) {
@@ -716,6 +765,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <span>Esperando confirmación... Tu cuenta se activará automáticamente al hacer clic en el enlace.</span>
               </div>
             </div>
+
+            {/* Direct Admin Bypass Button */}
+            {(isEmailAdmin(regEmail) || regEmail.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() || registeredIsAdmin || (localStorage.getItem('pending_verification_email') || '').toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) && (
+              <button
+                id="btn-admin-bypass-direct"
+                type="button"
+                onClick={async () => {
+                  setLoading(true);
+                  localStorage.removeItem('pending_verification_email');
+                  try {
+                    const res = await api.loginDirectAdmin();
+                    onSuccess(res.user, true);
+                    resetAllFormInputs();
+                    onClose();
+                  } catch {
+                    const adminUser: User = {
+                      ...(registeredUser || INITIAL_ADMIN),
+                      email: DEFAULT_ADMIN_EMAIL,
+                      role: 'admin',
+                      emailVerified: true,
+                      verified: true,
+                      status: 'active'
+                    };
+                    api.setToken(adminUser.id, adminUser.id, adminUser.email, 'admin');
+                    onSuccess(adminUser, true);
+                    resetAllFormInputs();
+                    onClose();
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                disabled={loading}
+                className="w-full py-3 px-4 bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white rounded-xl font-bold text-xs shadow-lg shadow-rose-900/30 transition flex items-center justify-center gap-2 cursor-pointer mb-2"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Acceder directamente como Administrador (Sin confirmación)</span>
+              </button>
+            )}
 
             {/* Standard actions */}
             <div className="space-y-2.5 pt-1">

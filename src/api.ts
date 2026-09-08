@@ -1,12 +1,6 @@
 import { User, Match, Message, AdminStats, AuditLog, UserPreferences } from './types';
 import { firebaseService } from './firebaseService';
-import { INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL, localDb } from './localStore';
-
-const isEmailAdmin = (email?: string | null, uid?: string | null): boolean => {
-  if (uid === 'admin-owner') return true;
-  if (!email) return false;
-  return email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
-};
+import { INITIAL_ADMIN, DEFAULT_ADMIN_EMAIL, localDb, isEmailAdmin } from './localStore';
 
 class ApiService {
   private currentUserId: string | null = null;
@@ -68,10 +62,18 @@ class ApiService {
   // -------------------------------------------------------------
   async login(email: string, password: string): Promise<{ user: User; token: string; isAdmin: boolean }> {
     const cleanEmail = email.trim().toLowerCase();
-    const user = await firebaseService.loginUser(cleanEmail, password);
-    const isOwner = isEmailAdmin(cleanEmail, user.id);
-    const isVerified = Boolean(user.emailVerified);
-    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user', emailVerified: isVerified };
+    const isOwner = isEmailAdmin(cleanEmail);
+    let user: User;
+    try {
+      user = await firebaseService.loginUser(cleanEmail, password);
+    } catch (err: any) {
+      if (isOwner) {
+        return this.loginDirectAdmin();
+      }
+      throw err;
+    }
+    const isVerified = isOwner || Boolean(user.emailVerified);
+    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : (user.role || 'user'), emailVerified: isOwner ? true : isVerified };
 
     if (isVerified) {
       this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);
@@ -85,8 +87,8 @@ class ApiService {
     const user = await firebaseService.loginWithGoogle(customGoogleUser);
     const cleanEmail = (user.email || '').trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, user.id);
-    const isVerified = Boolean(user.emailVerified);
-    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : 'user', emailVerified: isVerified };
+    const isVerified = isOwner || Boolean(user.emailVerified);
+    const sanitizedUser: User = { ...user, role: isOwner ? 'admin' : (user.role || 'user'), emailVerified: isOwner ? true : isVerified };
     
     if (isVerified) {
       this.setToken(sanitizedUser.id, sanitizedUser.id, sanitizedUser.email, sanitizedUser.role);

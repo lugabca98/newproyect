@@ -25,20 +25,20 @@
       "emailVerified": true,
       "status": "active",
       "role": "admin",
-      "createdAt": "2026-09-07T23:24:21.330Z",
-      "lastActive": "2026-09-07T23:24:21.330Z",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "lastActive": "2026-09-08T02:02:46.431Z",
       "likesCount": 142,
       "matchesCount": 28,
       "preferences": {
         "minAge": 18,
-        "maxAge": 99,
         "interestedIn": [
           "female",
           "male",
           "non-binary",
           "other"
         ],
-        "maxDistanceKm": 1500
+        "maxAge": 99,
+        "maxDistanceKm": 100
       }
     },
     {
@@ -1101,6 +1101,82 @@
         ],
         "maxDistanceKm": 1500
       }
+    },
+    {
+      "id": "user-1788823573179-d7253559",
+      "name": "Luciano Cassano",
+      "email": "lucianocassok@gmail.com",
+      "passwordHash": "3a4e9333d7c4b034a91b83db8660f040b7e47d8180cab7b731430938b593e0908f6eec5381e7ce845456349026a727ffeb961fcd7b6059940ae46f5ce8c3e936",
+      "passwordSalt": "1968efcc4eaa7c2c433bbcff610744e8",
+      "age": 26,
+      "gender": "male",
+      "bio": "Amante del diseño y la neurodiversidad",
+      "photos": [
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Buenos Aires, Argentina",
+      "distanceKm": 11,
+      "occupation": "Desarrollador",
+      "interests": [
+        "Música",
+        "Café",
+        "Viajes"
+      ],
+      "verified": false,
+      "emailVerified": false,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-07T23:26:13.180Z",
+      "lastActive": "2026-09-07T23:26:13.180Z",
+      "likesCount": 0,
+      "matchesCount": 0,
+      "preferences": {
+        "minAge": 18,
+        "interestedIn": [
+          "female"
+        ],
+        "maxDistanceKm": 50,
+        "maxAge": 45
+      }
+    },
+    {
+      "id": "test-ping",
+      "name": "Usuario",
+      "email": "test-ping@vulnerable.app",
+      "passwordHash": "",
+      "passwordSalt": "",
+      "age": 25,
+      "gender": "female",
+      "bio": "",
+      "photos": [
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Buenos Aires, Argentina",
+      "distanceKm": 2,
+      "occupation": "Neurodivergente",
+      "interests": [
+        "Música",
+        "Café"
+      ],
+      "verified": false,
+      "emailVerified": false,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-07T23:23:09.882Z",
+      "lastActive": "2026-09-07T23:23:09.882Z",
+      "likesCount": 0,
+      "matchesCount": 0,
+      "preferences": {
+        "minAge": 18,
+        "maxAge": 60,
+        "interestedIn": [
+          "female",
+          "male",
+          "non-binary",
+          "other"
+        ],
+        "maxDistanceKm": 1500
+      }
     }
   ],
   "pendingRegistrations": [
@@ -1190,5 +1266,5 @@
       "timestamp": "2026-09-07T23:24:07.582Z"
     }
   ],
-  "updatedAt": "2026-09-07T23:26:13.180Z"
+  "updatedAt": "2026-09-08T02:02:46.431Z"
 }

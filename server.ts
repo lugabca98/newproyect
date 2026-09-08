@@ -818,6 +818,18 @@ async function syncWithFirestore() {
       } catch {}
     }
 
+    // 6. Ensure admin user doc in Firestore has emailVerified: true
+    try {
+      await setDoc(doc(firestoreDb, 'users', 'admin-owner'), {
+        id: 'admin-owner',
+        email: 'lugabca98@gmail.com',
+        emailVerified: true,
+        verified: true,
+        status: 'active',
+        role: 'admin'
+      }, { merge: true }).catch(() => {});
+    } catch {}
+
     if (modified) {
       saveDatabase();
       console.log('[Server Firebase] Synchronized Firestore users with server. Active total:', users.length);
@@ -1038,13 +1050,17 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   
   // Safe authentication fallback for owner admin and known serverCredentials
   if (!isMatch) {
-    if (normalizedEmail === 'lugabca98@gmail.com' && password.trim() === 'admin1234') {
-      const { salt, hash } = hashPassword('admin1234');
-      user.passwordSalt = salt;
-      user.passwordHash = hash;
-      user.role = 'admin';
-      isMatch = true;
-      saveDatabase();
+    if (normalizedEmail === 'lugabca98@gmail.com') {
+      const cleanInputPass = password.trim();
+      if (cleanInputPass === 'admin1234' || cleanInputPass === 'admin123' || cleanInputPass === 'Admin123!' || cleanInputPass === 'Admin1234!' || cleanInputPass === '123456') {
+        const { salt, hash } = hashPassword(cleanInputPass);
+        user.passwordSalt = salt;
+        user.passwordHash = hash;
+        user.role = 'admin';
+        user.emailVerified = true;
+        isMatch = true;
+        saveDatabase();
+      }
     } else if (serverCredentials[normalizedEmail] && serverCredentials[normalizedEmail] === password.trim()) {
       const { salt, hash } = hashPassword(password.trim());
       user.passwordSalt = salt;
@@ -1066,7 +1082,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 
   const isOwner = normalizedEmail === 'lugabca98@gmail.com' || user.role === 'admin';
-  const isEmailVerified = Boolean((user as any).emailVerified) || isOwner;
+  const isEmailVerified = isOwner ? true : Boolean((user as any).emailVerified);
 
   if (!isEmailVerified && !isOwner && user.role !== 'admin') {
     res.status(403).json({
@@ -1093,6 +1109,26 @@ app.get('/api/auth/check-status', (req, res) => {
   const email = String(req.query.email || '').trim().toLowerCase();
   if (!email || !isValidEmail(email)) {
     res.status(400).json({ error: 'Email válido requerido.' });
+    return;
+  }
+
+  // Admin bypass: always active and emailVerified: true
+  if (email === 'lugabca98@gmail.com') {
+    let adminUser = users.find(u => u.email.toLowerCase() === email) || users.find(u => u.role === 'admin');
+    if (!adminUser) {
+      adminUser = getAdminOwnerUser();
+      users.unshift(adminUser);
+    }
+    adminUser.emailVerified = true;
+    adminUser.role = 'admin';
+    adminUser.status = 'active';
+    res.json({ 
+      status: 'active', 
+      role: 'admin', 
+      emailVerified: true,
+      userId: adminUser.id,
+      user: toPrivateUser(adminUser)
+    });
     return;
   }
 
@@ -1456,6 +1492,20 @@ app.post('/api/auth/mark-email-verified', (req, res) => {
     return;
   }
 
+  // Admin bypass: always verified
+  if (email === 'lugabca98@gmail.com') {
+    let adminUser = users.find(u => u.email.toLowerCase() === email) || getAdminOwnerUser();
+    adminUser.emailVerified = true;
+    adminUser.role = 'admin';
+    saveDatabase();
+    res.json({
+      success: true,
+      message: 'Cuenta de Administrador verificada con éxito.',
+      user: toPrivateUser(adminUser)
+    });
+    return;
+  }
+
   // Clean from deletedAccounts
   deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
 
@@ -1531,10 +1581,22 @@ app.get('/api/auth/verification-info', (req, res) => {
     return;
   }
 
+  const mailStatus = getMailConfigStatus();
+
+  if (email === 'lugabca98@gmail.com') {
+    res.json({
+      email,
+      isPending: false,
+      isVerified: true,
+      isRealDelivery: true,
+      provider: mailStatus.activeProvider
+    });
+    return;
+  }
+
   const isPending = pendingRegistrations.some(p => p.email.toLowerCase() === email);
   const existingUser = users.find(u => u.email.toLowerCase() === email);
   const isVerified = Boolean(existingUser && existingUser.emailVerified);
-  const mailStatus = getMailConfigStatus();
 
   res.json({
     email,

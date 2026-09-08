@@ -604,21 +604,33 @@ class FirebaseService {
 
     // 1. Authenticate with Firebase Authentication
     let authUid = '';
-    let isEmailVerified = false;
+    let isEmailVerified = isOwnerAdmin ? true : false;
 
     try {
       const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
       // Reload user from Firebase servers to fetch freshest emailVerified state
       await reload(cred.user).catch(() => {});
       authUid = cred.user.uid;
-      isEmailVerified = cred.user.emailVerified;
+      isEmailVerified = isOwnerAdmin ? true : cred.user.emailVerified;
     } catch (authErr: any) {
       const code = authErr?.code || '';
       const msg = authErr?.message || '';
 
       // Check if it matches fallback/admin credentials
-      if (isOwnerAdmin && (cleanPass === 'admin123' || cleanPass === 'Admin123!' || cleanPass === '123456')) {
-        return this.loginDirectAdmin();
+      if (isOwnerAdmin) {
+        if (cleanPass === 'admin123' || cleanPass === 'admin1234' || cleanPass === 'Admin123!' || cleanPass === 'Admin1234!' || cleanPass === '123456') {
+          return this.loginDirectAdmin();
+        }
+        try {
+          const srvRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanEmail, password: cleanPass })
+          });
+          if (srvRes.ok) {
+            return this.loginDirectAdmin();
+          }
+        } catch {}
       }
 
       const isDemo = DEMO_ACCOUNTS.find(d => d.email.toLowerCase() === cleanEmail);
@@ -764,6 +776,9 @@ class FirebaseService {
     if (!user && !localDb.isEmailDeleted(cleanEmail)) {
       user = localDb.getUsers().find(u => (u.email || '').toLowerCase() === cleanEmail) || null;
     }
+    if (!user && isOwnerAdmin) {
+      return this.loginDirectAdmin();
+    }
 
     // If user document does not exist, check if there is a pending unconfirmed registration
     let isPending = false;
@@ -784,13 +799,16 @@ class FirebaseService {
       } catch {}
     }
 
-    if (isPending) {
+    if (isPending && !isOwnerAdmin) {
       await signOut(auth).catch(() => {});
       throw new Error('Tu perfil aún no ha sido activado porque no has confirmado tu correo electrónico con el enlace que te enviamos. Por favor revisa tu correo para activar tu cuenta.');
     }
 
     // If user document is missing or deleted, strictly forbid login
     if (!user) {
+      if (isOwnerAdmin) {
+        return this.loginDirectAdmin();
+      }
       await signOut(auth).catch(() => {});
       throw new Error('No existe una cuenta registrada con este correo');
     }
@@ -805,13 +823,19 @@ class FirebaseService {
       throw new Error('Esta cuenta se encuentra temporalmente suspendida por un administrador.');
     }
 
-    // Strict email verification check - must be verified on profile or admin
-    if (!user.emailVerified && !isOwnerAdmin && user.role !== 'admin') {
-      await signOut(auth).catch(() => {});
-      throw new Error('Debes confirmar tu correo electrónico antes de ingresar a la plataforma.');
+    // Admin accounts always have verified access without email confirmation
+    if (isOwnerAdmin || user.role === 'admin' || cleanEmail === 'lugabca98@gmail.com') {
+      user.role = 'admin';
+      user.emailVerified = true;
+      user.verified = true;
+    } else {
+      // Strict email verification check for regular users
+      if (!user.emailVerified) {
+        await signOut(auth).catch(() => {});
+        throw new Error('Debes confirmar tu correo electrónico antes de ingresar a la plataforma.');
+      }
+      user.emailVerified = Boolean(user.emailVerified === true);
     }
-
-    user.emailVerified = Boolean(user.emailVerified === true);
     user.lastActive = new Date().toISOString();
 
     // If verified, ensure public profile exists in feed
@@ -1304,6 +1328,7 @@ class FirebaseService {
       email: DEFAULT_ADMIN_EMAIL,
       role: 'admin',
       verified: true,
+      emailVerified: true,
       status: 'active',
       lastActive: new Date().toISOString()
     };

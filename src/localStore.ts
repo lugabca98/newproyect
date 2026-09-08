@@ -14,6 +14,12 @@ const STORAGE_KEY_PENDING_REGISTRATIONS = 'mv_db_pending_registrations';
 
 export { DEFAULT_ADMIN_EMAIL };
 
+export const isEmailAdmin = (email?: string | null, uid?: string | null): boolean => {
+  if (uid === 'admin-owner') return true;
+  if (!email) return false;
+  return email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
+};
+
 export const INITIAL_ADMIN: User = {
   id: 'admin-owner',
   name: 'Admin Propietario',
@@ -29,6 +35,7 @@ export const INITIAL_ADMIN: User = {
   occupation: 'Altas Capacidades (AACC) & TDAH',
   interests: ['Tecnología', 'Seguridad', 'Inteligencia Artificial', 'Café de Especialidad'],
   verified: true,
+  emailVerified: true,
   status: 'active',
   role: 'admin',
   createdAt: '2026-01-01T00:00:00.000Z',
