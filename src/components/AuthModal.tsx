@@ -440,13 +440,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setRegisteredUser(res.user);
       setRegisteredIsAdmin(res.isAdmin);
-      localStorage.setItem('pending_verification_email', regEmail.trim().toLowerCase());
-
-      setResendVerificationNotice(res.message || `Hemos enviado un enlace de confirmación a ${regEmail.trim()}. Por favor revisá tu bandeja de entrada y la carpeta de spam.`);
-
-      // Prompt email confirmation step immediately
-      setMode('verify-email-pending');
-      setResendVerificationCooldown(60);
+      api.setToken(res.user.id, res.user.id, res.user.email, res.isAdmin ? 'admin' : 'user');
+      onSuccess(res.user, res.isAdmin);
+      resetAllFormInputs();
+      onClose();
     } catch (err: any) {
       setErrorMsg(formatAuthError(err));
     } finally {

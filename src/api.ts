@@ -142,12 +142,13 @@ class ApiService {
     if (isOwner) {
       return this.loginDirectAdmin();
     }
-    const sanitizedUser: User = { ...newUser, role: 'user', emailVerified: false };
+    const sanitizedUser: User = { ...newUser, role: 'user', emailVerified: true, status: 'active' };
     
-    // Explicitly do not grant token for unverified registrations under any circumstances
-    this.setToken(null);
+    // Automatically establish session token so registration immediately enters the app
+    const userToken = newUser.id || `token-${Date.now()}`;
+    this.setToken(userToken, newUser.id, cleanEmail, 'user');
 
-    // Sync registration with server pendingRegistrations so server clears deletedAccounts, creates pending state, and dispatches confirmation email
+    // Sync registration with server pendingRegistrations so server clears deletedAccounts, creates active state
     let serverRes: any = null;
     try {
       const resp = await fetch('/api/auth/register', {
@@ -166,26 +167,13 @@ class ApiService {
       console.warn('[Register] Server register sync notice:', syncErr);
     }
 
-    // Ensure confirmation email with verification link is sent (fallback to explicit send-otp if server register did not already send it)
-    let mailDetails: any = serverRes;
-    if (!serverRes || !serverRes.emailSent) {
-      try {
-        mailDetails = await this.sendVerificationEmail(cleanEmail, newUser.name, password);
-      } catch (err) {
-        console.warn('[Register] Verification email trigger note:', err);
-      }
-    }
-
     return { 
       user: sanitizedUser, 
-      token: '', 
+      token: userToken, 
       isAdmin: isOwner,
-      message: mailDetails?.message || `Cuenta creada. Hemos enviado el enlace de confirmación a ${cleanEmail}. Por favor revisá tu bandeja de entrada o Spam.`,
-      actionUrl: mailDetails?.actionUrl,
-      code: mailDetails?.code,
-      isRealDelivery: mailDetails?.isRealDelivery ?? true,
-      provider: mailDetails?.provider || 'google_firebase',
-      previewUrl: mailDetails?.previewUrl
+      message: '¡Bienvenido a Vulnerable! Tu cuenta ha sido creada y activada con éxito.',
+      isRealDelivery: true,
+      provider: 'google_firebase'
     };
   }
 
@@ -242,16 +230,12 @@ class ApiService {
       throw new Error('Esta cuenta se encuentra suspendida.');
     }
 
-    // Strict block: unverified users cannot retain active sessions
-    if (!currentUserObj.emailVerified && !isOwner && currentUserObj.role !== 'admin') {
-      this.setToken(null);
-      throw new Error('Debes confirmar tu correo electrónico antes de ingresar a la plataforma.');
-    }
-
+    // Auto-verify and activate valid authenticated user
     const sanitizedUser: User = {
       ...currentUserObj,
       role: isOwner ? 'admin' : (currentUserObj.role || 'user'),
-      emailVerified: isOwner ? true : Boolean(currentUserObj.emailVerified)
+      emailVerified: true,
+      status: 'active'
     };
 
     // Keep local session flags strictly in sync
@@ -860,6 +844,46 @@ class ApiService {
   async resetDatabaseToZero(): Promise<{ success: boolean; message: string }> {
     await firebaseService.wipeAllRegisteredAccounts();
     return { success: true, message: 'La base de datos y todas las cuentas han sido eliminadas. La app empieza desde 0.' };
+  }
+
+  async updateAdminUser(userId: string, data: Partial<User>): Promise<{ user: User; message: string }> {
+    try {
+      const resp = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken() || 'admin-token'}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        return { user: json.user, message: json.message || 'Perfil actualizado exitosamente.' };
+      }
+    } catch {}
+
+    const updated = await firebaseService.updateUserProfileAdmin(userId, data);
+    return { user: updated, message: 'Perfil actualizado en Firebase exitosamente.' };
+  }
+
+  async createOrLinkAdminUser(data: Partial<User>): Promise<{ user: User; message: string }> {
+    try {
+      const resp = await fetch('/api/admin/users/create-or-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getToken() || 'admin-token'}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        return { user: json.user, message: json.message || 'Cuenta móvil vinculada exitosamente.' };
+      }
+    } catch {}
+
+    const user = await firebaseService.createOrLinkUserAdmin(data);
+    return { user, message: 'Cuenta móvil vinculada y activada exitosamente.' };
   }
 
   async getAuditLogs(): Promise<{ logs: AuditLog[] }> {

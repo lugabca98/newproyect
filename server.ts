@@ -628,6 +628,12 @@ loadDatabase();
 // -------------------------------------------------------------
 // Real-time Bidirectional Synchronization with Firestore
 // -------------------------------------------------------------
+// FIREBASE SYNCHRONIZATION (With strict ghost & mock account filtering)
+// -------------------------------------------------------------
+const GHOST_USER_IDS = new Set<string>([
+  'test-ping'
+]);
+
 async function syncWithFirestore() {
   if (!firestoreDb) return;
   try {
@@ -650,7 +656,9 @@ async function syncWithFirestore() {
       if (!u) return;
       const uId = u.id || d.id;
       const email = (u.email || '').toLowerCase().trim();
-      if (email && firestoreDeleted.has(email)) return;
+      if (GHOST_USER_IDS.has(uId)) return;
+      if (email && (firestoreDeleted.has(email) || GHOST_USER_IDS.has(email))) return;
+      if (email.endsWith('@vulnerable.app') && !email.startsWith('invitado-')) return;
 
       const existingIdx = users.findIndex(ex => ex.id === uId || (email && ex.email.toLowerCase() === email));
       if (existingIdx !== -1) {
@@ -663,14 +671,15 @@ async function syncWithFirestore() {
           distanceKm: u.distanceKm !== undefined ? Number(u.distanceKm) : users[existingIdx].distanceKm,
           photos: (u.photos && u.photos.length > 0) ? u.photos : users[existingIdx].photos,
           interests: Array.isArray(u.interests) && u.interests.length > 0 ? u.interests : users[existingIdx].interests,
-          emailVerified: u.emailVerified !== undefined ? Boolean(u.emailVerified) : users[existingIdx].emailVerified,
+          emailVerified: true, // Registered users are active
           status: u.status || users[existingIdx].status
         };
       } else {
+        if (!email) return;
         const newUser: ServerUser = {
           id: uId,
           name: u.name || 'Usuario',
-          email: email || `${uId}@vulnerable.app`,
+          email: email,
           passwordHash: u.passwordHash || '',
           passwordSalt: '',
           age: Number(u.age) || 25,
@@ -681,8 +690,8 @@ async function syncWithFirestore() {
           distanceKm: u.distanceKm !== undefined ? Number(u.distanceKm) : 2,
           occupation: u.occupation || 'Neurodivergente',
           interests: Array.isArray(u.interests) && u.interests.length > 0 ? u.interests : ['Música', 'Café'],
-          verified: Boolean(u.verified),
-          emailVerified: Boolean(u.emailVerified),
+          verified: true,
+          emailVerified: true,
           status: (u.status as any) || 'active',
           role: (u.role as any) || 'user',
           createdAt: u.createdAt || new Date().toISOString(),
@@ -701,21 +710,24 @@ async function syncWithFirestore() {
       }
     });
 
-    // 3. Fetch publicProfiles collection to ensure full coverage
+    // 3. Fetch publicProfiles collection to ensure full coverage (excluding ghosts and seed accounts)
     const pubSnap = await getDocs(collection(firestoreDb, 'publicProfiles'));
     pubSnap.forEach(d => {
       const p = d.data() as any;
       if (!p) return;
       const pId = p.id || d.id;
       const email = (p.email || '').toLowerCase().trim();
-      if (email && firestoreDeleted.has(email)) return;
+      if (GHOST_USER_IDS.has(pId)) return;
+      if (email && (firestoreDeleted.has(email) || GHOST_USER_IDS.has(email))) return;
+      if (email.endsWith('@vulnerable.app') && !email.startsWith('invitado-')) return;
+      if (!email) return; // Do NOT generate fake @vulnerable.app accounts for public profiles!
 
       const existingIdx = users.findIndex(ex => ex.id === pId || (email && ex.email.toLowerCase() === email));
       if (existingIdx === -1) {
         users.push({
           id: pId,
           name: p.name || 'Usuario',
-          email: email || `${pId}@vulnerable.app`,
+          email: email,
           passwordHash: '',
           passwordSalt: '',
           age: Number(p.age) || 25,
@@ -726,8 +738,8 @@ async function syncWithFirestore() {
           distanceKm: p.distanceKm !== undefined ? Number(p.distanceKm) : 2,
           occupation: p.occupation || 'Neurodivergente',
           interests: Array.isArray(p.interests) && p.interests.length > 0 ? p.interests : ['Música', 'Café'],
-          verified: Boolean(p.verified),
-          emailVerified: Boolean(p.emailVerified),
+          verified: true,
+          emailVerified: true,
           status: (p.status as any) || 'active',
           role: (p.role as any) || 'user',
           createdAt: p.createdAt || new Date().toISOString(),
@@ -1045,17 +1057,18 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 
   if (!user) {
-    const isPending = pendingRegistrations.find(p => p.email === normalizedEmail);
-    if (isPending) {
-      res.status(403).json({ 
-        error: 'Tu perfil aún no ha sido creado porque no has confirmado tu correo electrónico. Por favor verifica tu casilla de correo para activar tu cuenta.',
-        unconfirmed: true 
-      });
+    const isPending = pendingRegistrations.find(p => p.email.toLowerCase() === normalizedEmail);
+    if (isPending && isPending.user) {
+      isPending.user.emailVerified = true;
+      isPending.user.status = 'active';
+      users.push(isPending.user);
+      user = isPending.user;
+      pendingRegistrations = pendingRegistrations.filter(p => p.email.toLowerCase() !== normalizedEmail);
+      saveDatabase();
+    } else {
+      res.status(401).json({ error: 'No existe una cuenta registrada con este correo' });
       return;
     }
-
-    res.status(401).json({ error: 'No existe una cuenta registrada con este correo' });
-    return;
   }
 
   if (user.status === 'blocked') {
@@ -1100,25 +1113,17 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 
   const isOwner = normalizedEmail === 'lugabca98@gmail.com' || user.role === 'admin';
-  const isEmailVerified = isOwner ? true : Boolean((user as any).emailVerified);
-
-  if (!isEmailVerified && !isOwner && user.role !== 'admin') {
-    res.status(403).json({
-      error: 'Debes confirmar tu correo electrónico antes de ingresar a la plataforma.',
-      unconfirmed: true
-    });
-    return;
-  }
-
+  user.emailVerified = true; // Authenticated user is verified
+  user.status = 'active';
   user.lastActive = new Date().toISOString();
   saveDatabase();
-  const token = isEmailVerified ? generateSecureToken(user) : '';
+  const token = generateSecureToken(user);
 
   res.json({ 
     user: toPrivateUser(user), 
     token, 
     isAdmin: isOwner,
-    emailVerified: isEmailVerified
+    emailVerified: true
   });
 });
 
@@ -1266,23 +1271,6 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   const isDeletedAccount = deletedAccounts.some(d => d.email.toLowerCase() === normalizedEmail);
   const existingIndex = users.findIndex(u => u.email.toLowerCase() === normalizedEmail);
 
-  if (existingIndex !== -1) {
-    const existing = users[existingIndex];
-    if (existing.status === 'deleted' || isDeletedAccount) {
-      // The account was previously deleted by the administrator:
-      // purge the old stale record so the user can re-register cleanly and receive a fresh confirmation link.
-      const oldId = existing.id;
-      users.splice(existingIndex, 1);
-      swipes = swipes.filter(s => s.swiperId !== oldId && s.targetId !== oldId);
-      matches = matches.filter(m => !m.userIds.includes(oldId));
-      messages = messages.filter(msg => msg.senderId !== oldId && msg.receiverId !== oldId);
-      deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== normalizedEmail);
-    } else {
-      res.status(409).json({ error: 'Ya existe una cuenta registrada con este correo electrónico.' });
-      return;
-    }
-  }
-
   // Sanitize photos array (limit to 6 max, check valid data/url strings)
   let safePhotos: string[] = [];
   if (Array.isArray(photos)) {
@@ -1310,6 +1298,79 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
 
   const { salt, hash } = hashPassword(password);
 
+  if (existingIndex !== -1) {
+    const existing = users[existingIndex];
+    if (existing.status === 'deleted' || isDeletedAccount) {
+      // The account was previously deleted by the administrator:
+      // purge the old stale record so the user can re-register cleanly
+      const oldId = existing.id;
+      users.splice(existingIndex, 1);
+      swipes = swipes.filter(s => s.swiperId !== oldId && s.targetId !== oldId);
+      matches = matches.filter(m => !m.userIds.includes(oldId));
+      messages = messages.filter(msg => msg.senderId !== oldId && msg.receiverId !== oldId);
+      deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== normalizedEmail);
+    } else {
+      // Allow user to re-register / update their registered details and password cleanly
+      users[existingIndex] = {
+        ...existing,
+        name: sanitizeText(name, 50) || existing.name,
+        passwordHash: hash,
+        passwordSalt: salt,
+        age: parsedAge || existing.age,
+        gender: userGender || existing.gender,
+        bio: sanitizeText(bio || '¡Hola! Acabo de unirme a Vulnerable.', 500) || existing.bio,
+        photos: safePhotos.length > 0 ? safePhotos : existing.photos,
+        location: sanitizeText(location || 'Buenos Aires, Argentina', 100) || existing.location,
+        occupation: sanitizeText(occupation || 'Neurodivergente', 100) || existing.occupation,
+        interests: safeInterests.length > 0 ? safeInterests : existing.interests,
+        emailVerified: true,
+        verified: true,
+        status: 'active',
+        lastActive: new Date().toISOString()
+      };
+      serverCredentials[normalizedEmail] = password;
+      recordKnownCredential(normalizedEmail, password);
+      deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== normalizedEmail);
+      pendingRegistrations = pendingRegistrations.filter(p => p.email.toLowerCase() !== normalizedEmail);
+      saveDatabase();
+
+      if (firestoreDb) {
+        try {
+          setDoc(doc(firestoreDb, 'users', users[existingIndex].id), users[existingIndex], { merge: true }).catch(() => {});
+          setDoc(doc(firestoreDb, 'publicProfiles', users[existingIndex].id), {
+            id: users[existingIndex].id,
+            name: users[existingIndex].name,
+            age: users[existingIndex].age,
+            gender: users[existingIndex].gender,
+            bio: users[existingIndex].bio,
+            photos: users[existingIndex].photos,
+            location: users[existingIndex].location,
+            distanceKm: users[existingIndex].distanceKm,
+            occupation: users[existingIndex].occupation,
+            interests: users[existingIndex].interests,
+            verified: true,
+            emailVerified: true,
+            status: 'active',
+            role: 'user',
+            createdAt: users[existingIndex].createdAt,
+            lastActive: users[existingIndex].lastActive
+          }, { merge: true }).catch(() => {});
+        } catch {}
+      }
+
+      const token = generateSecureToken(users[existingIndex]);
+      res.status(200).json({
+        user: toPrivateUser(users[existingIndex]),
+        token,
+        isAdmin: false,
+        emailVerified: true,
+        emailSent: true,
+        message: '¡Cuenta actualizada y activada con éxito!'
+      });
+      return;
+    }
+  }
+
   const newUser: ServerUser = {
     id: `user-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
     name: sanitizeText(name, 50),
@@ -1324,8 +1385,8 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     distanceKm: Math.floor(Math.random() * 12) + 2,
     occupation: sanitizeText(occupation || 'Neurodivergente', 100),
     interests: safeInterests.length > 0 ? safeInterests : ['Música', 'Café', 'Viajes'],
-    verified: false,
-    emailVerified: false,
+    verified: true,
+    emailVerified: true,
     status: 'active',
     role: 'user', // Explicit: public registration can NEVER grant admin role
     createdAt: new Date().toISOString(),
@@ -1454,14 +1515,16 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     console.warn('[Register Email] Error sending verification email:', err);
   });
 
+  const token = generateSecureToken(newUser);
   res.status(201).json({ 
     user: toPrivateUser(newUser), 
-    token: '', 
+    token: token, 
     isAdmin: false,
     emailSent: true,
+    emailVerified: true,
     isRealDelivery: true,
     provider: mailStatus.activeProvider,
-    message: 'Hemos enviado dos correos a tu casilla: uno con el enlace de confirmación para registrarte y activar tu cuenta, y otro con el enlace para cambiar la contraseña.'
+    message: '¡Cuenta creada y activada con éxito!'
   });
 });
 
@@ -1566,31 +1629,24 @@ app.post('/api/auth/mark-email-verified', (req, res) => {
 
   const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
   if (pendingIdx !== -1) {
-    const key = `${email}_verify_email`;
-    const record = otpStore.get(key);
-    // STRICT: Must provide matching token to activate pending user
-    if (!token || !record || record.code !== token || Date.now() > record.expiresAt) {
-      res.status(403).json({
-        error: 'Para activar la cuenta es obligatorio abrir el enlace de confirmación enviado a tu correo electrónico.'
-      });
-      return;
-    }
-
     const pending = pendingRegistrations[pendingIdx];
     pending.user.emailVerified = true;
-    pending.user.verified = false;
+    pending.user.verified = true;
+    pending.user.status = 'active';
     pending.user.lastActive = new Date().toISOString();
 
     const existingIdx = users.findIndex(u => u.email.toLowerCase() === email);
     if (existingIdx !== -1) {
       users[existingIdx].emailVerified = true;
+      users[existingIdx].verified = true;
+      users[existingIdx].status = 'active';
       users[existingIdx].lastActive = new Date().toISOString();
     } else {
       users.push(pending.user);
     }
     pendingRegistrations.splice(pendingIdx, 1);
     saveDatabase();
-    otpStore.delete(key);
+    otpStore.delete(`${email}_verify_email`);
 
     res.json({
       success: true,
@@ -2032,7 +2088,10 @@ app.delete('/api/user/account', requireAuth, (req, res) => {
 });
 
 // Discover / Swipe Candidates Feed (Strictly sanitizes other profiles to prevent data leak)
-app.get('/api/profiles/feed', requireAuth, (req, res) => {
+app.get('/api/profiles/feed', requireAuth, async (req, res) => {
+  // Sync with Firestore so profiles registered from any cellphone appear instantly in the feed
+  await syncWithFirestore().catch(() => {});
+
   const currentUserId = (req as any).user.id;
   const currentUser = (req as any).user as ServerUser;
 
@@ -2736,6 +2795,183 @@ app.post('/api/admin/users/:id/activate', requireAdmin, async (req, res) => {
   });
 
   res.json({ success: true, message: `Cuenta de ${target.name} verificada y activada con éxito.`, user: toPrivateUser(target) });
+});
+
+// Admin Edit User Profile
+app.put('/api/admin/users/:id', requireAdmin, async (req, res) => {
+  const adminEmail = (req as any).adminUser.email;
+  const { id } = req.params;
+  const { name, email, age, gender, bio, photos, location, occupation, interests, status, verified, emailVerified } = req.body;
+
+  const userIndex = users.findIndex(u => u.id === id || (email && u.email.toLowerCase() === String(email).toLowerCase()));
+  if (userIndex === -1) {
+    res.status(404).json({ error: 'Usuario no encontrado.' });
+    return;
+  }
+
+  const target = users[userIndex];
+  if (name !== undefined) target.name = sanitizeText(name, 50);
+  if (email !== undefined && isValidEmail(email)) target.email = email.trim().toLowerCase();
+  if (age !== undefined && !isNaN(Number(age))) target.age = Number(age);
+  if (gender !== undefined) target.gender = gender;
+  if (bio !== undefined) target.bio = sanitizeText(bio, 500);
+  if (Array.isArray(photos)) target.photos = photos.filter(p => typeof p === 'string' && (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('data:image/')));
+  if (location !== undefined) target.location = sanitizeText(location, 100);
+  if (occupation !== undefined) target.occupation = sanitizeText(occupation, 100);
+  if (Array.isArray(interests)) target.interests = interests.map(i => sanitizeText(i, 30)).filter(Boolean);
+  if (status !== undefined) target.status = status;
+  if (verified !== undefined) target.verified = Boolean(verified);
+  if (emailVerified !== undefined) target.emailVerified = Boolean(emailVerified);
+  target.lastActive = new Date().toISOString();
+
+  // Also update in Firestore
+  if (firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'users', target.id), target, { merge: true }).catch(() => {});
+      await setDoc(doc(firestoreDb, 'publicProfiles', target.id), {
+        id: target.id,
+        name: target.name,
+        email: target.email,
+        age: target.age,
+        gender: target.gender,
+        bio: target.bio,
+        photos: target.photos,
+        location: target.location,
+        distanceKm: target.distanceKm || 2,
+        occupation: target.occupation,
+        interests: target.interests,
+        verified: target.verified,
+        emailVerified: target.emailVerified,
+        status: target.status,
+        role: target.role,
+        lastActive: target.lastActive
+      }, { merge: true }).catch(() => {});
+    } catch {}
+  }
+
+  saveDatabase();
+
+  auditLogs.unshift({
+    id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    adminUid: (req as any).adminUser.id,
+    adminEmail,
+    action: 'UPDATE_USER',
+    targetUserId: target.id,
+    targetUserName: target.name,
+    details: `El administrador ${adminEmail} modificó el perfil de ${target.name} (${target.email}).`,
+    timestamp: new Date().toISOString()
+  });
+
+  res.json({ success: true, user: toPrivateUser(target), message: `Perfil de ${target.name} actualizado con éxito.` });
+});
+
+// Admin Create or Link Account from Mobile
+app.post('/api/admin/users/create-or-link', requireAdmin, async (req, res) => {
+  const adminEmail = (req as any).adminUser.email;
+  const { name, email, age, gender, bio, photos, location, occupation, interests } = req.body;
+
+  if (!email || !isValidEmail(email)) {
+    res.status(400).json({ error: 'Correo electrónico no válido.' });
+    return;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  let existingIndex = users.findIndex(u => u.email.toLowerCase() === normalizedEmail);
+
+  let target: ServerUser;
+  if (existingIndex !== -1) {
+    target = users[existingIndex];
+    if (name) target.name = sanitizeText(name, 50);
+    if (age && !isNaN(Number(age))) target.age = Number(age);
+    if (gender) target.gender = gender;
+    if (bio) target.bio = sanitizeText(bio, 500);
+    if (Array.isArray(photos) && photos.length > 0) target.photos = photos;
+    if (location) target.location = sanitizeText(location, 100);
+    if (occupation) target.occupation = sanitizeText(occupation, 100);
+    if (Array.isArray(interests) && interests.length > 0) target.interests = interests;
+    target.status = 'active';
+    target.verified = true;
+    target.emailVerified = true;
+    target.lastActive = new Date().toISOString();
+  } else {
+    const { salt, hash } = hashPassword('vulnerable1234');
+    target = {
+      id: `user-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+      name: sanitizeText(name || 'Usuario Móvil', 50),
+      email: normalizedEmail,
+      passwordHash: hash,
+      passwordSalt: salt,
+      age: Number(age) || 28,
+      gender: gender || 'female',
+      bio: sanitizeText(bio || 'Cuenta registrada desde celular.', 500),
+      photos: Array.isArray(photos) && photos.length > 0 ? photos : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+      location: sanitizeText(location || 'Buenos Aires, Argentina', 100),
+      distanceKm: 2,
+      occupation: sanitizeText(occupation || 'Neurodivergente', 100),
+      interests: Array.isArray(interests) && interests.length > 0 ? interests : ['Música', 'Café'],
+      verified: true,
+      emailVerified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 0,
+      matchesCount: 0,
+      preferences: {
+        minAge: 18,
+        maxAge: 60,
+        interestedIn: ['female', 'male', 'non-binary', 'other'],
+        maxDistanceKm: 1500
+      }
+    };
+    users.push(target);
+  }
+
+  // Remove from deletedAccounts and pending
+  deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== normalizedEmail);
+  pendingRegistrations = pendingRegistrations.filter(p => p.email.toLowerCase() !== normalizedEmail);
+
+  if (firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'users', target.id), target, { merge: true }).catch(() => {});
+      await setDoc(doc(firestoreDb, 'publicProfiles', target.id), {
+        id: target.id,
+        name: target.name,
+        email: target.email,
+        age: target.age,
+        gender: target.gender,
+        bio: target.bio,
+        photos: target.photos,
+        location: target.location,
+        distanceKm: target.distanceKm || 2,
+        occupation: target.occupation,
+        interests: target.interests,
+        verified: true,
+        emailVerified: true,
+        status: 'active',
+        role: 'user',
+        createdAt: target.createdAt,
+        lastActive: target.lastActive
+      }, { merge: true }).catch(() => {});
+      await deleteDoc(doc(firestoreDb, 'deletedAccounts', normalizedEmail)).catch(() => {});
+      await deleteDoc(doc(firestoreDb, 'pendingRegistrations', normalizedEmail)).catch(() => {});
+    } catch {}
+  }
+
+  saveDatabase();
+
+  auditLogs.unshift({
+    id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    adminUid: (req as any).adminUser.id,
+    adminEmail,
+    action: 'VERIFY_USER',
+    targetUserId: target.id,
+    targetUserName: target.name,
+    details: `El administrador ${adminEmail} vinculó y activó la cuenta móvil de ${target.name} (${target.email}).`,
+    timestamp: new Date().toISOString()
+  });
+
+  res.json({ success: true, user: toPrivateUser(target), message: `Cuenta ${target.email} vinculada y activada con éxito.` });
 });
 
 // Admin Force Sync with Firebase Firestore

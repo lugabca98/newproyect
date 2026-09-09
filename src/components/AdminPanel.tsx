@@ -25,7 +25,11 @@ import {
   BadgeCheck,
   LogOut,
   Clock,
-  Zap
+  Zap,
+  Pencil,
+  Smartphone,
+  Plus,
+  Save
 } from 'lucide-react';
 import { User, AdminStats, AuditLog } from '../types';
 import { api } from '../api';
@@ -73,6 +77,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Delete Confirmation Modal
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [resetting, setResetting] = useState(false);
+
+  // Edit User Profile Modal
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    email: string;
+    age: number;
+    gender: string;
+    occupation: string;
+    location: string;
+    bio: string;
+    photoUrl: string;
+    status: string;
+    verified: boolean;
+  }>({
+    name: '',
+    email: '',
+    age: 25,
+    gender: 'female',
+    occupation: '',
+    location: '',
+    bio: '',
+    photoUrl: '',
+    status: 'active',
+    verified: true
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Link Mobile Account Modal
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkForm, setLinkForm] = useState({
+    name: '',
+    email: '',
+    age: 28,
+    gender: 'female',
+    occupation: 'Neurodivergente',
+    bio: 'Cuenta registrada desde celular.',
+    photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
+  });
+  const [isLinking, setIsLinking] = useState(false);
 
   // Notification message
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -238,6 +282,90 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       showToast(err?.message || 'Error al sincronizar con Firebase.', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleStartEdit = (user: User) => {
+    setEditingUser(user);
+    setEditForm({
+      name: user.name || '',
+      email: user.email || '',
+      age: user.age || 25,
+      gender: user.gender || 'female',
+      occupation: user.occupation || '',
+      location: user.location || '',
+      bio: user.bio || '',
+      photoUrl: user.photos?.[0] || '',
+      status: user.status || 'active',
+      verified: Boolean(user.verified)
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingUser) return;
+    setIsSavingEdit(true);
+    try {
+      const photos = editForm.photoUrl.trim()
+        ? [editForm.photoUrl.trim(), ...(editingUser.photos?.slice(1) || [])]
+        : editingUser.photos;
+      const res = await api.updateAdminUser(editingUser.id, {
+        name: editForm.name.trim(),
+        email: editForm.email.trim().toLowerCase(),
+        age: Number(editForm.age),
+        gender: editForm.gender as any,
+        occupation: editForm.occupation.trim(),
+        location: editForm.location.trim(),
+        bio: editForm.bio.trim(),
+        photos,
+        status: editForm.status as any,
+        verified: editForm.verified,
+        emailVerified: true
+      });
+      showToast(res.message || 'Perfil de usuario actualizado con éxito.', 'success');
+      setEditingUser(null);
+      if (inspectedUser?.id === editingUser.id) {
+        setInspectedUser(res.user);
+      }
+      fetchAdminData();
+    } catch (err: any) {
+      showToast(err.message || 'Error al actualizar usuario.', 'error');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleCreateOrLinkAccount = async () => {
+    if (!linkForm.email.trim()) {
+      showToast('Por favor ingresa un correo electrónico válido.', 'error');
+      return;
+    }
+    setIsLinking(true);
+    try {
+      const res = await api.createOrLinkAdminUser({
+        name: linkForm.name.trim() || linkForm.email.split('@')[0],
+        email: linkForm.email.trim().toLowerCase(),
+        age: Number(linkForm.age) || 28,
+        gender: linkForm.gender as any,
+        occupation: linkForm.occupation.trim(),
+        bio: linkForm.bio.trim(),
+        photos: [linkForm.photoUrl.trim() || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80']
+      });
+      showToast(res.message || `Cuenta ${linkForm.email} vinculada y activada con éxito.`, 'success');
+      setShowLinkModal(false);
+      setLinkForm({
+        name: '',
+        email: '',
+        age: 28,
+        gender: 'female',
+        occupation: 'Neurodivergente',
+        bio: 'Cuenta registrada desde celular.',
+        photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'
+      });
+      fetchAdminData();
+    } catch (err: any) {
+      showToast(err.message || 'Error al vincular cuenta.', 'error');
+    } finally {
+      setIsLinking(false);
     }
   };
 
@@ -440,6 +568,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {activeTab === 'users' && (
         <div className="space-y-4">
           
+          {/* Mobile Accounts & Multi-Device Sync Card */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/40 border border-indigo-500/30 rounded-2xl p-4.5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-lg shadow-black/40">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center shrink-0 text-indigo-400 mt-0.5">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-white">Sincronización de Cuentas Móviles</h4>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    Multidispositivo
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                  Detecta todos los correos registrados desde otros celulares y teléfonos móviles. Puedes corregir perfiles de usuarios registrados (nombre, foto, edad) o dar de alta y activar cualquier cuenta móvil directamente.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0 w-full lg:w-auto">
+              <button
+                id="btn-sync-mobile-devices"
+                onClick={handleSyncFirebase}
+                disabled={loading}
+                className="flex-1 lg:flex-initial px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 shadow-sm"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${loading ? 'animate-spin' : ''}`} />
+                <span>Sincronizar Celulares Ahora</span>
+              </button>
+
+              <button
+                id="btn-open-link-mobile-modal"
+                onClick={() => setShowLinkModal(true)}
+                className="flex-1 lg:flex-initial px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 shadow-md shadow-indigo-600/30"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Vincular Cuenta Móvil</span>
+              </button>
+            </div>
+          </div>
+
           {/* Filters and Search Bar */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-3">
             
@@ -585,6 +754,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     >
                       <Eye className="w-3.5 h-3.5 text-slate-300" />
                       <span>Inspeccionar</span>
+                    </button>
+
+                    <button
+                      id={`btn-admin-mobile-edit-${user.id}`}
+                      onClick={() => handleStartEdit(user)}
+                      className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                      title="Editar datos del usuario"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Editar</span>
                     </button>
 
                     {!user.emailVerified && user.role !== 'admin' && (
@@ -786,6 +965,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               <span>Activar</span>
                             </button>
                           )}
+
+                          {/* Edit Profile */}
+                          <button
+                            id={`btn-admin-edit-${user.id}`}
+                            onClick={() => handleStartEdit(user)}
+                            className="p-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition"
+                            title="Editar Datos del Perfil"
+                          >
+                            <Pencil className="w-4 h-4 text-amber-400" />
+                          </button>
 
                           {/* View Profile */}
                           <button
@@ -1091,6 +1280,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 )
               )}
 
+              <button
+                id="btn-admin-inspect-edit"
+                onClick={() => {
+                  handleStartEdit(inspectedUser);
+                }}
+                className="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition shadow"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Editar Datos</span>
+              </button>
+
               {inspectedUser.role !== 'admin' && (
                 <button
                   onClick={() => setUserToDelete(inspectedUser)}
@@ -1179,6 +1379,296 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition shadow-lg shadow-red-600/30"
               >
                 Eliminar Definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 4: EDIT USER PROFILE MODAL --- */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-lg bg-slate-900 border border-amber-500/40 rounded-3xl p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5 text-amber-400">
+                <Pencil className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white">Editar Perfil de Usuario</h3>
+              </div>
+              <button
+                onClick={() => setEditingUser(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 max-h-[70vh] overflow-y-auto pr-1">
+              {/* Photo Preview & URL */}
+              <div className="flex items-center gap-3">
+                <img
+                  src={editForm.photoUrl || editingUser.photos?.[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                  alt="Preview"
+                  className="w-14 h-14 rounded-2xl object-cover border border-slate-700 shrink-0"
+                  onError={(e: any) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'; }}
+                />
+                <div className="flex-1 min-w-0">
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">URL de Foto de Perfil</label>
+                  <input
+                    type="url"
+                    value={editForm.photoUrl}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, photoUrl: e.target.value }))}
+                    placeholder="https://..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Name and Age */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Nombre Completo</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Edad</label>
+                  <input
+                    type="number"
+                    min={18}
+                    max={100}
+                    value={editForm.age}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, age: Number(e.target.value) }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Email and Gender */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Correo Electrónico</label>
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Género</label>
+                  <select
+                    value={editForm.gender}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, gender: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="female">Femenino</option>
+                    <option value="male">Masculino</option>
+                    <option value="non-binary">No binario</option>
+                    <option value="other">Otro</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Occupation and Location */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Neurodivergencia / Ocupación</label>
+                  <input
+                    type="text"
+                    value={editForm.occupation}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, occupation: e.target.value }))}
+                    placeholder="Ej. TDAH, Asperger, Diseñadora..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Ubicación</label>
+                  <input
+                    type="text"
+                    value={editForm.location}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, location: e.target.value }))}
+                    placeholder="Ej. Buenos Aires, Argentina"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Bio */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 mb-1">Biografía</label>
+                <textarea
+                  rows={3}
+                  value={editForm.bio}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, bio: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none"
+                />
+              </div>
+
+              {/* Status and Verification */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Estado de la cuenta</label>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="active">Activo (Visible en swipes)</option>
+                    <option value="blocked">Bloqueado / Suspendido</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Insignia Verificada</label>
+                  <select
+                    value={editForm.verified ? 'true' : 'false'}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, verified: e.target.value === 'true' }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="true">Verificado (Tilde azul)</option>
+                    <option value="false">Sin verificar</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn-save-edit-user"
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={isSavingEdit}
+                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition shadow-lg shadow-amber-500/20"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isSavingEdit ? 'Guardando...' : 'Guardar Cambios'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 5: LINK MOBILE ACCOUNT MODAL --- */}
+      {showLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-lg bg-slate-900 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5 text-indigo-400">
+                <Smartphone className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white">Vincular o Dar de Alta Correo Móvil</h3>
+              </div>
+              <button
+                onClick={() => setShowLinkModal(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Ingresa el correo electrónico registrado desde otro teléfono celular u ordenador. Se activará y sincronizará de inmediato en la base de datos para que aparezca en el panel y en la aplicación.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 mb-1">Correo Electrónico (Obligatorio) *</label>
+                <input
+                  type="email"
+                  value={linkForm.email}
+                  onChange={(e) => setLinkForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="ejemplo@gmail.com"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Nombre</label>
+                  <input
+                    type="text"
+                    value={linkForm.name}
+                    onChange={(e) => setLinkForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="Nombre del usuario"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Edad</label>
+                  <input
+                    type="number"
+                    min={18}
+                    max={100}
+                    value={linkForm.age}
+                    onChange={(e) => setLinkForm(prev => ({ ...prev, age: Number(e.target.value) }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Género</label>
+                  <select
+                    value={linkForm.gender}
+                    onChange={(e) => setLinkForm(prev => ({ ...prev, gender: e.target.value }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="female">Femenino</option>
+                    <option value="male">Masculino</option>
+                    <option value="non-binary">No binario</option>
+                    <option value="other">Otro</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">Neurodivergencia</label>
+                  <input
+                    type="text"
+                    value={linkForm.occupation}
+                    onChange={(e) => setLinkForm(prev => ({ ...prev, occupation: e.target.value }))}
+                    placeholder="TDAH, Asperger..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 mb-1">Biografía de presentación</label>
+                <textarea
+                  rows={2}
+                  value={linkForm.bio}
+                  onChange={(e) => setLinkForm(prev => ({ ...prev, bio: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowLinkModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn-confirm-link-mobile"
+                type="button"
+                onClick={handleCreateOrLinkAccount}
+                disabled={isLinking}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-lg shadow-indigo-600/30"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{isLinking ? 'Activando...' : 'Dar de Alta y Activar'}</span>
               </button>
             </div>
           </div>

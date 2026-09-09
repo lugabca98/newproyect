@@ -243,11 +243,9 @@ class LocalDatabaseStore {
   getUsers(): User[] {
     this.init();
     const deleted = new Set(this.getDeletedEmails());
-    const pendings = this.getPendingRegistrations();
-    const pendingEmails = new Set(Array.isArray(pendings) ? pendings.map(p => (p?.email || '').toLowerCase()) : []);
     const users = this.getStored<any>(STORAGE_KEY_USERS, INITIAL_SEED_USERS);
     const validUsers = Array.isArray(users) ? users : [INITIAL_ADMIN];
-    return validUsers.filter(u => u && !deleted.has((u.email || '').toLowerCase()) && !pendingEmails.has((u.email || '').toLowerCase()));
+    return validUsers.filter(u => u && !deleted.has((u.email || '').toLowerCase()));
   }
 
   saveUsers(users: User[]): void {

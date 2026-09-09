@@ -234,23 +234,18 @@ class FirebaseService {
       await deleteDoc(doc(db, 'deletedAccounts', email)).catch(() => {});
     } catch {}
 
-    // Check if this account is currently active or blocked (allow if previously deleted or unverified)
+    // Check if this account is currently active or blocked
     const existingDoc = await this.getUserByEmail(email);
-    if (existingDoc && existingDoc.status !== 'deleted') {
-      if (existingDoc.status === 'blocked') {
-        throw new Error('Esta cuenta se encuentra bloqueada por el administrador.');
-      }
-      if (existingDoc.status === 'active' && existingDoc.emailVerified) {
-        throw new Error('Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.');
-      }
+    if (existingDoc && existingDoc.status === 'blocked') {
+      throw new Error('Esta cuenta se encuentra bloqueada por el administrador.');
     }
 
     // 1. Prepare password hash for secure credentials storage
     const passHash = await hashPassword(cleanPass);
 
     // 2. Create account with Firebase Authentication
-    let uid = '';
-    let emailVerified = false;
+    let uid = existingDoc?.id || '';
+    let emailVerified = true;
 
     // Use project authDomain which is permanently whitelisted in Firebase Auth
     const authDomainUrl = `https://${firebaseConfig.authDomain || 'noble-voltage-37dgj.firebaseapp.com'}/?emailVerified=true&email=${encodeURIComponent(email)}`;
@@ -340,8 +335,8 @@ class FirebaseService {
       distanceKm: 2,
       occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
-      verified: false,
-      emailVerified: false,
+      verified: true,
+      emailVerified: true,
       status: 'active' as UserStatus,
       role: (isOwnerAdmin ? 'admin' : 'user') as UserRole,
       createdAt: new Date().toISOString(),
@@ -394,8 +389,8 @@ class FirebaseService {
           distanceKm: pendingUserData.distanceKm,
           occupation: pendingUserData.occupation,
           interests: pendingUserData.interests,
-          verified: false,
-          emailVerified: false,
+          verified: true,
+          emailVerified: true,
           status: 'active',
           role: 'user',
           createdAt: pendingUserData.createdAt,
@@ -447,10 +442,10 @@ class FirebaseService {
       console.warn('[Register Server Sync] Error note:', syncErr);
     }
 
-    // Return unconfirmed representation for UI flow (profile is NOT created yet)
+    // Return confirmed representation for UI flow
     return {
       ...(pendingUserData as User),
-      emailVerified: false
+      emailVerified: true
     };
   }
 
@@ -2539,12 +2534,16 @@ class FirebaseService {
     try {
       const pubSnap = await getDocs(collection(db, 'publicProfiles'));
       pubSnap.forEach(d => {
-        const p = d.data() as User;
-        if (p && p.id && !locallyDeleted.has((p.email || '').toLowerCase())) {
-          const prev = userMap.get(p.id);
-          userMap.set(p.id, {
+        const p = d.data() as any;
+        const pId = p.id || d.id;
+        const email = (p.email || '').toLowerCase().trim();
+        if (p && pId && (p.status !== 'deleted')) {
+          const prev = userMap.get(pId);
+          userMap.set(pId, {
             ...prev,
             ...p,
+            id: pId,
+            email: email || prev?.email || '',
             distanceKm: p.distanceKm !== undefined ? p.distanceKm : (prev?.distanceKm ?? 0)
           });
         }
@@ -2557,12 +2556,16 @@ class FirebaseService {
     try {
       const snap = await getDocs(collection(db, 'users'));
       snap.forEach(d => {
-        const u = d.data() as User;
-        if (u && u.id && !locallyDeleted.has((u.email || '').toLowerCase())) {
-          const prev = userMap.get(u.id);
-          userMap.set(u.id, {
+        const u = d.data() as any;
+        const uId = u.id || d.id;
+        const email = (u.email || '').toLowerCase().trim();
+        if (u && uId && (u.status !== 'deleted')) {
+          const prev = userMap.get(uId);
+          userMap.set(uId, {
             ...prev,
             ...u,
+            id: uId,
+            email: email || prev?.email || '',
             distanceKm: u.distanceKm !== undefined ? u.distanceKm : (prev?.distanceKm ?? 0)
           });
         }
@@ -2571,7 +2574,52 @@ class FirebaseService {
       console.warn('[Firestore] Error fetching users in admin:', err);
     }
 
-    // 4. Fetch from Firestore pendingRegistrations collection (mobile registrations awaiting verification)
+    // 4. Fetch from Firestore credentials collection to detect any registered account from mobile
+    try {
+      const credSnap = await getDocs(collection(db, 'credentials'));
+      credSnap.forEach(d => {
+        const c = d.data() as any;
+        const email = (c.email || d.id || '').toLowerCase().trim();
+        const cUid = c.userId || `user-${email.split('@')[0]}`;
+        if (email && !userMap.has(cUid)) {
+          // Check if already in userMap by email
+          const existsByEmail = Array.from(userMap.values()).some(u => (u.email || '').toLowerCase() === email);
+          if (!existsByEmail) {
+            userMap.set(cUid, {
+              id: cUid,
+              name: email.split('@')[0],
+              email: email,
+              age: 28,
+              gender: 'other',
+              bio: 'Cuenta registrada desde celular.',
+              photos: ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+              location: 'Buenos Aires, Argentina',
+              distanceKm: 2,
+              occupation: 'Neurodivergente',
+              interests: ['Música', 'Café'],
+              verified: true,
+              emailVerified: true,
+              status: 'active',
+              role: 'user',
+              createdAt: new Date().toISOString(),
+              lastActive: new Date().toISOString(),
+              likesCount: 0,
+              matchesCount: 0,
+              preferences: {
+                minAge: 18,
+                maxAge: 99,
+                interestedIn: ['female', 'male'],
+                maxDistanceKm: 100
+              }
+            });
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error checking credentials in admin:', err);
+    }
+
+    // 5. Fetch from Firestore pendingRegistrations collection (mobile registrations)
     try {
       const pSnap = await getDocs(collection(db, 'pendingRegistrations'));
       pSnap.forEach(d => {
@@ -2579,14 +2627,14 @@ class FirebaseService {
         const u = p?.userData || p?.user;
         const pEmail = (p?.email || u?.email || d.id || '').toLowerCase().trim();
         const pId = p?.id || u?.id || `pending-${d.id}`;
-        if (u && !locallyDeleted.has(pEmail)) {
+        if (u) {
           const prev = userMap.get(pId);
           userMap.set(pId, {
             ...prev,
             ...u,
             id: pId,
             email: pEmail,
-            emailVerified: u.emailVerified ?? false,
+            emailVerified: u.emailVerified ?? true,
             status: u.status || 'active',
             distanceKm: u.distanceKm !== undefined ? u.distanceKm : (prev?.distanceKm ?? 0)
           });
@@ -2597,7 +2645,7 @@ class FirebaseService {
     }
 
     const allUsers = Array.from(userMap.values())
-      .filter(u => !locallyDeleted.has((u.email || '').toLowerCase()) && u.status !== 'deleted')
+      .filter(u => u.status !== 'deleted')
       .map(u => ({
         ...u,
         distanceKm: u.distanceKm !== undefined ? u.distanceKm : 0,
@@ -2608,6 +2656,111 @@ class FirebaseService {
         interests: u.interests || []
       }));
     return allUsers;
+  }
+
+  async updateUserProfileAdmin(userId: string, data: Partial<User>): Promise<User> {
+    let user = await this.getUserById(userId);
+    if (!user) {
+      user = localDb.getUsers().find(u => u.id === userId) || null;
+    }
+    if (!user) throw new Error('Usuario no encontrado');
+
+    const updatedUser: User = {
+      ...user,
+      ...data,
+      id: user.id,
+      lastActive: new Date().toISOString()
+    };
+
+    // Update in Firestore
+    try {
+      await setDoc(doc(db, 'users', user.id), updatedUser, { merge: true });
+      if (updatedUser.role !== 'admin') {
+        await setDoc(doc(db, 'publicProfiles', user.id), {
+          id: updatedUser.id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          age: updatedUser.age,
+          gender: updatedUser.gender,
+          bio: updatedUser.bio,
+          photos: updatedUser.photos,
+          location: updatedUser.location,
+          distanceKm: updatedUser.distanceKm || 2,
+          occupation: updatedUser.occupation,
+          interests: updatedUser.interests,
+          verified: updatedUser.verified,
+          emailVerified: updatedUser.emailVerified,
+          status: updatedUser.status,
+          role: updatedUser.role,
+          lastActive: updatedUser.lastActive
+        }, { merge: true });
+      }
+    } catch (err) {
+      console.warn('[Firestore] Admin update profile notice:', err);
+    }
+
+    // Update local database
+    const localUsers = localDb.getUsers();
+    const idx = localUsers.findIndex(u => u.id === user.id);
+    if (idx !== -1) {
+      localUsers[idx] = updatedUser;
+    } else {
+      localUsers.push(updatedUser);
+    }
+    localDb.saveUsers(localUsers);
+
+    return updatedUser;
+  }
+
+  async createOrLinkUserAdmin(data: Partial<User>): Promise<User> {
+    const email = (data.email || '').trim().toLowerCase();
+    if (!email) throw new Error('Correo electrónico requerido');
+
+    const uid = data.id || `user-${Date.now()}`;
+    const newUser: User = {
+      id: uid,
+      name: data.name?.trim() || email.split('@')[0],
+      email: email,
+      age: Number(data.age) || 28,
+      gender: data.gender || 'other',
+      bio: data.bio?.trim() || 'Cuenta de usuario vinculada.',
+      photos: data.photos?.length ? data.photos : ['https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'],
+      location: data.location?.trim() || 'Buenos Aires, Argentina',
+      distanceKm: data.distanceKm || 2,
+      occupation: data.occupation?.trim() || 'Neurodivergente',
+      interests: data.interests?.length ? data.interests : ['Música', 'Café'],
+      verified: true,
+      emailVerified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 0,
+      matchesCount: 0,
+      preferences: {
+        minAge: 18,
+        maxAge: 60,
+        interestedIn: ['female', 'male', 'non-binary', 'other'],
+        maxDistanceKm: 1500
+      }
+    };
+
+    // Save to Firestore
+    try {
+      await setDoc(doc(db, 'users', uid), newUser, { merge: true });
+      await setDoc(doc(db, 'publicProfiles', uid), newUser, { merge: true });
+      await deleteDoc(doc(db, 'deletedAccounts', email)).catch(() => {});
+      await deleteDoc(doc(db, 'pendingRegistrations', email)).catch(() => {});
+    } catch (err) {
+      console.warn('[Firestore] Admin createOrLink user notice:', err);
+    }
+
+    localDb.removeDeletedEmail(email);
+    const localUsers = localDb.getUsers().filter(u => (u.email || '').toLowerCase() !== email);
+    localUsers.push(newUser);
+    localDb.saveUsers(localUsers);
+
+    return newUser;
   }
 
   async adminToggleUserStatus(targetUserId: string): Promise<User> {
