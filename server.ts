@@ -1521,10 +1521,10 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     token: token, 
     isAdmin: false,
     emailSent: true,
-    emailVerified: true,
+    emailVerified: false,
     isRealDelivery: true,
     provider: mailStatus.activeProvider,
-    message: '¡Cuenta creada y activada con éxito!'
+    message: 'Hemos enviado un enlace de confirmación a tu correo. Por favor revisa tu bandeja de entrada para activar tu cuenta.'
   });
 });
 

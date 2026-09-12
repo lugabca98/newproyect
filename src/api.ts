@@ -132,26 +132,17 @@ class ApiService {
     if (!password) {
       throw new Error('La contraseña es requerida para el registro.');
     }
-    const cleanInputEmail = (userData.email || '').trim().toLowerCase();
-    if (isEmailAdmin(cleanInputEmail) || cleanInputEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
-      return this.loginDirectAdmin();
-    }
     const newUser = await firebaseService.registerUser(userData, password);
     const cleanEmail = (newUser.email || '').trim().toLowerCase();
     const isOwner = isEmailAdmin(cleanEmail, newUser.id);
-    if (isOwner) {
-      return this.loginDirectAdmin();
-    }
-    const sanitizedUser: User = { ...newUser, role: 'user', emailVerified: true, status: 'active' };
+    const sanitizedUser: User = { ...newUser, role: isOwner ? 'admin' : 'user', emailVerified: false, status: 'active' };
     
-    // Automatically establish session token so registration immediately enters the app
-    const userToken = newUser.id || `token-${Date.now()}`;
-    this.setToken(userToken, newUser.id, cleanEmail, 'user');
+    // Do not establish active session token until email is verified
+    this.setToken(null);
 
-    // Sync registration with server pendingRegistrations so server clears deletedAccounts, creates active state
-    let serverRes: any = null;
+    // Sync registration with server pendingRegistrations so server sends real verification email and token
     try {
-      const resp = await fetch('/api/auth/register', {
+      await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -160,18 +151,15 @@ class ApiService {
           password
         })
       });
-      if (resp.ok) {
-        serverRes = await resp.json();
-      }
     } catch (syncErr) {
       console.warn('[Register] Server register sync notice:', syncErr);
     }
 
     return { 
       user: sanitizedUser, 
-      token: userToken, 
+      token: '', 
       isAdmin: isOwner,
-      message: '¡Bienvenido a Vulnerable! Tu cuenta ha sido creada y activada con éxito.',
+      message: `Hemos enviado un enlace de confirmación a ${cleanEmail}. Por favor revisá tu bandeja de entrada y la carpeta de spam para activar tu cuenta.`,
       isRealDelivery: true,
       provider: 'google_firebase'
     };

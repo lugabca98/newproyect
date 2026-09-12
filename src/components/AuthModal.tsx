@@ -318,14 +318,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = email.trim().toLowerCase();
-    const isOwner = isEmailAdmin(cleanEmail) || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
     if (!cleanEmail) {
       setErrorMsg('Por favor completa tu correo electrónico.');
       return;
     }
 
-    if (!isOwner && !password) {
+    if (!password) {
       setErrorMsg('Por favor completa tu contraseña.');
       return;
     }
@@ -334,14 +333,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg('');
 
     try {
-      if (isOwner) {
-        const res = await api.loginDirectAdmin();
-        resetAllFormInputs();
-        onSuccess(res.user, true);
-        onClose();
-        return;
-      }
-
       const res = await api.login(cleanEmail, password);
       const isUserAdmin = res.isAdmin || res.user.role === 'admin' || isEmailAdmin(cleanEmail, res.user.id);
 
@@ -362,15 +353,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onSuccess({ ...res.user, emailVerified: isUserAdmin ? true : res.user.emailVerified, role: isUserAdmin ? 'admin' : res.user.role }, isUserAdmin);
       onClose();
     } catch (err: any) {
-      if (isOwner) {
-        try {
-          const res = await api.loginDirectAdmin();
-          resetAllFormInputs();
-          onSuccess(res.user, true);
-          onClose();
-          return;
-        } catch {}
-      }
       setErrorMsg(formatAuthError(err));
     } finally {
       setLoading(false);
@@ -379,25 +361,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanRegEmail = regEmail.trim().toLowerCase();
-    const isOwner = isEmailAdmin(cleanRegEmail) || cleanRegEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
-
-    if (isOwner) {
-      setLoading(true);
-      setErrorMsg('');
-      try {
-        const res = await api.loginDirectAdmin();
-        resetAllFormInputs();
-        onSuccess(res.user, true);
-        onClose();
-        return;
-      } catch (err: any) {
-        setErrorMsg(formatAuthError(err));
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
     if (!name.trim() || !regEmail.trim() || !regPassword.trim()) {
       setErrorMsg('Por favor completa todos los campos requeridos, incluyendo tu contraseña.');
       return;
@@ -440,10 +403,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setRegisteredUser(res.user);
       setRegisteredIsAdmin(res.isAdmin);
-      api.setToken(res.user.id, res.user.id, res.user.email, res.isAdmin ? 'admin' : 'user');
-      onSuccess(res.user, res.isAdmin);
-      resetAllFormInputs();
-      onClose();
+      localStorage.setItem('pending_verification_email', regEmail.trim().toLowerCase());
+
+      setResendVerificationNotice(res.message || `Hemos enviado un enlace de confirmación a ${regEmail.trim()}. Por favor revisá tu bandeja de entrada y la carpeta de spam para activar tu cuenta.`);
+
+      // Prompt email confirmation step immediately
+      setMode('verify-email-pending');
+      setResendVerificationCooldown(60);
     } catch (err: any) {
       setErrorMsg(formatAuthError(err));
     } finally {
@@ -457,24 +423,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
     if (!cleanEmail) return;
-
-    // Direct access for administrator without requiring email verification
-    if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || isEmailAdmin(cleanEmail) || registeredIsAdmin) {
-      localStorage.removeItem('pending_verification_email');
-      const adminUser: User = {
-        ...(registeredUser || INITIAL_ADMIN),
-        email: cleanEmail,
-        role: 'admin',
-        emailVerified: true,
-        verified: true,
-        status: 'active'
-      };
-      api.setToken(adminUser.id, adminUser.id, adminUser.email, 'admin');
-      onSuccess(adminUser, true);
-      resetAllFormInputs();
-      onClose();
-      return;
-    }
 
     let isMounted = true;
     const pollStatus = async () => {
@@ -519,32 +467,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setResendVerificationNotice('');
     const cleanEmail = (regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email') || '').trim().toLowerCase();
 
-    // Direct bypass for administrator
-    if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || isEmailAdmin(cleanEmail) || registeredIsAdmin) {
-      setOtpVerifySuccess(true);
-      setResendVerificationNotice('¡Acceso verificado para cuenta de Administrador!');
-      localStorage.removeItem('pending_verification_email');
-      try {
-        const adminRes = await api.loginDirectAdmin();
-        onSuccess(adminRes.user, true);
-        resetAllFormInputs();
-        onClose();
-      } catch {
-        const adminUser: User = {
-          ...(registeredUser || INITIAL_ADMIN),
-          email: cleanEmail,
-          role: 'admin',
-          emailVerified: true,
-          verified: true,
-          status: 'active'
-        };
-        api.setToken(adminUser.id, adminUser.id, adminUser.email, 'admin');
-        onSuccess(adminUser, true);
-        resetAllFormInputs();
-        onClose();
-      } finally {
-        setLoading(false);
-      }
+    if (!cleanEmail) {
+      setErrorMsg('No se especificó un correo electrónico válido.');
+      setLoading(false);
       return;
     }
 
@@ -805,44 +730,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <span>Esperando confirmación... Tu cuenta se activará automáticamente al hacer clic en el enlace.</span>
               </div>
             </div>
-
-            {/* Direct Admin Bypass Button */}
-            {(isEmailAdmin(regEmail) || regEmail.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() || registeredIsAdmin || (localStorage.getItem('pending_verification_email') || '').toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) && (
-              <button
-                id="btn-admin-bypass-direct"
-                type="button"
-                onClick={async () => {
-                  setLoading(true);
-                  localStorage.removeItem('pending_verification_email');
-                  try {
-                    const res = await api.loginDirectAdmin();
-                    onSuccess(res.user, true);
-                    resetAllFormInputs();
-                    onClose();
-                  } catch {
-                    const adminUser: User = {
-                      ...(registeredUser || INITIAL_ADMIN),
-                      email: DEFAULT_ADMIN_EMAIL,
-                      role: 'admin',
-                      emailVerified: true,
-                      verified: true,
-                      status: 'active'
-                    };
-                    api.setToken(adminUser.id, adminUser.id, adminUser.email, 'admin');
-                    onSuccess(adminUser, true);
-                    resetAllFormInputs();
-                    onClose();
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                disabled={loading}
-                className="w-full py-3 px-4 bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white rounded-xl font-bold text-xs shadow-lg shadow-rose-900/30 transition flex items-center justify-center gap-2 cursor-pointer mb-2"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Acceder directamente como Administrador (Sin confirmación)</span>
-              </button>
-            )}
 
             {/* Standard actions */}
             <div className="space-y-2.5 pt-1">
@@ -1581,23 +1468,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               />
             </div>
 
-            {email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() && (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-amber-300 font-bold flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-amber-400" />
-                    Cuenta Administrador Propietario
-                  </span>
-                  <span className="text-[10px] text-emerald-400 bg-emerald-950/70 border border-emerald-500/40 px-2 py-0.5 rounded font-bold">
-                    Acceso Directo
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-300">
-                  Acceso directo sin necesidad de confirmación por email. Podés hacer clic en "Ingresar a Vulnerable" o en el botón directo abajo.
-                </p>
-              </div>
-            )}
-
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="text-xs font-semibold text-slate-400">Contraseña</label>
@@ -1619,10 +1489,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input
                   id="login-input-password"
                   type={showLoginPassword ? 'text' : 'password'}
-                  required={email.trim().toLowerCase() !== DEFAULT_ADMIN_EMAIL.toLowerCase()}
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() ? '(Opcional para admin)' : '••••••••'}
+                  placeholder="••••••••"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
                 />
                 <button
@@ -1644,32 +1514,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             >
               {loading ? 'Iniciando sesión...' : 'Ingresar a Vulnerable'}
             </button>
-
-            <div className="pt-2 border-t border-slate-800/60">
-              <button
-                id="btn-quick-admin-login"
-                type="button"
-                onClick={async () => {
-                  setLoading(true);
-                  setErrorMsg('');
-                  try {
-                    const res = await api.loginDirectAdmin();
-                    resetAllFormInputs();
-                    onSuccess(res.user, true);
-                    onClose();
-                  } catch (err: any) {
-                    setErrorMsg(formatAuthError(err));
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                disabled={loading}
-                className="w-full py-2.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 hover:border-amber-500/70 text-amber-300 rounded-xl font-semibold text-[11.5px] transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>Ingresar directamente como Administrador ({DEFAULT_ADMIN_EMAIL})</span>
-              </button>
-            </div>
           </form>
         )}
 

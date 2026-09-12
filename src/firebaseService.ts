@@ -335,8 +335,8 @@ class FirebaseService {
       distanceKm: 2,
       occupation: userData.occupation?.trim() || 'Neurodivergente',
       interests: userData.interests?.length ? userData.interests : ['Música', 'Cine', 'Café'],
-      verified: true,
-      emailVerified: true,
+      verified: isOwnerAdmin ? true : false,
+      emailVerified: isOwnerAdmin ? true : false,
       status: 'active' as UserStatus,
       role: (isOwnerAdmin ? 'admin' : 'user') as UserRole,
       createdAt: new Date().toISOString(),
@@ -389,8 +389,8 @@ class FirebaseService {
           distanceKm: pendingUserData.distanceKm,
           occupation: pendingUserData.occupation,
           interests: pendingUserData.interests,
-          verified: true,
-          emailVerified: true,
+          verified: isOwnerAdmin ? true : false,
+          emailVerified: isOwnerAdmin ? true : false,
           status: 'active',
           role: 'user',
           createdAt: pendingUserData.createdAt,
@@ -442,10 +442,10 @@ class FirebaseService {
       console.warn('[Register Server Sync] Error note:', syncErr);
     }
 
-    // Return confirmed representation for UI flow
+    // Return representation for UI flow (pending verification)
     return {
       ...(pendingUserData as User),
-      emailVerified: true
+      emailVerified: isOwnerAdmin ? true : false
     };
   }
 
