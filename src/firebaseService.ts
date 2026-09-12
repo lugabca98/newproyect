@@ -509,17 +509,64 @@ class FirebaseService {
         passwordHash: pendingData.passwordHash
       };
     } else {
-      // If user profile is already created in Firestore, make sure emailVerified is true
+      // If user profile is already created in Firestore, make sure emailVerified is true and status active
       const existing = await this.getUserByEmail(cleanEmail);
       if (existing) {
         existing.emailVerified = true;
+        existing.status = 'active';
         await updateDoc(doc(db, 'users', existing.id), {
           emailVerified: true,
+          status: 'active',
           lastActive: new Date().toISOString()
         }).catch(() => {});
+        localDb.removeDeletedEmail(cleanEmail);
+        try {
+          await deleteDoc(doc(db, 'deletedAccounts', cleanEmail)).catch(() => {});
+        } catch {}
         return existing;
       }
-      return null;
+
+      // Check if server has this user or pending user
+      let serverUser: any = null;
+      try {
+        const resp = await fetch(`/api/auth/check-status?email=${encodeURIComponent(cleanEmail)}`);
+        if (resp.ok) {
+          const sData = await resp.json();
+          if (sData.user) {
+            serverUser = sData.user;
+          }
+        }
+      } catch {}
+
+      finalUser = {
+        id: serverUser?.id || `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: serverUser?.name || (isOwnerAdmin ? 'Administrador' : 'Usuario'),
+        email: cleanEmail,
+        age: serverUser?.age || 24,
+        gender: serverUser?.gender || 'female',
+        bio: serverUser?.bio || '¡Hola! Acabo de reactivar mi cuenta en Vulnerable.',
+        photos: serverUser?.photos?.length ? serverUser.photos : [
+          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'
+        ],
+        location: serverUser?.location || 'Buenos Aires, Argentina',
+        distanceKm: serverUser?.distanceKm || 2,
+        occupation: serverUser?.occupation || 'Neurodivergente',
+        interests: serverUser?.interests?.length ? serverUser.interests : ['Música', 'Café', 'Arte'],
+        verified: isOwnerAdmin ? true : false,
+        emailVerified: true,
+        status: 'active',
+        role: isOwnerAdmin ? 'admin' : 'user',
+        createdAt: serverUser?.createdAt || new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        likesCount: 0,
+        matchesCount: 0,
+        preferences: serverUser?.preferences || {
+          minAge: 18,
+          maxAge: 60,
+          interestedIn: ['female', 'male', 'non-binary', 'other'],
+          maxDistanceKm: 50
+        }
+      };
     }
 
     // Now create profile in Firestore 'users' collection

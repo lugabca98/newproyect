@@ -33,6 +33,7 @@ export interface MailConfigStatus {
   isConfigured: boolean;
   activeProvider: string;
   providers: {
+    supabase: boolean;
     resend: boolean;
     brevo: boolean;
     sendgrid: boolean;
@@ -43,6 +44,10 @@ export interface MailConfigStatus {
 }
 
 export function getMailConfigStatus(): MailConfigStatus {
+  const hasSupabase = Boolean(
+    (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL) &&
+    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY)
+  );
   const hasResend = Boolean(process.env.RESEND_API_KEY || process.env.RESEND_KEY);
   const hasBrevo = Boolean(process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY);
   const hasSendGrid = Boolean(process.env.SENDGRID_API_KEY);
@@ -50,7 +55,8 @@ export function getMailConfigStatus(): MailConfigStatus {
   const hasSmtp = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 
   let activeProvider = 'google_firebase';
-  if (hasResend) activeProvider = 'resend';
+  if (hasSupabase) activeProvider = 'supabase';
+  else if (hasResend) activeProvider = 'resend';
   else if (hasBrevo) activeProvider = 'brevo';
   else if (hasSendGrid) activeProvider = 'sendgrid';
   else if (hasGmail) activeProvider = 'gmail';
@@ -60,6 +66,7 @@ export function getMailConfigStatus(): MailConfigStatus {
     isConfigured: true,
     activeProvider,
     providers: {
+      supabase: hasSupabase,
       resend: hasResend,
       brevo: hasBrevo,
       sendgrid: hasSendGrid,
@@ -299,6 +306,128 @@ ${actionUrl}
 
 Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu cuenta sigue protegida.
     `.trim();
+
+  // 0. Try Supabase Auth (GoTrue REST API) if Supabase URL and Key are configured
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || supabaseServiceKey;
+
+  if (supabaseUrl && (supabaseServiceKey || supabaseAnonKey)) {
+    try {
+      console.log(`[Supabase Mailer] Attempting email delivery to ${email} via Supabase Auth (${supabaseUrl})...`);
+      const keyToUse = supabaseServiceKey || supabaseAnonKey;
+
+      if (isVerification) {
+        // Option A: If Service Role Key is present, invite user or send confirmation link using Supabase Admin API
+        if (supabaseServiceKey) {
+          const inviteRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+            method: 'POST',
+            headers: {
+              'apikey': supabaseServiceKey,
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              email,
+              password: password || undefined,
+              email_confirm: false, // Triggers confirmation email dispatch by Supabase
+              user_metadata: { name: name || 'Usuario' }
+            })
+          });
+
+          const inviteData = await inviteRes.json().catch(() => null);
+
+          if (inviteRes.ok && inviteData?.id) {
+            console.log(`[Supabase Mailer] Successfully dispatched signup confirmation email to ${email} via Supabase Admin API.`);
+            return {
+              success: true,
+              message: `Email de confirmación enviado exitosamente con Supabase a ${email}. Revisá tu bandeja de entrada o Spam.`,
+              provider: 'supabase',
+              isRealDelivery: true,
+              code
+            };
+          } else {
+            console.log(`[Supabase Mailer] Admin create returned status ${inviteRes.status}, trying OTP / resend endpoint...`, inviteData?.message || inviteData?.msg);
+          }
+        }
+
+        // Option B: Supabase Auth SignUp / OTP endpoint (triggers signup confirmation email)
+        const signUpRes = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+          method: 'POST',
+          headers: {
+            'apikey': keyToUse!,
+            'Authorization': `Bearer ${keyToUse}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email,
+            password: password || 'VulnerablePass2026!',
+            data: { name: name || 'Usuario' }
+          })
+        });
+
+        const signUpData = await signUpRes.json().catch(() => null);
+
+        if (signUpRes.ok || (signUpData && !signUpData.error)) {
+          console.log(`[Supabase Mailer] Confirmation email dispatched via Supabase /auth/v1/signup to ${email}`);
+          return {
+            success: true,
+            message: `Email de confirmación enviado exitosamente con Supabase a ${email}. Revisá tu bandeja de entrada o Spam.`,
+            provider: 'supabase',
+            isRealDelivery: true,
+            code
+          };
+        } else if (signUpData?.msg?.includes('already registered') || signUpData?.message?.includes('already registered')) {
+          // If already in Supabase, trigger resend confirmation
+          const resendRes = await fetch(`${supabaseUrl}/auth/v1/resend`, {
+            method: 'POST',
+            headers: {
+              'apikey': keyToUse!,
+              'Authorization': `Bearer ${keyToUse}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              type: 'signup',
+              email
+            })
+          });
+          if (resendRes.ok) {
+            console.log(`[Supabase Mailer] Resent signup confirmation email via Supabase to ${email}`);
+            return {
+              success: true,
+              message: `Email de confirmación reenviado exitosamente con Supabase a ${email}.`,
+              provider: 'supabase',
+              isRealDelivery: true,
+              code
+            };
+          }
+        }
+      } else {
+        // Password Reset via Supabase Auth
+        const recoverRes = await fetch(`${supabaseUrl}/auth/v1/recover`, {
+          method: 'POST',
+          headers: {
+            'apikey': keyToUse!,
+            'Authorization': `Bearer ${keyToUse}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ email })
+        });
+        if (recoverRes.ok) {
+          console.log(`[Supabase Mailer] Password reset email dispatched to ${email} via Supabase`);
+          return {
+            success: true,
+            message: `Correo de recuperación enviado con éxito a ${email} vía Supabase. Revisá tu bandeja de entrada y Spam.`,
+            provider: 'supabase',
+            isRealDelivery: true,
+            code
+          };
+        }
+      }
+    } catch (sbErr) {
+      console.warn('[Supabase Mailer] Error communicating with Supabase:', sbErr);
+    }
+  }
 
   // 1. Try Resend API first if key exists (https://resend.com)
   const resendApiKey = (process.env.RESEND_API_KEY || process.env.RESEND_KEY || '').trim();

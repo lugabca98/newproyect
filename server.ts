@@ -8,6 +8,8 @@ import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from 'fireb
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, Gender } from './src/types.js';
 import { SEED_PROFILES_WITH_DISTANCES } from './src/seedUsers';
 import { sendOtpEmail, getMailConfigStatus, purgeUserFromFirebaseAuth, recordKnownCredential } from './server/mailer.js';
+import { DbService } from './src/db/dbService.ts';
+import { runMigrationToCloudSql } from './src/db/migrateData.ts';
 
 const app = express();
 const PORT = 3000;
@@ -1452,6 +1454,8 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
         userData: newUser,
         createdAt: new Date().toISOString()
       }, { merge: true }).catch(() => {});
+      // Ensure deletedAccounts collection in Firestore is cleared for this email
+      deleteDoc(doc(firestoreDb, 'deletedAccounts', normalizedEmail)).catch(() => {});
     } catch (fbSaveErr) {
       console.warn('[Server] Firestore register write note:', fbSaveErr);
     }
@@ -1559,18 +1563,24 @@ app.get('/api/auth/verify-link', (req, res) => {
 
     const pending = pendingRegistrations[pendingIdx];
     pending.user.emailVerified = true;
-    pending.user.verified = false;
+    pending.user.verified = true;
+    pending.user.status = 'active';
     pending.user.lastActive = new Date().toISOString();
 
     const existingIdx = users.findIndex(u => u.email.toLowerCase() === email);
     if (existingIdx !== -1) {
       users[existingIdx].emailVerified = true;
+      users[existingIdx].status = 'active';
       users[existingIdx].lastActive = new Date().toISOString();
     } else {
       users.push(pending.user);
     }
 
     pendingRegistrations.splice(pendingIdx, 1);
+    deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
+    if (firestoreDb) {
+      deleteDoc(doc(firestoreDb, 'deletedAccounts', email)).catch(() => {});
+    }
     saveDatabase();
     otpStore.delete(key);
     console.log(`[Email Verified Link] User ${email} successfully activated via verification link.`);
@@ -1589,10 +1599,66 @@ app.get('/api/auth/verify-link', (req, res) => {
         return;
       }
       existingUser.emailVerified = true;
+      existingUser.status = 'active';
       existingUser.lastActive = new Date().toISOString();
+      deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
+      if (firestoreDb) {
+        deleteDoc(doc(firestoreDb, 'deletedAccounts', email)).catch(() => {});
+      }
       saveDatabase();
       otpStore.delete(key);
+    } else {
+      existingUser.status = 'active';
+      deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
+      if (firestoreDb) {
+        deleteDoc(doc(firestoreDb, 'deletedAccounts', email)).catch(() => {});
+      }
+      saveDatabase();
     }
+    res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
+    return;
+  }
+
+  // If account was deleted/purged but user clicks a valid OTP link they received
+  const fallbackRecord = otpStore.get(key);
+  if (fallbackRecord && token && fallbackRecord.code === token && Date.now() <= fallbackRecord.expiresAt) {
+    const restoredUser: ServerUser = {
+      id: `user-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+      name: sanitizeText(fallbackRecord.name || 'Usuario', 50),
+      email,
+      passwordHash: '',
+      passwordSalt: '',
+      age: 25,
+      gender: 'female',
+      bio: '¡Hola! Cuenta reactivada y verificada.',
+      photos: ['https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'],
+      location: 'Buenos Aires, Argentina',
+      distanceKm: 2,
+      occupation: 'Neurodivergente',
+      interests: ['Música', 'Café'],
+      verified: true,
+      emailVerified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 0,
+      matchesCount: 0,
+      preferences: {
+        minAge: 18,
+        maxAge: 60,
+        interestedIn: ['female', 'male', 'non-binary', 'other'],
+        maxDistanceKm: 50
+      }
+    };
+    users.push(restoredUser);
+    deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
+    if (firestoreDb) {
+      deleteDoc(doc(firestoreDb, 'deletedAccounts', email)).catch(() => {});
+    }
+    saveDatabase();
+    otpStore.delete(key);
+    console.log(`[Email Verified Link] Deleted user ${email} restored and verified via link token.`);
     res.redirect(`/?emailVerified=true&email=${encodeURIComponent(email)}`);
     return;
   }
@@ -1626,6 +1692,9 @@ app.post('/api/auth/mark-email-verified', (req, res) => {
 
   // Clean from deletedAccounts
   deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== email);
+  if (firestoreDb) {
+    deleteDoc(doc(firestoreDb, 'deletedAccounts', email)).catch(() => {});
+  }
 
   const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === email);
   if (pendingIdx !== -1) {
@@ -1668,15 +1737,63 @@ app.post('/api/auth/mark-email-verified', (req, res) => {
         return;
       }
       existingUser.emailVerified = true;
+      existingUser.status = 'active';
       existingUser.lastActive = new Date().toISOString();
       saveDatabase();
       otpStore.delete(key);
+    } else {
+      existingUser.status = 'active';
+      saveDatabase();
     }
 
     res.json({
       success: true,
       message: 'Correo verificado y cuenta activada con éxito.',
       user: toPrivateUser(existingUser)
+    });
+    return;
+  }
+
+  // Account was purged from users and pendingRegistrations, but OTP token matches
+  const key = `${email}_verify_email`;
+  const record = otpStore.get(key);
+  if (record && (!token || record.code === token) && Date.now() <= record.expiresAt) {
+    const restoredUser: ServerUser = {
+      id: `user-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+      name: sanitizeText(record.name || 'Usuario', 50),
+      email,
+      passwordHash: '',
+      passwordSalt: '',
+      age: 25,
+      gender: 'female',
+      bio: '¡Hola! Cuenta verificada y activada.',
+      photos: ['https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'],
+      location: 'Buenos Aires, Argentina',
+      distanceKm: 2,
+      occupation: 'Neurodivergente',
+      interests: ['Música', 'Café'],
+      verified: true,
+      emailVerified: true,
+      status: 'active',
+      role: 'user',
+      createdAt: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      likesCount: 0,
+      matchesCount: 0,
+      preferences: {
+        minAge: 18,
+        maxAge: 60,
+        interestedIn: ['female', 'male', 'non-binary', 'other'],
+        maxDistanceKm: 50
+      }
+    };
+    users.push(restoredUser);
+    saveDatabase();
+    otpStore.delete(key);
+    res.json({
+      success: true,
+      message: 'Correo verificado y cuenta activada con éxito.',
+      user: toPrivateUser(restoredUser)
     });
     return;
   }
@@ -1733,6 +1850,70 @@ app.post('/api/mail/send-otp', authLimiter, async (req, res) => {
   // For verification email or recovery: clear from deletedAccounts so deleted accounts
   // can receive the confirmation link and re-register or restore their access
   deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== cleanEmail);
+  if (firestoreDb) {
+    deleteDoc(doc(firestoreDb, 'deletedAccounts', cleanEmail)).catch(() => {});
+  }
+
+  if (cleanType === 'verify_email') {
+    const existingUser = users.find(u => u.email.toLowerCase() === cleanEmail);
+    const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === cleanEmail);
+
+    if (existingUser) {
+      if (existingUser.status === 'deleted' || existingUser.status === 'blocked') {
+        existingUser.status = 'active';
+      }
+    } else if (pendingIdx === -1) {
+      // Re-provision pending registration so verify-link, mark-email-verified, and verify-otp work cleanly
+      const newUserId = `user-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const defaultName = sanitizeText(name || 'Usuario', 50);
+      const pendingUser: ServerUser = {
+        id: newUserId,
+        name: defaultName,
+        email: cleanEmail,
+        passwordHash: password ? hashPassword(password).hash : (serverCredentials[cleanEmail] ? hashPassword(serverCredentials[cleanEmail]).hash : ''),
+        passwordSalt: password ? hashPassword(password).salt : '',
+        age: 25,
+        gender: 'female',
+        bio: '¡Hola! Acabo de reactivar mi cuenta en Vulnerable.',
+        photos: ['https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'],
+        location: 'Buenos Aires, Argentina',
+        distanceKm: 2,
+        occupation: 'Neurodivergente',
+        interests: ['Música', 'Café', 'Arte'],
+        verified: false,
+        emailVerified: false,
+        status: 'active',
+        role: 'user',
+        createdAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        likesCount: 0,
+        matchesCount: 0,
+        preferences: {
+          minAge: 18,
+          maxAge: 60,
+          interestedIn: ['female', 'male', 'non-binary', 'other'],
+          maxDistanceKm: 50
+        }
+      };
+
+      pendingRegistrations.push({
+        id: newUserId,
+        email: cleanEmail,
+        user: pendingUser,
+        createdAt: new Date().toISOString()
+      });
+      saveDatabase();
+
+      if (firestoreDb) {
+        setDoc(doc(firestoreDb, 'pendingRegistrations', cleanEmail), {
+          id: newUserId,
+          email: cleanEmail,
+          userData: pendingUser,
+          createdAt: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+      }
+    }
+  }
 
   // For password reset, verify user exists or was previously registered
   if (cleanType === 'password_reset') {
@@ -1834,20 +2015,66 @@ app.post('/api/mail/verify-otp', authLimiter, (req, res) => {
 
   // If verifying email, activate user from pending registrations or update existing user
   if (cleanType === 'verify_email') {
+    deletedAccounts = deletedAccounts.filter(d => d.email.toLowerCase() !== cleanEmail);
+    if (firestoreDb) {
+      deleteDoc(doc(firestoreDb, 'deletedAccounts', cleanEmail)).catch(() => {});
+    }
+
     const pendingIdx = pendingRegistrations.findIndex(p => p.email.toLowerCase() === cleanEmail);
     if (pendingIdx !== -1) {
       const pending = pendingRegistrations[pendingIdx];
       pending.user.emailVerified = true;
-      pending.user.verified = false;
+      pending.user.verified = true;
+      pending.user.status = 'active';
       pending.user.lastActive = new Date().toISOString();
-      users.push(pending.user);
+
+      const existingIdx = users.findIndex(u => u.email.toLowerCase() === cleanEmail);
+      if (existingIdx !== -1) {
+        users[existingIdx] = { ...users[existingIdx], ...pending.user, id: users[existingIdx].id };
+      } else {
+        users.push(pending.user);
+      }
       pendingRegistrations.splice(pendingIdx, 1);
       saveDatabase();
     } else {
       const user = users.find(u => u.email.toLowerCase() === cleanEmail);
       if (user) {
         (user as any).emailVerified = true;
+        (user as any).status = 'active';
         user.lastActive = new Date().toISOString();
+        saveDatabase();
+      } else {
+        // Account was deleted, but valid OTP code was verified
+        const restoredUser: ServerUser = {
+          id: `user-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+          name: sanitizeText(record.name || 'Usuario', 50),
+          email: cleanEmail,
+          passwordHash: '',
+          passwordSalt: '',
+          age: 25,
+          gender: 'female',
+          bio: '¡Hola! Cuenta verificada y activada.',
+          photos: ['https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80'],
+          location: 'Buenos Aires, Argentina',
+          distanceKm: 2,
+          occupation: 'Neurodivergente',
+          interests: ['Música', 'Café'],
+          verified: true,
+          emailVerified: true,
+          status: 'active',
+          role: 'user',
+          createdAt: new Date().toISOString(),
+          lastActive: new Date().toISOString(),
+          likesCount: 0,
+          matchesCount: 0,
+          preferences: {
+            minAge: 18,
+            maxAge: 60,
+            interestedIn: ['female', 'male', 'non-binary', 'other'],
+            maxDistanceKm: 50
+          }
+        };
+        users.push(restoredUser);
         saveDatabase();
       }
     }
@@ -2986,6 +3213,41 @@ app.post('/api/admin/sync-firebase', requireAdmin, async (req, res) => {
   });
 });
 
+// Admin Run Migration to Cloud SQL PostgreSQL
+app.post('/api/admin/migrate-to-sql', requireAdmin, async (req, res) => {
+  try {
+    const result = await runMigrationToCloudSql();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Error durante la migración a Cloud SQL'
+    });
+  }
+});
+
+// Admin Cloud SQL Status
+app.get('/api/admin/sql-status', requireAdmin, async (req, res) => {
+  try {
+    const sqlUsers = await DbService.getAllUsers();
+    const auditLogs = await DbService.getAuditLogs();
+    res.json({
+      configured: Boolean(process.env.SQL_HOST),
+      databaseName: process.env.SQL_DB_NAME || 'postgres',
+      userCount: sqlUsers.length,
+      auditLogCount: auditLogs.length,
+      status: 'active'
+    });
+  } catch (err: any) {
+    res.json({
+      configured: Boolean(process.env.SQL_HOST),
+      databaseName: process.env.SQL_DB_NAME || 'postgres',
+      status: 'error',
+      error: err.message
+    });
+  }
+});
+
 // Fallback for any unknown /api/* route to ensure clean JSON responses
 app.all('/api/*', (req, res) => {
   res.status(404).json({ error: `Ruta de API no encontrada: ${req.method} ${req.path}` });
@@ -3027,6 +3289,16 @@ async function startServer() {
   setInterval(() => {
     syncWithFirestore().catch(() => {});
   }, 15000);
+
+  // Cloud SQL Auto-migration bootstrap
+  if (process.env.SQL_HOST) {
+    console.log('[CloudSQL] SQL_HOST detected. Initiating background database migration to PostgreSQL...');
+    runMigrationToCloudSql().then(res => {
+      console.log('[CloudSQL] Initial migration result:', res);
+    }).catch(err => {
+      console.warn('[CloudSQL] Migration warning:', err);
+    });
+  }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Vulnerable Secure Server running on port ${PORT}`);

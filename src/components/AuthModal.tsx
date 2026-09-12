@@ -513,6 +513,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const handleRecoverDeletedAccount = async () => {
+    const targetEmail = (email || regEmail || forgotEmail || '').trim().toLowerCase();
+    if (!targetEmail) {
+      setErrorMsg('Por favor ingresá tu correo electrónico para enviarte el enlace de confirmación.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      localDb.removeDeletedEmail(targetEmail);
+      const res = await api.sendVerificationEmail(targetEmail, 'Usuario');
+      setRegEmail(targetEmail);
+      localStorage.setItem('pending_verification_email', targetEmail);
+      setResendVerificationNotice(res.message || `Hemos enviado un correo de confirmación a ${targetEmail}. Al hacer clic en el enlace se reactivará y confirmará tu cuenta para que puedas ingresar.`);
+      setMode('verify-email-pending');
+      setResendVerificationCooldown(60);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al enviar el correo de confirmación.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCompleteVerificationFlow = () => {
     if (registeredUser) {
       onSuccess(registeredUser, registeredIsAdmin);
@@ -649,7 +673,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {errorMsg && (
           <div className="mb-4 p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs text-center font-medium leading-relaxed animate-in fade-in">
-            {errorMsg}
+            <p>{errorMsg}</p>
+            {errorMsg.toLowerCase().includes('eliminada por el administrador') && (
+              <div className="mt-3 pt-3 border-t border-rose-500/30 flex flex-col sm:flex-row items-center justify-center gap-2">
+                <button
+                  id="btn-send-verification-deleted"
+                  type="button"
+                  onClick={handleRecoverDeletedAccount}
+                  disabled={loading}
+                  className="w-full sm:w-auto px-3.5 py-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white rounded-xl text-xs font-bold shadow transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>Enviar correo de confirmación</span>
+                </button>
+                <button
+                  id="btn-switch-to-register-deleted"
+                  type="button"
+                  onClick={() => {
+                    const target = (email || forgotEmail || '').trim().toLowerCase();
+                    if (target) setRegEmail(target);
+                    setMode('register');
+                    setErrorMsg('');
+                  }}
+                  className="w-full sm:w-auto px-3 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded-xl text-xs font-medium border border-slate-700 transition"
+                >
+                  Registrarse de nuevo
+                </button>
+              </div>
+            )}
           </div>
         )}
 

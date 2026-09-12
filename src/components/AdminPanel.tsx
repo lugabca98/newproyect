@@ -29,7 +29,8 @@ import {
   Pencil,
   Smartphone,
   Plus,
-  Save
+  Save,
+  Database
 } from 'lucide-react';
 import { User, AdminStats, AuditLog } from '../types';
 import { api } from '../api';
@@ -77,6 +78,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Delete Confirmation Modal
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [migratingSql, setMigratingSql] = useState(false);
+  const [sqlStatus, setSqlStatus] = useState<any>(null);
 
   // Edit User Profile Modal
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -137,12 +140,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
     setLoading(true);
     try {
-      // Parallel fetch metrics, users, and audit logs with resilient fallbacks
-      const [metricsRes, usersRes, logsRes] = await Promise.allSettled([
+      // Parallel fetch metrics, users, audit logs, and Cloud SQL status with resilient fallbacks
+      const [metricsRes, usersRes, logsRes, sqlRes] = await Promise.allSettled([
         api.getAdminMetrics(),
         api.getAdminUsers({ q: searchQuery, status: statusFilter, sortBy, distanceFilter }),
-        api.getAdminAuditLogs()
+        api.getAdminAuditLogs(),
+        api.getCloudSqlStatus()
       ]);
+
+      if (sqlRes.status === 'fulfilled') {
+        setSqlStatus(sqlRes.value);
+      }
 
       if (usersRes.status === 'fulfilled') {
         setUsers(usersRes.value.users);
@@ -285,6 +293,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  const handleMigrateToCloudSql = async () => {
+    setMigratingSql(true);
+    try {
+      const res = await api.migrateToCloudSql();
+      if (res.success) {
+        showToast(res.details || 'Migración a PostgreSQL completada con éxito.', 'success');
+      } else {
+        showToast(res.details || 'Aviso en migración.', 'error');
+      }
+      await fetchAdminData();
+    } catch (err: any) {
+      showToast(err?.message || 'Error al conectar con Cloud SQL PostgreSQL.', 'error');
+    } finally {
+      setMigratingSql(false);
+    }
+  };
+
   const handleStartEdit = (user: User) => {
     setEditingUser(user);
     setEditForm({
@@ -412,12 +437,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <button
             id="btn-admin-sync-firebase"
             onClick={handleSyncFirebase}
-            disabled={loading || resetting}
+            disabled={loading || resetting || migratingSql}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 shadow-md transition"
             title="Sincronizar cuentas registradas desde otros celulares con Firebase"
           >
             <Zap className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-amber-400' : 'text-amber-400'}`} />
             <span>Sincronizar Firebase</span>
+          </button>
+
+          <button
+            id="btn-admin-migrate-sql"
+            onClick={handleMigrateToCloudSql}
+            disabled={loading || resetting || migratingSql}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-xs font-bold border border-blue-500/40 shadow-md transition"
+            title="Migrar datos a PostgreSQL (Cloud SQL)"
+          >
+            <Database className={`w-3.5 h-3.5 ${migratingSql ? 'animate-spin text-blue-400' : 'text-blue-400'}`} />
+            <span>{migratingSql ? 'Migrando...' : 'Migrar a PostgreSQL'}</span>
           </button>
 
           <button
@@ -461,6 +497,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }`}>
           <span>{toastMessage.text}</span>
           <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white font-bold ml-2">×</button>
+        </div>
+      )}
+
+      {/* Cloud SQL / PostgreSQL Status Banner */}
+      {sqlStatus && (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-blue-950/40 border border-blue-500/30 text-xs">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-blue-400" />
+            <span className="font-bold text-blue-200">Base de Datos Cloud SQL (PostgreSQL):</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 text-[11px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {sqlStatus.status === 'active' ? 'Conectado & Activo' : 'Conectado'}
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-slate-400 text-[11px]">
+            <span>BD: <strong className="text-slate-200">{sqlStatus.databaseName || 'postgres'}</strong></span>
+            {sqlStatus.userCount !== undefined && (
+              <span>Usuarios en SQL: <strong className="text-blue-300">{sqlStatus.userCount}</strong></span>
+            )}
+            <button
+              onClick={handleMigrateToCloudSql}
+              disabled={migratingSql}
+              className="text-blue-400 hover:text-blue-300 font-bold underline cursor-pointer"
+            >
+              {migratingSql ? 'Migrando...' : 'Sincronizar ahora'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -1146,6 +1209,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 Cada bloqueo, desbloqueo y eliminación genera un registro persistente con timestamp y correo del administrador actuante.
               </p>
             </div>
+          </div>
+
+          {/* Supabase Email Confirmation Info Card */}
+          <div className="bg-slate-950 p-5 rounded-2xl border border-emerald-500/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-sm">
+                  ⚡
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">Correos de Confirmación vía Supabase</h4>
+                  <p className="text-[11px] text-slate-400">Integración nativa con Supabase Auth GoTrue REST API y SMTP</p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-bold text-emerald-400">
+                Soporte Activo
+              </span>
+            </div>
+            
+            <p className="text-xs text-slate-300 leading-relaxed">
+              El servidor cuenta con el proveedor <strong className="text-emerald-300">Supabase</strong> configurado para el envío automático de correos de confirmación en el registro. Para activarlo de inmediato, ingresá tus claves en los ajustes del proyecto o variables de entorno:
+            </p>
+
+            <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 space-y-1">
+              <div><span className="text-amber-400 font-bold">SUPABASE_URL</span>=https://tu-proyecto.supabase.co</div>
+              <div><span className="text-amber-400 font-bold">SUPABASE_ANON_KEY</span>=eyJhbGciOi... (o SUPABASE_SERVICE_ROLE_KEY)</div>
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              En tu panel de Supabase ve a <strong>Authentication &gt; Providers &gt; Email</strong> y asegúrate de tener activada la casilla <strong>"Confirm email"</strong>.
+            </p>
           </div>
         </div>
       )}

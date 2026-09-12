@@ -247,6 +247,11 @@ class ApiService {
   }> {
     const targetEmail = (email || '').trim().toLowerCase();
     
+    // Clear any local deleted email record so deleted accounts are never blocked from receiving confirmation email
+    if (targetEmail) {
+      localDb.removeDeletedEmail(targetEmail);
+    }
+    
     // 1. Try server mailer endpoint first (delivers actual email to user's inbox)
     try {
       const response = await fetch('/api/mail/send-otp', {
@@ -301,6 +306,9 @@ class ApiService {
 
   async markEmailVerified(email: string): Promise<{ success: boolean; message: string; user?: User }> {
     const cleanEmail = (email || '').trim().toLowerCase();
+    if (cleanEmail) {
+      localDb.removeDeletedEmail(cleanEmail);
+    }
     try {
       const response = await fetch('/api/auth/mark-email-verified', {
         method: 'POST',
@@ -882,6 +890,33 @@ class ApiService {
   async getAdminAuditLogs(): Promise<{ logs: AuditLog[] }> {
     const logs = await firebaseService.getAuditLogs();
     return { logs };
+  }
+
+  async migrateToCloudSql(): Promise<any> {
+    const resp = await fetch('/api/admin/migrate-to-sql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.getToken() || 'admin-token'}`
+      }
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: 'Error en la migración' }));
+      throw new Error(err.error || 'Error al migrar a Cloud SQL');
+    }
+    return await resp.json();
+  }
+
+  async getCloudSqlStatus(): Promise<any> {
+    const resp = await fetch('/api/admin/sql-status', {
+      headers: {
+        'Authorization': `Bearer ${this.getToken() || 'admin-token'}`
+      }
+    });
+    if (!resp.ok) {
+      return { configured: false, status: 'unavailable' };
+    }
+    return await resp.json();
   }
 }
 

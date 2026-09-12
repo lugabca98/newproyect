@@ -26,19 +26,19 @@
       "status": "active",
       "role": "admin",
       "createdAt": "2026-01-01T00:00:00.000Z",
-      "lastActive": "2026-09-08T19:49:56.263Z",
+      "lastActive": "2026-09-12T17:48:48.786Z",
       "likesCount": 142,
       "matchesCount": 28,
       "preferences": {
         "maxDistanceKm": 100,
+        "maxAge": 99,
         "interestedIn": [
           "female",
           "male",
           "non-binary",
           "other"
         ],
-        "minAge": 18,
-        "maxAge": 99
+        "minAge": 18
       }
     },
     {
@@ -1049,15 +1049,52 @@
       "role": "user",
       "createdAt": "2026-09-07T23:26:13.180Z",
       "lastActive": "2026-09-07T23:26:13.180Z",
-      "likesCount": 0,
+      "likesCount": 1,
       "matchesCount": 0,
       "preferences": {
-        "maxAge": 45,
         "minAge": 18,
+        "maxDistanceKm": 50,
         "interestedIn": [
           "female"
         ],
-        "maxDistanceKm": 50
+        "maxAge": 45
+      }
+    },
+    {
+      "id": "user-1789237845548-spnyuna",
+      "name": "Mica",
+      "email": "gladysnsil@gmail.com",
+      "passwordHash": "",
+      "passwordSalt": "",
+      "age": 27,
+      "gender": "female",
+      "bio": "",
+      "photos": [
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80"
+      ],
+      "location": "Buenos Aires, Argentina",
+      "distanceKm": 2,
+      "occupation": "Neurodivergente",
+      "interests": [
+        "Música",
+        "Cine",
+        "Café"
+      ],
+      "verified": false,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-12T18:30:45.548Z",
+      "lastActive": "2026-09-12T18:30:45.548Z",
+      "likesCount": 0,
+      "matchesCount": 0,
+      "preferences": {
+        "maxDistanceKm": 50,
+        "maxAge": 45,
+        "minAge": 18,
+        "interestedIn": [
+          "male"
+        ]
       }
     }
   ],
@@ -1103,6 +1140,96 @@
         }
       },
       "createdAt": "2026-09-07T23:26:13.180Z"
+    },
+    {
+      "id": "user-1789238452383-30461e4f",
+      "email": "test_deleted_user@example.com",
+      "user": {
+        "id": "user-1789238452383-30461e4f",
+        "name": "Test User",
+        "email": "test_deleted_user@example.com",
+        "passwordHash": "",
+        "passwordSalt": "",
+        "age": 25,
+        "gender": "female",
+        "bio": "¡Hola! Acabo de reactivar mi cuenta en Vulnerable.",
+        "photos": [
+          "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80"
+        ],
+        "location": "Buenos Aires, Argentina",
+        "distanceKm": 2,
+        "occupation": "Neurodivergente",
+        "interests": [
+          "Música",
+          "Café",
+          "Arte"
+        ],
+        "verified": false,
+        "emailVerified": false,
+        "status": "active",
+        "role": "user",
+        "createdAt": "2026-09-12T18:40:52.383Z",
+        "lastActive": "2026-09-12T18:40:52.383Z",
+        "likesCount": 0,
+        "matchesCount": 0,
+        "preferences": {
+          "minAge": 18,
+          "maxAge": 60,
+          "interestedIn": [
+            "female",
+            "male",
+            "non-binary",
+            "other"
+          ],
+          "maxDistanceKm": 50
+        }
+      },
+      "createdAt": "2026-09-12T18:40:52.383Z"
+    },
+    {
+      "id": "user-1789238460004-3698e854",
+      "email": "deleted_account_test@example.com",
+      "user": {
+        "id": "user-1789238460004-3698e854",
+        "name": "Reactivated Account",
+        "email": "deleted_account_test@example.com",
+        "passwordHash": "",
+        "passwordSalt": "",
+        "age": 25,
+        "gender": "female",
+        "bio": "¡Hola! Acabo de reactivar mi cuenta en Vulnerable.",
+        "photos": [
+          "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80"
+        ],
+        "location": "Buenos Aires, Argentina",
+        "distanceKm": 2,
+        "occupation": "Neurodivergente",
+        "interests": [
+          "Música",
+          "Café",
+          "Arte"
+        ],
+        "verified": false,
+        "emailVerified": false,
+        "status": "active",
+        "role": "user",
+        "createdAt": "2026-09-12T18:41:00.004Z",
+        "lastActive": "2026-09-12T18:41:00.004Z",
+        "likesCount": 0,
+        "matchesCount": 0,
+        "preferences": {
+          "minAge": 18,
+          "maxAge": 60,
+          "interestedIn": [
+            "female",
+            "male",
+            "non-binary",
+            "other"
+          ],
+          "maxDistanceKm": 50
+        }
+      },
+      "createdAt": "2026-09-12T18:41:00.004Z"
     }
   ],
   "deletedAccounts": [],
@@ -1148,5 +1275,5 @@
       "timestamp": "2026-09-07T23:24:07.582Z"
     }
   ],
-  "updatedAt": "2026-09-09T00:13:36.692Z"
+  "updatedAt": "2026-09-12T18:41:00.004Z"
 }
