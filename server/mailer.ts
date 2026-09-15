@@ -44,36 +44,39 @@ export interface MailConfigStatus {
 }
 
 export function getMailConfigStatus(): MailConfigStatus {
+  const defaultGmailUser = 'lugabca98@gmail.com';
+  const defaultGmailPass = 'fbaeavizziiwtjvc';
+
   const defaultSupabaseUrl = 'https://fpdzpiagqskteactvbvi.supabase.co';
   const defaultSupabaseKey = 'sb_publishable_jEbvQbr5z8kVsHNdUhnRqQ_87Z71kh8';
 
-  const hasSupabase = Boolean(
-    (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || defaultSupabaseUrl) &&
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || defaultSupabaseKey)
-  );
+  const hasGmail = Boolean((process.env.GMAIL_USER || process.env.EMAIL_USER || defaultGmailUser) && (process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS || defaultGmailPass));
   const hasResend = Boolean(process.env.RESEND_API_KEY || process.env.RESEND_KEY);
   const hasBrevo = Boolean(process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY);
   const hasSendGrid = Boolean(process.env.SENDGRID_API_KEY);
-  const hasGmail = Boolean((process.env.GMAIL_USER || process.env.EMAIL_USER) && (process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS));
   const hasSmtp = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  const hasSupabase = Boolean(
+    (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL) &&
+    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY)
+  );
 
   let activeProvider = 'google_firebase';
-  if (hasSupabase) activeProvider = 'supabase';
+  if (hasGmail) activeProvider = 'gmail';
   else if (hasResend) activeProvider = 'resend';
   else if (hasBrevo) activeProvider = 'brevo';
   else if (hasSendGrid) activeProvider = 'sendgrid';
-  else if (hasGmail) activeProvider = 'gmail';
   else if (hasSmtp) activeProvider = 'smtp';
+  else if (hasSupabase) activeProvider = 'supabase';
 
   return {
     isConfigured: true,
     activeProvider,
     providers: {
+      gmail: hasGmail,
       supabase: hasSupabase,
       resend: hasResend,
       brevo: hasBrevo,
       sendgrid: hasSendGrid,
-      gmail: hasGmail,
       smtp: hasSmtp,
       google_firebase: true
     }
@@ -85,13 +88,16 @@ let cachedTransporter: nodemailer.Transporter | null = null;
 let cachedTransporterType = '';
 
 async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; provider: string; isTest: boolean }> {
+  const defaultGmailUser = 'lugabca98@gmail.com';
+  const defaultGmailPass = 'fbaeavizziiwtjvc';
+
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT) || 587;
-  const user = process.env.SMTP_USER || process.env.EMAIL_USER || process.env.GMAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS;
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER || process.env.GMAIL_USER || defaultGmailUser;
+  const pass = (process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS || defaultGmailPass).replace(/\s+/g, '');
   const secure = process.env.SMTP_SECURE === 'true' || port === 465;
 
-  // 1. If explicit SMTP / Gmail is configured in environment
+  // 1. If explicit SMTP / Gmail is configured in environment or defaults
   if (user && pass) {
     const configKey = `${host || 'smtp.gmail.com'}:${user}`;
     if (cachedTransporter && cachedTransporterType === configKey) {
@@ -217,8 +223,8 @@ export async function sendOtpEmail({ email, code, type, name, actionUrl, passwor
     ? 'Confirmar mi Correo y Activar Cuenta'
     : 'Restablecer mi Contraseña';
 
-  const fromAddress = process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.GMAIL_USER || '"Vulnerable App" <onboarding@resend.dev>';
-  const fromName = 'Vulnerable App';
+  const fromAddress = process.env.EMAIL_FROM || `Vulnerable <${process.env.GMAIL_USER || 'lugabca98@gmail.com'}>`;
+  const fromName = 'Vulnerable';
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -310,7 +316,34 @@ ${actionUrl}
 Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu cuenta sigue protegida.
     `.trim();
 
-  // 0. Try Supabase Auth (GoTrue REST API) if Supabase URL and Key are configured
+  // 0. Primary Provider: Direct Gmail / Custom SMTP transport (fastest, 100% reliable inbox delivery)
+  try {
+    const { transporter, provider, isTest } = await getTransporter();
+    if (!isTest && (provider === 'gmail' || provider === 'smtp')) {
+      console.log(`[Mailer] Dispatching email to ${email} via authenticated ${provider} (${fromAddress})...`);
+      const info = await transporter.sendMail({
+        from: fromAddress,
+        to: email,
+        subject,
+        text: textContent,
+        html: htmlContent
+      });
+
+      console.log(`[Mailer] Message successfully sent via ${provider} to ${email} (MessageId: ${info.messageId})`);
+      return {
+        success: true,
+        message: isVerification
+          ? `Correo de confirmación enviado con éxito a ${email}. Revisá tu bandeja de entrada y Spam.`
+          : `Enlace para restablecer tu contraseña enviado a ${email}. Revisá tu bandeja de entrada y Spam.`,
+        provider,
+        isRealDelivery: true
+      };
+    }
+  } catch (smtpDirectErr: any) {
+    console.warn('[Mailer] Primary Gmail SMTP attempt notice:', smtpDirectErr?.message || smtpDirectErr);
+  }
+
+  // 1. Try Supabase Auth (GoTrue REST API) if Supabase URL and Key are configured
   const defaultSupabaseUrl = 'https://fpdzpiagqskteactvbvi.supabase.co';
   const defaultSupabaseKey = 'sb_publishable_jEbvQbr5z8kVsHNdUhnRqQ_87Z71kh8';
 
