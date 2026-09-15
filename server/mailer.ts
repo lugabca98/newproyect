@@ -44,9 +44,12 @@ export interface MailConfigStatus {
 }
 
 export function getMailConfigStatus(): MailConfigStatus {
+  const defaultSupabaseUrl = 'https://fpdzpiagqskteactvbvi.supabase.co';
+  const defaultSupabaseKey = 'sb_publishable_jEbvQbr5z8kVsHNdUhnRqQ_87Z71kh8';
+
   const hasSupabase = Boolean(
-    (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL) &&
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY)
+    (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || defaultSupabaseUrl) &&
+    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || defaultSupabaseKey)
   );
   const hasResend = Boolean(process.env.RESEND_API_KEY || process.env.RESEND_KEY);
   const hasBrevo = Boolean(process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY);
@@ -308,9 +311,12 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
     `.trim();
 
   // 0. Try Supabase Auth (GoTrue REST API) if Supabase URL and Key are configured
-  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || supabaseServiceKey;
+  const defaultSupabaseUrl = 'https://fpdzpiagqskteactvbvi.supabase.co';
+  const defaultSupabaseKey = 'sb_publishable_jEbvQbr5z8kVsHNdUhnRqQ_87Z71kh8';
+
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || defaultSupabaseUrl).replace(/\/$/, '');
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || defaultSupabaseKey;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || defaultSupabaseKey || supabaseServiceKey;
 
   if (supabaseUrl && (supabaseServiceKey || supabaseAnonKey)) {
     try {
