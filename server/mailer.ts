@@ -374,7 +374,7 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
 
         const signUpData = await signUpRes.json().catch(() => null);
 
-        if (signUpRes.ok || (signUpData && !signUpData.error)) {
+        if (signUpRes.ok && signUpData && !signUpData.error && signUpData.id) {
           console.log(`[Supabase Mailer] Confirmation email dispatched via Supabase /auth/v1/signup to ${email}`);
           return {
             success: true,
@@ -397,7 +397,8 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
               email
             })
           });
-          if (resendRes.ok) {
+          const resendData = await resendRes.json().catch(() => null);
+          if (resendRes.ok && (!resendData || !resendData.error)) {
             console.log(`[Supabase Mailer] Resent signup confirmation email via Supabase to ${email}`);
             return {
               success: true,
@@ -406,7 +407,11 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
               isRealDelivery: true,
               code
             };
+          } else {
+            console.warn('[Supabase Mailer] Resend returned non-ok, proceeding to fallback provider:', resendData?.message || resendData?.msg);
           }
+        } else {
+          console.warn(`[Supabase Mailer] Supabase signup returned ${signUpRes.status}:`, signUpData?.message || signUpData?.msg || 'Non-ok response, proceeding to fallback provider');
         }
       } else {
         // Password Reset via Supabase Auth
