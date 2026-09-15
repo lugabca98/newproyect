@@ -45,7 +45,7 @@ export interface MailConfigStatus {
 
 export function getMailConfigStatus(): MailConfigStatus {
   const defaultGmailUser = 'lugabca98@gmail.com';
-  const defaultGmailPass = 'fbaeavizziiwtjvc';
+  const defaultGmailPass = '';
 
   const defaultSupabaseUrl = 'https://fpdzpiagqskteactvbvi.supabase.co';
   const defaultSupabaseKey = 'sb_publishable_jEbvQbr5z8kVsHNdUhnRqQ_87Z71kh8';
@@ -89,7 +89,7 @@ let cachedTransporterType = '';
 
 async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; provider: string; isTest: boolean }> {
   const defaultGmailUser = 'lugabca98@gmail.com';
-  const defaultGmailPass = 'fbaeavizziiwtjvc';
+  const defaultGmailPass = '';
 
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT) || 587;
@@ -605,8 +605,8 @@ Si no solicitaste este cambio, podés ignorar este mensaje de forma segura. Tu c
   }
 
   // 4. Try Google Firebase Identity Toolkit (sends real email directly to Gmail / external inboxes from Google servers)
-  const googleApiKey = process.env.VITE_FIREBASE_API_KEY || appletConfig?.apiKey || "AIzaSyDC017ldRBZJfxTqtDtdkew9VQMFuE8AV0";
-  const projectAuthDomain = appletConfig?.authDomain || "noble-voltage-37dgj.firebaseapp.com";
+  const googleApiKey = process.env.VITE_FIREBASE_API_KEY || appletConfig?.apiKey || "AIzaSyDQ3y2kU-0dQbSYMKbeAFqEGiDg_wyquQ0";
+  const projectAuthDomain = appletConfig?.authDomain || "vulnerable-app-e942a.firebaseapp.com";
   const hasCustomSmtp = Boolean(process.env.GMAIL_USER || process.env.SMTP_HOST || process.env.SMTP_USER);
 
   // If no custom SMTP/Gmail is provided, try Firebase Identity Toolkit to deliver directly from Google to external inbox

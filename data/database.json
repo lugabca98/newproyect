@@ -42,81 +42,986 @@
       }
     },
     {
-      "id": "user-1789501815230-sgs8ti1",
-      "name": "Luciano2",
-      "email": "lucianocassok@gmail.com",
-      "passwordHash": "",
-      "passwordSalt": "",
+      "id": "user-valeria",
+      "name": "Valeria Rivas",
+      "email": "valeria@ejemplo.com",
+      "age": 24,
+      "gender": "female",
+      "bio": "Diseñadora UX/UI 🎨. Amante del café filtrado, museos de arte contemporáneo y pasear a mi perrito Milo 🐶.",
+      "photos": [
+        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Palermo, CABA",
+      "distanceKm": 3,
+      "occupation": "Diseñadora de Producto",
+      "interests": [
+        "Diseño",
+        "Fotografía",
+        "Música Indie",
+        "Yoga",
+        "Viajes"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-03T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 89,
+      "matchesCount": 14,
+      "preferences": {
+        "minAge": 20,
+        "maxAge": 35,
+        "interestedIn": [
+          "male",
+          "female",
+          "non-binary"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "58397f2412ff3bddb40875c5a647a9b7168bd3f38ec6d51ddfe653159c86866a2c95d6123bfd8d40891f322b89e8dcbc6a279c6acae4ef8b580c5d3fb95902c7",
+      "passwordSalt": "513850f8fdcad733b1e68edee8018ad8"
+    },
+    {
+      "id": "user-mateo",
+      "name": "Mateo Fernández",
+      "email": "mateo@ejemplo.com",
+      "age": 29,
+      "gender": "male",
+      "bio": "Fotógrafo documental & viajero empedernido 📸. 28 países y contando. Charlas profundas y escapadas improvisadas.",
+      "photos": [
+        "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "San Telmo, CABA",
+      "distanceKm": 4,
+      "occupation": "Fotógrafo Profesional",
+      "interests": [
+        "Fotografía",
+        "Viajes",
+        "Aventuras",
+        "Vinilos",
+        "Cerveza Artesanal"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-08-31T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 94,
+      "matchesCount": 18,
+      "preferences": {
+        "minAge": 22,
+        "maxAge": 35,
+        "interestedIn": [
+          "female",
+          "non-binary"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "0d899cb64c14e472f81c3cdab74edd6ed4d653b79ed6966e73b69c0cb0a33a150926a9f34163833981a030de416c12e4f860919bbe7bf920f51cc5d051336c72",
+      "passwordSalt": "9b2e70027eb3fd1268d16a031f292a6c"
+    },
+    {
+      "id": "user-elena",
+      "name": "Elena Gómez",
+      "email": "elena@ejemplo.com",
+      "age": 25,
+      "gender": "female",
+      "bio": "Bailarina contemporánea e instructora de Pilates 🩰🌿. En busca de buenas energías, risas espontáneas y conexión genuina.",
+      "photos": [
+        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Colegiales, CABA",
+      "distanceKm": 4,
+      "occupation": "Instructora de Danza",
+      "interests": [
+        "Danza",
+        "Pilates",
+        "Naturaleza",
+        "Plantas",
+        "Cocina Saludable"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-11T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 132,
+      "matchesCount": 26,
+      "preferences": {
+        "minAge": 22,
+        "maxAge": 35,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "2c71e0de3670e28e204f2150187f836aac22c7a5bd304d06e6e0df9786066fe320a0578288fea15f8b82c11f4d1241728c79875a3c8d9bd537eaed1edc7cd50e",
+      "passwordSalt": "e0676125e0517d1c9d0825829ac6575b"
+    },
+    {
+      "id": "user-lucas",
+      "name": "Lucas Martínez",
+      "email": "lucas@ejemplo.com",
       "age": 27,
       "gender": "male",
-      "bio": "",
+      "bio": "Ingeniero de software & escalador en roca 🧗. Apasionado por la cocina italiana casera 🍝 y tocar la guitarra.",
       "photos": [
-        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80"
+        "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80"
       ],
-      "location": "Buenos Aires, Argentina",
-      "distanceKm": 2,
-      "occupation": "Neurodivergente",
+      "location": "Recoleta, CABA",
+      "distanceKm": 5,
+      "occupation": "Backend Developer",
       "interests": [
-        "Música",
+        "Trekking",
+        "Guitarra",
+        "Cocina",
+        "Series",
+        "Startups"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-08-26T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 65,
+      "matchesCount": 9,
+      "preferences": {
+        "minAge": 21,
+        "maxAge": 32,
+        "interestedIn": [
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "aaa03cb0ebbbb770af26512cb15c7b80962a66dc8271c5835a87376db7f02a99c8331d5fa4cbfd5c9020f0c241dbe606f3e45cd5e0b5cab8e346b4370eb35a05",
+      "passwordSalt": "b3d8ba200324bfce5726c88bae88ecab"
+    },
+    {
+      "id": "user-sofia",
+      "name": "Sofía Benítez",
+      "email": "sofia@ejemplo.com",
+      "age": 23,
+      "gender": "female",
+      "bio": "Estudiante de Medicina & maratonista aficionada 🏃‍♀️🩺. Si sobreviví a anatomía, puedo sobrevivir a una primera cita divertida.",
+      "photos": [
+        "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Caballito, CABA",
+      "distanceKm": 6,
+      "occupation": "Estudiante de Medicina",
+      "interests": [
+        "Running",
+        "Medicina",
+        "Podcasts",
+        "Playa",
+        "Perros"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-10T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 154,
+      "matchesCount": 31,
+      "preferences": {
+        "minAge": 22,
+        "maxAge": 32,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "3b6ea2cd94523c5e5cae193b709a2ee529794b6504e42c759ec1a86bf0cef5f0cb83189418514e24e85a9013ed8d94b4b4cfc416a0ef5fd5c5877d786e3cf63f",
+      "passwordSalt": "a652273bcbe8fecd2a5184e34fd5cf72"
+    },
+    {
+      "id": "user-camila",
+      "name": "Camila Rossi",
+      "email": "camila@ejemplo.com",
+      "age": 26,
+      "gender": "female",
+      "bio": "Arquitecta de día, exploradora gastronómica de noche 🍷✨. Busco a alguien para probar nuevos restaurantes.",
+      "photos": [
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Belgrano, CABA",
+      "distanceKm": 7,
+      "occupation": "Arquitecta",
+      "interests": [
+        "Arquitectura",
+        "Vino Tinto",
         "Cine",
-        "Café"
+        "Libros",
+        "Gimnasio"
       ],
       "verified": false,
       "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-09-15T19:50:15.231Z",
-      "lastActive": "2026-09-15T19:50:15.233Z",
-      "likesCount": 0,
-      "matchesCount": 0,
+      "createdAt": "2026-09-07T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 110,
+      "matchesCount": 22,
       "preferences": {
-        "maxDistanceKm": 50,
-        "maxAge": 45,
+        "minAge": 23,
+        "maxAge": 35,
         "interestedIn": [
-          "male"
+          "male",
+          "female"
         ],
-        "minAge": 18
-      }
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "424b801187cb026a9b7e368bec5b0052bf0050803977122a25b4882cae95812372b7315c47e2cb9788a9c1154e961372d6561f0ed0b3ee0b83e0b041a9f33fdd",
+      "passwordSalt": "7dcd6404e231766d549fc1378e0f687a"
     },
     {
-      "id": "user-1789501974518-960129d9",
-      "name": "Gabriel",
-      "email": "gabrielcassok@gmail.com",
-      "passwordHash": "",
-      "passwordSalt": "",
-      "age": 25,
-      "gender": "female",
-      "bio": "¡Hola! Acabo de reactivar mi cuenta en Vulnerable.",
+      "id": "user-ignacio",
+      "name": "Ignacio Silva",
+      "email": "ignacio@ejemplo.com",
+      "age": 31,
+      "gender": "male",
+      "bio": "Sommelier y DJ de vinilos en mis tiempos libres 🎧🍇. Fanático del jazz, los atardeceres y las charlas largas.",
       "photos": [
-        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80"
+        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80"
       ],
-      "location": "Buenos Aires, Argentina",
-      "distanceKm": 2,
-      "occupation": "Neurodivergente",
+      "location": "Nuñez, CABA",
+      "distanceKm": 8,
+      "occupation": "Sommelier & Gestor Cultural",
       "interests": [
         "Música",
-        "Café",
-        "Arte"
+        "Vinos",
+        "Gastronomía",
+        "Arte",
+        "Lectura"
       ],
       "verified": false,
-      "emailVerified": false,
+      "emailVerified": true,
       "status": "active",
       "role": "user",
-      "createdAt": "2026-09-15T19:52:54.519Z",
-      "lastActive": "2026-09-15T19:52:56.966Z",
-      "likesCount": 0,
-      "matchesCount": 0,
+      "createdAt": "2026-08-28T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 78,
+      "matchesCount": 12,
       "preferences": {
+        "minAge": 25,
+        "maxAge": 38,
+        "interestedIn": [
+          "female",
+          "other"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "7aa4be3cf1b636493b68c174559d48c54dae415eef713a22f0092b7fa986946bd9887e6c1a7bbbc72fcb9d3f7db7c7a36217a48939277b2d3f5d24639ee74c0a",
+      "passwordSalt": "cc7a4451b2af2707345f3af8d57c0210"
+    },
+    {
+      "id": "user-alex",
+      "name": "Alex Romero",
+      "email": "alex.romero@ejemplo.com",
+      "age": 25,
+      "gender": "non-binary",
+      "bio": "Artista visual, animación digital y sintetizadores modulares 🎛️🌈. Busco personas auténticas con intereses curiosos.",
+      "photos": [
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Vicente López, Buenos Aires",
+      "distanceKm": 14,
+      "occupation": "Artista Audiovisual & TDAH",
+      "interests": [
+        "Animación",
+        "Sintetizadores",
+        "Cine Experimental",
+        "Café",
+        "Arte Digital"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-06T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 104,
+      "matchesCount": 17,
+      "preferences": {
+        "minAge": 20,
+        "maxAge": 36,
         "interestedIn": [
           "female",
           "male",
           "non-binary",
           "other"
         ],
-        "maxAge": 60,
-        "maxDistanceKm": 50,
-        "minAge": 18
-      }
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "f01dfb8991c47fb33b27af5b27430be0d86a0c0df30ac9513ff66de6facea32c8c6a6a592b55db3864abf9fe1fa22ca76cd2e1517a56eac51aa954d13defd3d1",
+      "passwordSalt": "1ffb1a363c9715a1cef0c8fc9d8ba623"
+    },
+    {
+      "id": "user-lucia",
+      "name": "Lucía Morales",
+      "email": "lucia.morales@ejemplo.com",
+      "age": 27,
+      "gender": "female",
+      "bio": "Diseñadora botánica & amante de los jardines escondidos 🌿🌸. Coleccionista de vinilos y fan de los picnics junto al río.",
+      "photos": [
+        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "San Isidro, GBA Norte",
+      "distanceKm": 18,
+      "occupation": "Diseñadora Paisajista",
+      "interests": [
+        "Botánica",
+        "Paseos en Bici",
+        "Lectura",
+        "Té Matcha",
+        "Naturaleza"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-08T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 121,
+      "matchesCount": 23,
+      "preferences": {
+        "minAge": 24,
+        "maxAge": 35,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "c0c146cbc9c940fe2feae93005de690eb2160cc6cb2d876ba30582afe1549a9b9745b5fdc64885d50a5cb6a5321351d0995da016c1467e78d391045626f733cf",
+      "passwordSalt": "11a8eaea9bbab7452c14d1db2259b56a"
+    },
+    {
+      "id": "user-nicolas",
+      "name": "Nicolás Vega",
+      "email": "nicolas.vega@ejemplo.com",
+      "age": 28,
+      "gender": "male",
+      "bio": "Kayak en el delta los sábados y desarrollador de software los días de semana 🛶💻. Siempre listo para acampar en una isla.",
+      "photos": [
+        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Tigre, GBA Norte",
+      "distanceKm": 24,
+      "occupation": "Fullstack Dev & Kayakista",
+      "interests": [
+        "Kayak",
+        "Río",
+        "Camping",
+        "Tecnología",
+        "Asados"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-01T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 88,
+      "matchesCount": 15,
+      "preferences": {
+        "minAge": 22,
+        "maxAge": 33,
+        "interestedIn": [
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "94a062416b678ab607bd0fa5ec4c7743d6b37460bf887cde4ebd02499e71e6311c9248cd7ad1d58eb6e0ceb0a9c10a93cf73d5b0102cacaaf223b121dc064582",
+      "passwordSalt": "159148d79b58ea35266c7d3ffeda0f4c"
+    },
+    {
+      "id": "user-romina",
+      "name": "Romina Juárez",
+      "email": "romina.juarez@ejemplo.com",
+      "age": 26,
+      "gender": "female",
+      "bio": "Psicóloga con foco en neurodiversidad 🧠☕. Fascinada por las charlas profundas sin rodeos y el cine de autor.",
+      "photos": [
+        "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Quilmes, GBA Sur",
+      "distanceKm": 32,
+      "occupation": "Psicóloga Cognitiva",
+      "interests": [
+        "Neurociencia",
+        "Cine",
+        "Literatura",
+        "Café",
+        "Gatos"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-04T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 97,
+      "matchesCount": 19,
+      "preferences": {
+        "minAge": 24,
+        "maxAge": 36,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "31a2436ed196a24abe9a880356fa7fce89aa16a6aaa8e2e9c435e984aba8684e02b8a225a66dd4f519589b5a24d51e44b6d54fe40a9e5cab21eb198fc760d198",
+      "passwordSalt": "2216d8d4528249abeb055c0aa1dc4b25"
+    },
+    {
+      "id": "user-diego",
+      "name": "Diego Albornoz",
+      "email": "diego.albornoz@ejemplo.com",
+      "age": 30,
+      "gender": "male",
+      "bio": "Veterinario rural y apasionado por los caballos 🐎🌾. Mate dulce, fogones bajo las estrellas y tranquilidad campestre.",
+      "photos": [
+        "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Pilar, Buenos Aires",
+      "distanceKm": 48,
+      "occupation": "Médico Veterinario",
+      "interests": [
+        "Animales",
+        "Campo",
+        "Guitarra",
+        "Fogones",
+        "Trekking"
+      ],
+      "verified": false,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-08-30T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 62,
+      "matchesCount": 11,
+      "preferences": {
+        "minAge": 23,
+        "maxAge": 35,
+        "interestedIn": [
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "b54f61062c09b04ac2c788edf51c78bbcf741cc9d0420b4ef5889f84f8b1947da847937545cd3a3e44034fb9a6261754dda170d31da729596d54ef2ba9b570f1",
+      "passwordSalt": "ced46ba568e730d224e8bd35150cf196"
+    },
+    {
+      "id": "user-martina",
+      "name": "Martina Ferreyra",
+      "email": "martina.ferreyra@ejemplo.com",
+      "age": 25,
+      "gender": "female",
+      "bio": "Bióloga molecular e investigadora 🧬🧪. Amante de los árboles de La Plata, las ferias de libros usados y la música acústica.",
+      "photos": [
+        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "La Plata, Buenos Aires",
+      "distanceKm": 56,
+      "occupation": "Bióloga Molecular & AACC",
+      "interests": [
+        "Ciencia",
+        "Divulgación",
+        "Museos",
+        "Series",
+        "Libros"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-09T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 140,
+      "matchesCount": 29,
+      "preferences": {
+        "minAge": 22,
+        "maxAge": 34,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "b758f4fc53d236b91c379548b94fb7913bd2bfb196c2829dfeb0ae704a9ffa04c6b0425c20d932528b6cd65fb21ab7d3a924590b8094120ee72932377791cffe",
+      "passwordSalt": "a15355d47e4fa64e8c5f0651096ef145"
+    },
+    {
+      "id": "user-tomas",
+      "name": "Tomás Navarro",
+      "email": "tomas.navarro@ejemplo.com",
+      "age": 26,
+      "gender": "male",
+      "bio": "Diseño industrial y modelado 3D 🚲📐. Recorro las diagonales platenses en bicicleta y me encanta cocinar pizzas caseras.",
+      "photos": [
+        "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "La Plata, Buenos Aires",
+      "distanceKm": 60,
+      "occupation": "Diseñador Industrial",
+      "interests": [
+        "Bicicleta",
+        "Impresión 3D",
+        "Cocina",
+        "Música",
+        "Ciclismo"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-02T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 75,
+      "matchesCount": 14,
+      "preferences": {
+        "minAge": 21,
+        "maxAge": 32,
+        "interestedIn": [
+          "female",
+          "non-binary"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "0d5516e3115fb040b71c3c5037be8fe02c6202cc4ee364af2432fccd62b1941cb91fb55c6c4af284dd4ac22f1fe59f16b8621f8636ae6528a864b4ab1bb8747f",
+      "passwordSalt": "69f01b9cc9b760a05323e71a107681a8"
+    },
+    {
+      "id": "user-carolina",
+      "name": "Carolina Méndez",
+      "email": "carolina.mendez@ejemplo.com",
+      "age": 28,
+      "gender": "female",
+      "bio": "Ingeniera ambiental trabajando por humedales limpios 🌾💧. Yoga al amanecer y paseos con binoculares para observar aves.",
+      "photos": [
+        "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Campana / Zárate, Buenos Aires",
+      "distanceKm": 88,
+      "occupation": "Ingeniera Ambiental",
+      "interests": [
+        "Ecología",
+        "Humedales",
+        "Aves",
+        "Yoga",
+        "Senderismo"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-05T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 115,
+      "matchesCount": 21,
+      "preferences": {
+        "minAge": 25,
+        "maxAge": 38,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "11c7cd4e2b689189dc6551fdb39699eacb67f8b715a2eeb8372c4ecb3cc29a3af0f4f9addfe1ac13654bb5756a77b7a67af558441d48ab21a22ab46a188ac196",
+      "passwordSalt": "9657fede717c7fd070e38dee36e29434"
+    },
+    {
+      "id": "user-santiago",
+      "name": "Santiago Brizuela",
+      "email": "santiago.brizuela@ejemplo.com",
+      "age": 29,
+      "gender": "male",
+      "bio": "Platero criollo y restaurador de antigüedades 🔨✨. Fan de la vida pausada de pueblo, la literatura histórica y el buen café.",
+      "photos": [
+        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "San Antonio de Areco, Buenos Aires",
+      "distanceKm": 115,
+      "occupation": "Orfebre & Artesano",
+      "interests": [
+        "Artesanía",
+        "Historia",
+        "Café",
+        "Antigüedades",
+        "Música Folclórica"
+      ],
+      "verified": false,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-08-24T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 54,
+      "matchesCount": 8,
+      "preferences": {
+        "minAge": 23,
+        "maxAge": 35,
+        "interestedIn": [
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "760cdd7639ff8a2c756e83b139d51df82544051edf6e50a4aad0b3208ba8287c734f3f6b00224dbbec42371b39b136cb7a809d84977eeff979fc1a086ba7a6b2",
+      "passwordSalt": "27bdc0396584cbc0e476daca80562fbb"
+    },
+    {
+      "id": "user-julieta",
+      "name": "Julieta Soria",
+      "email": "julieta.soria@ejemplo.com",
+      "age": 28,
+      "gender": "female",
+      "bio": "Arquitecta de espacios sensoriales & amante del río Paraná 🌊🎨. Atardeceres en el Parque España con tereré o mate.",
+      "photos": [
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Rosario, Santa Fe",
+      "distanceKm": 298,
+      "occupation": "Arquitecta Sensorial",
+      "interests": [
+        "Río Paraná",
+        "Arquitectura",
+        "Diseño",
+        "Pintura",
+        "Teatro"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-07T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 168,
+      "matchesCount": 34,
+      "preferences": {
+        "minAge": 24,
+        "maxAge": 38,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "61b75d4cfa32ed2c94f646741414f1c125ffb1b8089f46469d6fc3f20bc13783d709bce36b760ea2a650d88eb39a494a2ba2639eabe9049629b0972ed1d6429d",
+      "passwordSalt": "421eab00d7ca6a6651110da87c6c96fb"
+    },
+    {
+      "id": "user-facundo",
+      "name": "Facundo Castro",
+      "email": "facundo.castro@ejemplo.com",
+      "age": 30,
+      "gender": "male",
+      "bio": "Músico, pianista de jazz y productor de audio 🎹🎧. Disfruto de cocinar platos elaborados y de conversaciones sin prisas.",
+      "photos": [
+        "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Rosario, Santa Fe",
+      "distanceKm": 305,
+      "occupation": "Productor Musical & Pianista",
+      "interests": [
+        "Jazz",
+        "Piano",
+        "Producción",
+        "Gastronomía",
+        "Vinos"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-08-29T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 92,
+      "matchesCount": 16,
+      "preferences": {
+        "minAge": 24,
+        "maxAge": 36,
+        "interestedIn": [
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "5f0b2eff3eac6c19a07884bbcc208c501d305fa4e69fbd949032b0bc9d1fa4a5444e2dee55ec412ca9e13e22bd6f6214033cde9ae6f76f98ef2f1a19d7ee0234",
+      "passwordSalt": "d5237ab548c0d05c99618401d874cf91"
+    },
+    {
+      "id": "user-micaela",
+      "name": "Micaela Ramos",
+      "email": "micaela.ramos@ejemplo.com",
+      "age": 29,
+      "gender": "female",
+      "bio": "Bióloga marina y surfista en Chapadmalal 🏄‍♀️🌊. Los días de tormenta me encuentran leyendo con té caliente frente al mar.",
+      "photos": [
+        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Mar del Plata, Buenos Aires",
+      "distanceKm": 410,
+      "occupation": "Bióloga Marina & Surfista",
+      "interests": [
+        "Surf",
+        "Océano",
+        "Atardeceres",
+        "Cerveza Artesanal",
+        "Medio Ambiente"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-10T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 182,
+      "matchesCount": 38,
+      "preferences": {
+        "minAge": 25,
+        "maxAge": 38,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1000
+      },
+      "passwordHash": "5309dcd645a6263d81382fcf070c0327514a41ec9ded0986a130b0959983cb55482b43a6a80f4985841e6ad5aa90fed3e9b30301cdd9210ed1a8f10c14db1360",
+      "passwordSalt": "d8e3fe440bfc4008ffef27c826996184"
+    },
+    {
+      "id": "user-valentina",
+      "name": "Valentina Díaz",
+      "email": "valentina.diaz@ejemplo.com",
+      "age": 24,
+      "gender": "female",
+      "bio": "Desarrolladora frontend & apasionada por las sierras cordobesas ⛰️💻. Fin de semanas de trekking y noches de fogón y risas.",
+      "photos": [
+        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Córdoba Capital",
+      "distanceKm": 695,
+      "occupation": "Desarrolladora Web & TDAH",
+      "interests": [
+        "Sierras",
+        "Trekking",
+        "Startups",
+        "Rock Nacional",
+        "Río"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-12T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 195,
+      "matchesCount": 42,
+      "preferences": {
+        "minAge": 21,
+        "maxAge": 33,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1500
+      },
+      "passwordHash": "205794a80972fc41420b3310446e5c30b9f540db8f4a844fa00cf47c4a3cedeacfb1b5817b143ecdb6c3aca321330751f6cc6d3593c3fe4ae3e0b65cc869cd85",
+      "passwordSalt": "f332599e77280c05dfd1f619958c8434"
+    },
+    {
+      "id": "user-joaquin",
+      "name": "Joaquín Herrera",
+      "email": "joaquin.herrera@ejemplo.com",
+      "age": 27,
+      "gender": "male",
+      "bio": "Cocinero de montaña & escalador deportivo 🧗🍲. Fanático de las especias, los refugios de montaña y la tranquilidad serrana.",
+      "photos": [
+        "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Córdoba Capital",
+      "distanceKm": 700,
+      "occupation": "Chef de Montaña",
+      "interests": [
+        "Escalada",
+        "Gastronomía",
+        "Naturaleza",
+        "Camping",
+        "Acústico"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-08-27T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 86,
+      "matchesCount": 17,
+      "preferences": {
+        "minAge": 22,
+        "maxAge": 34,
+        "interestedIn": [
+          "female"
+        ],
+        "maxDistanceKm": 1500
+      },
+      "passwordHash": "3e43b222515c0f8c6b6de973a0a5b55ca529a6c0be9d0dee2527d2d9d0ca1159b758a067a7a0fa2780283844643944812e869e28d1abd6e5ee60a7dafc10f1d6",
+      "passwordSalt": "e532e299778f0185f17fdc4e644e2631"
+    },
+    {
+      "id": "user-agustina",
+      "name": "Agustina Paz",
+      "email": "agustina.paz@ejemplo.com",
+      "age": 26,
+      "gender": "female",
+      "bio": "Sommelier de altura y enóloga al pie de los Andes 🍇🏔️. Noches estrelladas, copas de Malbec y charlas profundas sobre la vida.",
+      "photos": [
+        "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Mendoza Capital",
+      "distanceKm": 985,
+      "occupation": "Sommelier de Altura",
+      "interests": [
+        "Vinos",
+        "Cordillera",
+        "Aconcagua",
+        "Fotografía",
+        "Arte"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-08T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 165,
+      "matchesCount": 32,
+      "preferences": {
+        "minAge": 24,
+        "maxAge": 38,
+        "interestedIn": [
+          "male",
+          "female"
+        ],
+        "maxDistanceKm": 1500
+      },
+      "passwordHash": "9adcfcbd13dc78f89000588d38b016f71cff679ce5b64c64ab83d297406750608d945c64f092c2b8c956891c0edf779e409b76e0d1259d6676900d338b6b510d",
+      "passwordSalt": "1670b3badcb7a7c8da6940a745667349"
+    },
+    {
+      "id": "user-sol",
+      "name": "Sol Roldán",
+      "email": "sol.roldan@ejemplo.com",
+      "age": 25,
+      "gender": "female",
+      "bio": "Guía de montaña & fotógrafa de paisajes patagónicos 🌲❄️. Lagos glaciares, fogones calientes y chocolates artesanales.",
+      "photos": [
+        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "San Carlos de Bariloche, Río Negro",
+      "distanceKm": 1350,
+      "occupation": "Guía de Alta Montaña",
+      "interests": [
+        "Snowboard",
+        "Lagos",
+        "Trekking",
+        "Fotografía",
+        "Naturaleza"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-09-13T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 210,
+      "matchesCount": 45,
+      "preferences": {
+        "minAge": 22,
+        "maxAge": 35,
+        "interestedIn": [
+          "male",
+          "female",
+          "non-binary"
+        ],
+        "maxDistanceKm": 2000
+      },
+      "passwordHash": "839d19df05903604fbf3d9c3679b674e3171bd1351e2f94925f7bbf8bcbfa567ac4295c72bcabbdda67db70f3a80eb68e032fd81e1fa627b93aab3b387548cfa",
+      "passwordSalt": "55559b99d59b4e730b56302aa3ea8839"
+    },
+    {
+      "id": "user-kevin",
+      "name": "Kevin Argañaraz",
+      "email": "kevin.arganaraz@ejemplo.com",
+      "age": 28,
+      "gender": "male",
+      "bio": "Geólogo explorador en las quebradas del norte argentino 🏜️🧭. Amante de la historia andina, peñas folclóricas y café de altura.",
+      "photos": [
+        "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80"
+      ],
+      "location": "Salta Capital",
+      "distanceKm": 1480,
+      "occupation": "Geólogo de Campo",
+      "interests": [
+        "Quebradas",
+        "Geología",
+        "Folklore",
+        "Café",
+        "Viajes"
+      ],
+      "verified": true,
+      "emailVerified": true,
+      "status": "active",
+      "role": "user",
+      "createdAt": "2026-08-21T19:53:06.156Z",
+      "lastActive": "2026-09-15T19:53:06.156Z",
+      "likesCount": 71,
+      "matchesCount": 13,
+      "preferences": {
+        "minAge": 23,
+        "maxAge": 35,
+        "interestedIn": [
+          "female"
+        ],
+        "maxDistanceKm": 2000
+      },
+      "passwordHash": "4ce1f81233714a04195d17e8414f5fd23642c97562ff9b0481b43d10621ef28961cca2d6d3017aa7ff198cf2c32972c1de3bf032b26de31a596ada866ad10878",
+      "passwordSalt": "ccd5dc2aa3b06b0a3c2aed585180fb98"
     }
   ],
   "pendingRegistrations": [],
@@ -136,5 +1041,5 @@
       "details": "Reinicio completo de la base de datos: todas las cuentas y registros fueron eliminados para iniciar desde cero."
     }
   ],
-  "updatedAt": "2026-09-15T19:52:57.303Z"
+  "updatedAt": "2026-09-15T19:53:07.586Z"
 }

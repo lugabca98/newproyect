@@ -1,12 +1,12 @@
 {
-  "projectId": "noble-voltage-37dgj",
-  "appId": "1:1093548620827:web:22afeb6d00e4c8d921ccbe",
-  "apiKey": "AIzaSyDC017ldRBZJfxTqtDtdkew9VQMFuE8AV0",
-  "authDomain": "noble-voltage-37dgj.firebaseapp.com",
+  "projectId": "vulnerable-app-e942a",
+  "appId": "1:494395625320:web:2873316d9a9a1a1a0150dd",
+  "apiKey": "AIzaSyDQ3y2kU-0dQbSYMKbeAFqEGiDg_wyquQ0",
+  "authDomain": "vulnerable-app-e942a.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-remixmyclosetfin-2e529dd2-80ce-4022-bc9e-03f4933cb12b",
-  "storageBucket": "noble-voltage-37dgj.firebasestorage.app",
-  "messagingSenderId": "1093548620827",
-  "measurementId": "",
-  "oAuthClientId": "1093548620827-kuomg90psv4jir76n0agvf4gggvegac1.apps.googleusercontent.com",
+  "storageBucket": "vulnerable-app-e942a.firebasestorage.app",
+  "messagingSenderId": "494395625320",
+  "measurementId": "G-K5KWBXRPG5",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }
