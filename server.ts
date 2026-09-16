@@ -7,7 +7,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { User, Match, Message, SwipeRecord, AuditLog, AdminStats, Gender } from './src/types.js';
 import { SEED_PROFILES_WITH_DISTANCES } from './src/seedUsers';
-import { sendOtpEmail, getMailConfigStatus, purgeUserFromFirebaseAuth, recordKnownCredential } from './server/mailer.js';
+import { sendOtpEmail, getMailConfigStatus, purgeUserFromFirebaseAuth, recordKnownCredential, setAppBaseUrl } from './server/mailer.js';
 import { DbService } from './src/db/dbService.ts';
 import { runMigrationToCloudSql } from './src/db/migrateData.ts';
 
@@ -42,6 +42,14 @@ app.use((req, res, next) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
   }
+
+  // Dynamically learn active deployment URL for continueUrl redirections
+  const host = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim() || req.get('host');
+  if (host && (host.includes('.run.app') || (!host.includes('localhost') && !host.includes('127.0.0.1')))) {
+    const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || (host.includes('run.app') ? 'https' : req.protocol) || 'https';
+    setAppBaseUrl(`${proto}://${host}`);
+  }
+
   next();
 });
 

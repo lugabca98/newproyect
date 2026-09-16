@@ -134,6 +134,22 @@ async function getEtherealTransporter(): Promise<nodemailer.Transporter> {
   }
 }
 
+// Global runtime app URL for continueUrl redirection in Google/Firebase emails
+let dynamicAppBaseUrl = process.env.APP_URL || process.env.PUBLIC_APP_URL || '';
+
+export function setAppBaseUrl(url: string) {
+  if (url && typeof url === 'string' && !url.includes('firebaseapp.com') && !url.includes('localhost')) {
+    dynamicAppBaseUrl = url.replace(/\/$/, '');
+  }
+}
+
+export function getAppBaseUrl(): string {
+  if (dynamicAppBaseUrl) return dynamicAppBaseUrl;
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
+  if (process.env.PUBLIC_APP_URL) return process.env.PUBLIC_APP_URL.replace(/\/$/, '');
+  return '';
+}
+
 // In-memory credentials cache
 const knownCredentials = new Map<string, string>();
 
@@ -341,7 +357,8 @@ Si no realizaste esta acción, ignorá este mensaje de forma segura.
 
       if (authToken) {
         try {
-          const continueUrl = actionUrl || `https://${projectAuthDomain}/?emailVerified=true&email=${encodeURIComponent(email)}`;
+          const appBase = getAppBaseUrl();
+          const continueUrl = actionUrl || (appBase ? `${appBase}/?emailVerified=true&email=${encodeURIComponent(email)}` : `https://${projectAuthDomain}/?emailVerified=true&email=${encodeURIComponent(email)}`);
           const oobRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${googleApiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -369,13 +386,15 @@ Si no realizaste esta acción, ignorá este mensaje de forma segura.
     } else {
       // Password reset via Google Identity Toolkit
       try {
+        const appBase = getAppBaseUrl();
+        const continueUrl = actionUrl || (appBase ? `${appBase}/?mode=reset-password&email=${encodeURIComponent(email)}` : `https://${projectAuthDomain}/?mode=reset-password`);
         const oobRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${googleApiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             requestType: "PASSWORD_RESET",
             email,
-            continueUrl: actionUrl || `https://${projectAuthDomain}/?mode=reset-password`
+            continueUrl
           }),
           signal: AbortSignal.timeout(4000)
         });

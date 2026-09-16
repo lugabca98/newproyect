@@ -20,6 +20,7 @@ import {
   updatePassword,
   sendEmailVerification,
   sendPasswordResetEmail,
+  confirmPasswordReset,
   deleteUser,
   reload,
   GoogleAuthProvider, 
@@ -931,7 +932,10 @@ class FirebaseService {
       await deleteDoc(doc(db, 'deletedAccounts', cleanEmail)).catch(() => {});
     } catch {}
 
-    const authDomainUrl = `https://${firebaseConfig.authDomain || 'vulnerable-app-e942a.firebaseapp.com'}/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}`;
+    const currentOrigin = typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('localhost')
+      ? window.location.origin
+      : `https://${firebaseConfig.authDomain || 'vulnerable-app-e942a.firebaseapp.com'}`;
+    const authDomainUrl = `${currentOrigin}/?emailVerified=true&email=${encodeURIComponent(cleanEmail)}`;
     const actionCodeSettings: ActionCodeSettings = {
       url: authDomainUrl,
       handleCodeInApp: true
@@ -1303,15 +1307,28 @@ class FirebaseService {
 
     let clientSent = false;
     try {
-      await sendPasswordResetEmail(auth, cleanEmail);
+      const currentOrigin = typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('localhost')
+        ? window.location.origin
+        : `https://${firebaseConfig.authDomain || 'vulnerable-app-e942a.firebaseapp.com'}`;
+      const actionCodeSettings: ActionCodeSettings = {
+        url: `${currentOrigin}/?mode=reset-password&email=${encodeURIComponent(cleanEmail)}`,
+        handleCodeInApp: true
+      };
+      await sendPasswordResetEmail(auth, cleanEmail, actionCodeSettings);
       clientSent = true;
     } catch (authErr: any) {
-      console.warn('[Firebase Auth] sendPasswordResetEmail note:', authErr);
-      const code = authErr?.code || '';
-      if (code === 'auth/invalid-email') {
-        throw new Error('El formato de correo no es válido.');
-      } else if (code === 'auth/too-many-requests') {
-        throw new Error('Demasiadas solicitudes. Por favor aguarda unos instantes antes de volver a intentar.');
+      console.warn('[Firebase Auth] sendPasswordResetEmail with actionCodeSettings note:', authErr);
+      try {
+        await sendPasswordResetEmail(auth, cleanEmail);
+        clientSent = true;
+      } catch (authErr2: any) {
+        console.warn('[Firebase Auth] sendPasswordResetEmail fallback note:', authErr2);
+        const code = authErr2?.code || authErr?.code || '';
+        if (code === 'auth/invalid-email') {
+          throw new Error('El formato de correo no es válido.');
+        } else if (code === 'auth/too-many-requests') {
+          throw new Error('Demasiadas solicitudes. Por favor aguarda unos instantes antes de volver a intentar.');
+        }
       }
     }
 
@@ -1331,7 +1348,7 @@ class FirebaseService {
     return this.resetPasswordDirect(email, newPassword);
   }
 
-  async resetPasswordDirect(email: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+  async resetPasswordDirect(email: string, newPassword: string, oobCode?: string): Promise<{ success: boolean; message: string }> {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanNew = (newPassword || '').trim();
 
@@ -1340,6 +1357,16 @@ class FirebaseService {
     }
     if (!cleanNew || cleanNew.length < 6) {
       throw new Error('La nueva contraseña debe tener al menos 6 caracteres.');
+    }
+
+    // If a Firebase Auth oobCode is available, confirm password reset directly with Firebase Auth
+    if (oobCode && oobCode.length > 10) {
+      try {
+        await confirmPasswordReset(auth, oobCode, cleanNew);
+        console.log('[Firebase Auth] Successfully confirmed password reset with oobCode for', cleanEmail);
+      } catch (fbResetErr) {
+        console.warn('[Firebase Auth] confirmPasswordReset note:', fbResetErr);
+      }
     }
 
     const newHash = await hashPassword(cleanNew);

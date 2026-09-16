@@ -99,7 +99,9 @@ export function App() {
         }
       }
 
-      if (urlMode === 'reset-password' || urlMode === 'resetPassword') {
+      const hasOobCode = searchParams.get('oobCode');
+
+      if (urlMode === 'reset-password' || urlMode === 'resetPassword' || hasOobCode) {
         setCurrentUser(null);
         setAuthModalMode('enter-new-password');
         setAuthModalOpen(true);

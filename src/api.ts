@@ -480,7 +480,7 @@ class ApiService {
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        await firebaseService.resetPasswordDirect(cleanEmail, newPass).catch(() => {});
+        await firebaseService.resetPasswordDirect(cleanEmail, newPass, cleanToken).catch(() => {});
         return { success: true, message: data.message };
       } else if (!response.ok && data.error) {
         throw new Error(data.error);
@@ -492,7 +492,7 @@ class ApiService {
     }
 
     // 2. Direct password update
-    return firebaseService.resetPasswordDirect(cleanEmail, newPass);
+    return firebaseService.resetPasswordDirect(cleanEmail, newPass, cleanToken);
   }
 
   async resetPasswordWithOtp(email: string, code: string, newPass: string): Promise<{ success: boolean; message: string }> {
