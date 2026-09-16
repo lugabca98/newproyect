@@ -6,6 +6,7 @@ import appletConfig from '../firebase-applet-config.json';
 export const firebaseConfig = appletConfig;
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const dbId = (firebaseConfig as any).firestoreDatabaseId;
+export const db = dbId && dbId !== '(default)' ? getFirestore(app, dbId) : getFirestore(app);
 
 export default app;

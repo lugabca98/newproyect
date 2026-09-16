@@ -22,8 +22,9 @@ try {
   if (fs.existsSync(cfgPath)) {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
     const fbApp = getApps().length > 0 ? getApp() : initializeApp(cfg);
-    firestoreDb = getFirestore(fbApp, cfg.firestoreDatabaseId);
-    console.log('[Server Firebase] Connected to Firestore with databaseId:', cfg.firestoreDatabaseId);
+    const dbId = cfg.firestoreDatabaseId;
+    firestoreDb = dbId && dbId !== '(default)' ? getFirestore(fbApp, dbId) : getFirestore(fbApp);
+    console.log('[Server Firebase] Connected to Firestore with databaseId:', dbId || '(default)');
   }
 } catch (fbErr) {
   console.warn('[Server Firebase] Connection warning:', fbErr);
@@ -1487,34 +1488,8 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     name: newUser.name,
     actionUrl: registerVerifyUrl,
     password: password
-  }).then(async (mailRes) => {
+  }).then((mailRes) => {
     console.log(`[Register Email] Verification email dispatched to ${normalizedEmail} via ${mailRes.provider}. Success: ${mailRes.success}`);
-
-    // 2. Dispatch Email with password reset / change link
-    const resetOtp = String(Math.floor(100000 + Math.random() * 900000));
-    otpStore.set(`${normalizedEmail}_password_reset`, {
-      code: resetOtp,
-      type: 'password_reset',
-      email: normalizedEmail,
-      name: newUser.name,
-      expiresAt: Date.now() + 60 * 60 * 1000 // 1 hour
-    });
-    const passwordResetUrl = `${baseAppUrl}/?mode=reset-password&email=${encodeURIComponent(normalizedEmail)}&code=${resetOtp}`;
-    
-    console.log(`[Register Email] Dispatching second email with password change link to ${normalizedEmail}... Action URL: ${passwordResetUrl}`);
-    try {
-      const resetMailRes = await sendOtpEmail({
-        email: normalizedEmail,
-        code: resetOtp,
-        type: 'password_reset',
-        name: newUser.name,
-        actionUrl: passwordResetUrl,
-        password: password
-      });
-      console.log(`[Register Email] Password change email dispatched to ${normalizedEmail} via ${resetMailRes.provider}. Success: ${resetMailRes.success}`);
-    } catch (resetErr) {
-      console.warn('[Register Email] Password change email dispatch notice:', resetErr);
-    }
   }).catch(err => {
     console.warn('[Register Email] Error sending verification email:', err);
   });

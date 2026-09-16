@@ -965,8 +965,21 @@ class FirebaseService {
       }
     }
 
-    // When unauthenticated, do NOT send a password reset email as that sends a password change link.
-    // The server mailer /api/mail/send-otp endpoint handles delivering the authentic confirmation link.
+    // When unauthenticated or current is not this email, dispatch via server /api/mail/send-otp
+    try {
+      const serverResp = await fetch('/api/mail/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, type: 'verify_email' })
+      });
+      const data = await serverResp.json();
+      if (data.message) {
+        return { success: true, message: data.message };
+      }
+    } catch (sErr) {
+      console.warn('[Firebase Auth] Server send-otp notice:', sErr);
+    }
+
     return {
       success: true,
       message: `Te enviamos un correo de confirmación a ${cleanEmail}. Revisá tu bandeja de entrada y la carpeta de spam.`
@@ -1279,19 +1292,30 @@ class FirebaseService {
       throw new Error('Por favor ingresa un correo electrónico válido.');
     }
 
+    // Trigger server-side OTP email delivery in background immediately
+    const serverPromise = fetch('/api/mail/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail, type: 'password_reset' })
+    }).catch(err => {
+      console.warn('[Server Mail] send-otp notice:', err);
+    });
+
+    let clientSent = false;
     try {
       await sendPasswordResetEmail(auth, cleanEmail);
+      clientSent = true;
     } catch (authErr: any) {
       console.warn('[Firebase Auth] sendPasswordResetEmail note:', authErr);
       const code = authErr?.code || '';
-      if (code === 'auth/user-not-found') {
-        throw new Error(`No encontramos ninguna cuenta registrada con el correo "${cleanEmail}".`);
-      } else if (code === 'auth/invalid-email') {
+      if (code === 'auth/invalid-email') {
         throw new Error('El formato de correo no es válido.');
       } else if (code === 'auth/too-many-requests') {
         throw new Error('Demasiadas solicitudes. Por favor aguarda unos instantes antes de volver a intentar.');
       }
     }
+
+    await serverPromise;
 
     return {
       success: true,

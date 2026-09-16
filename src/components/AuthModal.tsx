@@ -749,28 +749,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
                 <div className="space-y-1.5">
                   <h4 className="text-xs font-bold text-white">
-                    Correos de activación y gestión enviados
+                    Correo de activación enviado
                   </h4>
                   <p className="text-[12px] text-slate-300 leading-relaxed">
-                    Hemos enviado dos correos electrónicos a <strong className="text-rose-300 font-mono">{regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email')}</strong>:
+                    Hemos enviado el enlace de confirmación a <strong className="text-rose-300 font-mono">{regEmail || registeredUser?.email || localStorage.getItem('pending_verification_email')}</strong>.
                   </p>
                 </div>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-2 text-[11.5px] text-slate-300">
                 <div className="flex items-start gap-2">
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold shrink-0 mt-0.5">1</span>
-                  <span><strong>Correo de Confirmación:</strong> Hacé clic en "Confirmar mi correo electrónico" para activar tu registro e ingresar.</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold shrink-0 mt-0.5">2</span>
-                  <span><strong>Correo de Contraseña:</strong> Incluye el enlace seguro directo por si necesitás modificar o definir una nueva clave.</span>
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold shrink-0 mt-0.5">✓</span>
+                  <span><strong>Activación instantánea:</strong> Hacé clic en "Confirmar mi correo electrónico" o en el enlace recibido para activar tu cuenta de inmediato.</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200/90 leading-snug">
-                <span className="text-amber-400 font-bold">Tip:</span>
-                <span>Si no encontrás los mensajes en tu bandeja principal, por favor revisá en la carpeta de <strong>Correo no deseado (Spam)</strong> o Promociones.</span>
+                <span className="text-amber-400 font-bold">Importante:</span>
+                <span>Si no ves el mensaje en tu bandeja principal, revisá en <strong>Correo no deseado (Spam)</strong> o Promociones.</span>
               </div>
 
               <div className="pt-1 flex items-center justify-center gap-2 text-[11px] text-slate-400">
